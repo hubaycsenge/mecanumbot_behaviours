@@ -1,20 +1,20 @@
-from mecanumbot_leading_behaviour.behaviours.blackboard_managers import SubjectToBlackboard,
-                                                                        RobotToBlackboard,
+from mecanumbot_leading_behaviour.behaviours.blackboard_managers import SubjectToBlackboard,\
+                                                                        RobotToBlackboard,\
                                                                         DistanceToBlackboard
 
-from mecanumbot_leading_behaviour.behaviours.movement_managers import SubjectToGoalPose,
-                                                                      TargetToGoalPose,
-                                                                      TurnTowardsSubject,
-                                                                      TurnTowardsTarget,
-                                                                      CheckApproachSuccess,
+from mecanumbot_leading_behaviour.behaviours.movement_managers import SubjectToGoalPose,\
+                                                                      TargetToGoalPose,\
+                                                                      TurnTowardsSubject,\
+                                                                      TurnTowardTarget,\
+                                                                      CheckApproachSuccess,\
                                                                       CheckSubjectTargetSuccess
 
-from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogIndicateTarget,
-                                                                   DogLookForFeedback,
+from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogIndicateTarget,\
+                                                                   DogLookForFeedback,\
                                                                    DogCatchAttention
 
-from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDIndicateTarget,
-                                                                   LEDCatchAttention,
+from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDIndicateTarget,\
+                                                                   LEDCatchAttention,\
                                                                    LEDStop  
 
 import py_trees
@@ -26,6 +26,7 @@ def create_approach_subject_subtree(subject_topic_name = 'subject_pose',robot_to
     root = py_trees.composites.Sequence("ApproachSubjectSequence")
 
     subject_to_blackboard = SubjectToBlackboard(name="SubjectToBlackboard", topic_name=subject_topic_name)
+    subject_to_goal_pose = SubjectToGoalPose(name="SubjectToGoalPose")
     robot_to_blackboard = RobotToBlackboard(name="RobotToBlackboard", topic_name=robot_topic_name)
     distance_to_blackboard = DistanceToBlackboard(name="DistanceToBlackboard", threshold=subj_dist_threshold, target_reach_threshold=tgt_reach_threshold)
     check_approach_success = CheckApproachSuccess(name="CheckApproachSuccess", approach_distance_threshold=approach_distance_threshold)

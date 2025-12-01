@@ -1,24 +1,19 @@
+import rclpy
 import py_trees
-from mecanumbot_leading_behaviour.tree_nodes.subtrees import create_approach_subject_subtree,create_indicate_target_subtree
-from mecanumbot_leading_behaviour.behaviours.movement_managers import TargetToGoalPose, TurnTowardsTarget, TurnTowardsSubject, CheckSubjectTargetSuccess
-from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogIndicateTarget,
-                                                                   DogLookForFeedback,
-                                                                   DogCatchAttention,
-                                                                   DogCheckIfSubjLed,
+import py_trees_ros
+from mecanumbot_behaviours.mecanumbot_leading_behaviour.mecanumbot_leading_behaviour.utils.subtrees import create_approach_subject_until_success_subtree,create_indicate_target_subtree
+from mecanumbot_leading_behaviour.behaviours.movement_managers import TargetToGoalPose, \
+                                                                     TurnTowardsTarget, \
+                                                                     TurnTowardsSubject, \
+                                                                     CheckSubjectTargetSuccess
+from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogIndicateTarget, \
+                                                                   DogLookForFeedback,\
+                                                                   DogCatchAttention,\
+                                                                   DogCheckIfSubjLed, \
                                                                    DogCheckSubjectTargetSuccess
 
 def create_core_sequence(wait_duration = 1.0,feedback_duration = 2.0):
-    """
 
-    return root
-
-def create_leading_ctrl_tree(wait_duration = 10.0,time_switch_duration = 1.0,feedback_duration = 2.0):
-    """
-    Creates the control tree for the mecanumbot leading behaviour.
-    """
-    ro
-    Creates the core sequence for leading behaviour.
-    """
     root = py_trees.composites.Sequence("CoreLeadingSequence")
 
     approach_subject_subtree = create_approach_subject_until_success_subtree()
@@ -44,7 +39,7 @@ def create_leading_ctrl_tree(wait_duration = 10.0,time_switch_duration = 1.0,fee
     lead_with_feedback_subtree = py_trees.composites.Sequence("LeadWithFeedbackSequence")
     lead_with_feedback_subtree.add_children([
         target_to_goal_pose,
-        look_for_feedback
+        look_for_feedback,
         check_if_subj_led,
         turn_towards_subject     
     ])
@@ -69,7 +64,7 @@ def create_leading_ctrl_tree(wait_duration = 10.0,time_switch_duration = 1.0,fee
     """
     Creates the control tree for the mecanumbot leading behaviour.
     """
-    root = py_trees.composites.Sequence("MecanumbotLeadingDogTree")UntilCloseSequence
+    root = py_trees.composites.Sequence("MecanumbotLeadingDogTree")
 
     core_sequence = create_core_sequence(wait_duration = time_switch_duration,feedback_duration = feedback_duration)
     delay_timer = py_trees.timers.Timer(name="DelayTimer", duration = wait_duration)
@@ -79,3 +74,27 @@ def create_leading_ctrl_tree(wait_duration = 10.0,time_switch_duration = 1.0,fee
                     repeated_core_sequence])
 
     return root
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    # Create the tree
+    tree = create_leading_ctrl_tree(wait_duration = 10.0,time_switch_duration = 1.0)
+
+    # Wrap tree in ROS behaviour tree executor
+    tree_node = py_trees_ros.trees.BehaviourTree(tree)
+
+    # Setup lifecycle (similar to ROS nodes)
+    tree_node.setup(timeout=15.0)
+
+    try:
+        tree_node.tick_tock(period_ms=100)  # run tree at 10 Hz
+    except KeyboardInterrupt:
+        pass
+
+    tree_node.shutdown()
+    rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

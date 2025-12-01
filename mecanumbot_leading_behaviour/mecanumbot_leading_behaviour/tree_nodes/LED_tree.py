@@ -1,9 +1,12 @@
 import py_trees
-from mecanumbot_leading_behaviour.tree_nodes.subtrees import create_approach_subject_subtree,create_indicate_target_subtree
-from mecanumbot_leading_behaviour.behaviours.movement_managers import TargetToGoalPose,
-                                                                      TurnTowardsTarget,
-                                                                      TurnTowardsSubject,
+import rclpy
+import py_trees_ros
+from mecanumbot_leading_behaviour.tree_nodes.subtrees import create_approach_subject_until_success_subtree,create_indicate_target_subtree
+from mecanumbot_leading_behaviour.behaviours.movement_managers import TargetToGoalPose,\
+                                                                      TurnTowardTarget,\
+                                                                      TurnTowardsSubject,\
                                                                       CheckSubjectTargetSuccess
+
 from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDIndicateTarget
 
 def create_core_sequence(wait_duration = 1.0):
@@ -15,7 +18,7 @@ def create_core_sequence(wait_duration = 1.0):
     approach_subject_subtree = create_approach_subject_until_success_subtree()
     delay_timer = py_trees.timers.Timer(name="CoreDelayTimer", duration=wait_duration)
     target_to_goal_pose = TargetToGoalPose(name="TargetToGoalPose")
-    turn_towards_target = TurnTowardsTarget(name="TurnTowardsTarget")
+    turn_towards_target = TurnTowardTarget(name="TurnTowardsTarget")
     turn_towards_subject = TurnTowardsSubject(name="TurnTowardsSubject")
     check_subject_target_success = CheckSubjectTargetSuccess(name="CheckSubjectTargetSuccess")
 
@@ -29,8 +32,7 @@ def create_core_sequence(wait_duration = 1.0):
         LED_signal_target,
         delay_timer,
         approach_subject_subtree,
-        
-        check_approach_success
+        check_subject_target_success
     ])
     gobetween_retries = py_trees.decorators.Retry(name="GoBetweenItemsRetries", child = gobetween, num_iterations=1000)
 
@@ -57,3 +59,27 @@ def create_leading_ctrl_tree(wait_duration = 10.0,time_switch_duration = 1.0):
                     repeated_core_sequence])
 
     return root
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    # Create the tree
+    tree = create_leading_ctrl_tree(wait_duration = 10.0,time_switch_duration = 1.0)
+
+    # Wrap tree in ROS behaviour tree executor
+    tree_node = py_trees_ros.trees.BehaviourTree(tree)
+
+    # Setup lifecycle (similar to ROS nodes)
+    tree_node.setup(timeout=15.0)
+
+    try:
+        tree_node.tick_tock(period_ms=100)  # run tree at 10 Hz
+    except KeyboardInterrupt:
+        pass
+
+    tree_node.shutdown()
+    rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
