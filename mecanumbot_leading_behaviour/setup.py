@@ -12,6 +12,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch',  glob('launch/*')),
+        ('share/' + package_name + '/config',  glob('config/*'))
         
     ],
     install_requires=['setuptools'],
@@ -23,9 +24,10 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'control_leading_bt_node = mecanumbot_leading_behaviour.py_trees.ctrl_tree:main',
-            'doglike_leading_bt_node = mecanumbot_leading_behaviour.py_trees.dog_tree:main',
-            'LED_leading_bt_node = mecanumbot_leading_behaviour.py_trees.LED_tree:main'
+            'control_leading_bt_node = mecanumbot_leading_behaviour.tree_nodes.ctrl_tree:main',
+            'doglike_leading_bt_node = mecanumbot_leading_behaviour.tree_nodes.dog_tree:main',
+            'LED_leading_bt_node = mecanumbot_leading_behaviour.tree_nodes.LED_tree:main', 
+            'bottom_up_tree_node = mecanumbot_leading_behaviour.tree_nodes.bottom_up_tree:main'
         ],
     },
 )

@@ -1,0 +1,39 @@
+bottom_up_tree_node:
+  ros__parameters:
+    init_delay: 1.5
+    robot_approach_subject_distance : 0.25 #TODO: test optimum
+    robot_closeness_threshold: 0.4 #TODO: test optimum
+    target_reached_threshold: 0.4  #TODO: test optimum
+    Dog_look_for_feedback_delay: 2.0
+
+    target_position:
+      - 1.2 #X
+      - -0.8 #Y
+      - 0.0 #Z
+      
+    LED_indicate_target_seq:
+      - "{'fl':{'mode':1, 'color':2},'fr':{'mode':1, 'color':2},'bl':{'mode':1, 'color':2},'br':{'mode':1, 'color':2}}"
+      - "{'fl':{'mode':1, 'color':2},'fr':{'mode':1, 'color':2},'bl':{'mode':1, 'color':2},'br':{'mode':1, 'color':2}}"
+      - "{'fl':{'mode':1, 'color':2},'fr':{'mode':1, 'color':2},'bl':{'mode':1, 'color':2},'br':{'mode':1, 'color':2}}"
+    LED_indicate_target_times:
+      - 0.7
+      - 6.0
+      - 4.0
+
+    Dog_indicate_target_seq:
+       - "{'n_pos':0.1,'gl_pos':0.2,'gr_pos':0.2}"
+       - "{'n_pos':0.1,'gl_pos':0.2,'gr_pos':0.2}"
+
+    Dog_catch_attention_seq:
+       - "{'n_pos':0.1,'gl_pos':0.2,'gr_pos':0.2}"
+       - "{'n_pos':0.1,'gl_pos':0.2,'gr_pos':0.2}"
+      
+    LED_catch_attention_seq:
+        - "{'fl':{'mode':1, 'color':2},'fr':{'mode':1, 'color':2},'bl':{'mode':1, 'color':2},'br':{'mode':1, 'color':2}}"
+        - "{'fl':{'mode':1, 'color':2},'fr':{'mode':1, 'color':2},'bl':{'mode':1, 'color':2},'br':{'mode':1, 'color':2}}"
+        - "{'fl':{'mode':1, 'color':2},'fr':{'mode':1, 'color':2},'bl':{'mode':1, 'color':2},'br':{'mode':1, 'color':2}}"
+    
+    LED_catch_attention_times:
+        - 0.7
+        - 6.0
+        - 4.0
