@@ -1,13 +1,9 @@
+import math
 import rclpy
 import py_trees
-from  py_trees_ros import subscribers
-from geometry_msgs.msg import PoseStamped
-
-import py_trees
-import py_trees_ros
-import rclpy
 from geometry_msgs.msg import PoseStamped
 from tf_transformations import quaternion_from_euler, euler_from_quaternion
+
 
 class SubjectToGoalPose(py_trees.behaviour.Behaviour):
     """
@@ -23,10 +19,9 @@ class SubjectToGoalPose(py_trees.behaviour.Behaviour):
 
         # Blackboard keys
         self.blackboard = self.attach_blackboard_client(name=name)
-        self.blackboard.register_key(
-            key="subject",
-            access=py_trees.common.Access.READ
-        )
+        self.blackboard.register_key(key="subject_pose",access=py_trees.common.Access.READ)
+        self.blackboard.register_key(key="robot_pose",access=py_trees.common.Access.READ)
+        self.blackboard.register_key(key="robot_approach_subject_distance",access=py_trees.common.Access.READ)
 
     def setup(self, **kwargs):
         """
@@ -39,23 +34,56 @@ class SubjectToGoalPose(py_trees.behaviour.Behaviour):
             "goal_pose",
             10
         )
+
         self.logger.info("Goal pose publisher ready")
 
     def update(self):
         """
         Read subject pose from blackboard and publish as goal.
         """
-        subject_pose = self.blackboard.subject
+        def subject_pose_to_goal(subject_pose,robot_pose,approach_distance):
+            Sx = subject_pose.pose.position.x
+            Sy = subject_pose.pose.position.y
+            Rx = robot_pose.x
+            Ry = robot_pose.y
+            
+            dx = Rx - Sx
+            dy = Ry - Sy
+            dist = math.sqrt(dx*dx + dy*dy)
+
+            # If already too close, do nothing
+            if dist < approach_distance:
+                return robot_pose
+
+            # Compute approach position
+            X = Rx + dx(1-approach_distance/dist) 
+            Y = Ry + dy(1-approach_distance/dist) 
+            # Orientation: face the person
+            yaw = math.atan2(Sy - Y, Sx - X)
+            q = quaternion_from_euler(0, 0, yaw)
+
+            goal = PoseStamped()
+            goal.header.frame_id = "map"
+            goal.pose.position.x = X
+            goal.pose.position.y = Y
+            goal.pose.orientation.x = q[0]
+            goal.pose.orientation.y = q[1]
+            goal.pose.orientation.z = q[2]
+            goal.pose.orientation.w = q[3]
+            return goal
+        
+        subject_pose = self.blackboard.subject_pose
+        robot_pose = self.blackboard.robot_pose
 
         if subject_pose is None:
             self.logger.warn("No subject pose on blackboard yet")
             return py_trees.common.Status.RUNNING
-
+        
+        X,Y = 
         # Construct goal message
-        goal = PoseStamped()
-        goal.header.frame_id = "map"
-        goal.header.stamp = rclpy.clock.Clock().now().to_msg()
-        goal.pose = subject_pose.pose
+        goal = subject_pose_to_goal(subject_pose,
+                                   robot_pose,
+                                   self.blackboard.robot_approach_subject_distance)
 
         self.publisher.publish(goal)
 
@@ -171,11 +199,11 @@ class TurnTowardsSubject(py_trees.behaviour.Behaviour):
         # Blackboard keys
         self.blackboard = self.attach_blackboard_client(name=name)
         self.blackboard.register_key(
-            key="subject
+            key="subject_pose",
             access=py_trees.common.Access.READ
         )
         self.blackboard.register_key(
-            key="robot",
+            key="robot_pose",
             access=py_trees.common.Access.READ
         )
 
@@ -197,10 +225,10 @@ class TurnTowardsSubject(py_trees.behaviour.Behaviour):
         Read subject and robot pose from blackboard and publish turn command.
         """
 
-        subject_pose = self.blackboard.subject
-        robot_pose = self.blackboard.robot
+        subject_pose = self.blackboard.subject_pose
+        robot_pose = self.blackboard.robot_pose
 
-        if subject_pose is None or rrobot_pose is None:
+        if subject_pose is None or robot_pose is None:
             self.logger.warn("No target pose on blackboard yet")
             return py_trees.common.Status.RUNNING
 
@@ -210,13 +238,13 @@ class TurnTowardsSubject(py_trees.behaviour.Behaviour):
         turn_cmd.header.stamp = rclpy.clock.Clock().now().to_msg()
         turn_cmd.pose = robot_pose.pose  # Keep current position
         # Set orientation to face target (this is a placeholder, actual calculation needed)
-        turn_cmd.pose.orientation = self._calculate_facing_orientation(robot_pose, subject_pose.pose.position)
+        turn_cmd.pose.orientation = calculate_facing_orientation(robot_pose, subject_pose.pose.position)
         
 
         self.publisher.publish(turn_cmd)
 
         self.logger.debug(
-            f"Published turn command: direction={turn_direction}"
+            f"Published turn command: direction={turn_cmd.pose.orientation}"
         )
 
 class TurnTowardTarget(py_trees.behaviour.Behaviour):
@@ -260,10 +288,10 @@ class TurnTowardTarget(py_trees.behaviour.Behaviour):
         Read subject and robot pose from blackboard and publish turn command.
         """
 
-        target_position = self.blackboard.target # geometry_msgs/Point
-        robot_pose = self.blackboard.robot
+        target_position = self.blackboard.target_position # geometry_msgs/Point
+        robot_pose = self.blackboard.robot_pos #geometry_msgs/PoseStamped
 
-        if target_pose is None or rrobot_pose is None:
+        if target_position is None or robot_pose is None:
             self.logger.warn("No target pose on blackboard yet")
             return py_trees.common.Status.RUNNING
 
@@ -273,13 +301,13 @@ class TurnTowardTarget(py_trees.behaviour.Behaviour):
         turn_cmd.header.stamp = rclpy.clock.Clock().now().to_msg()
         turn_cmd.pose = robot_pose.pose  # Keep current position
         # Set orientation to face target (this is a placeholder, actual calculation needed)
-        turn_cmd.pose.orientation = self._alculate_facing_orientation(robot_pose, target_position)
+        turn_cmd.pose.orientation = self._calculate_facing_orientation(robot_pose, target_position)
         
 
         self.publisher.publish(turn_cmd)
 
         self.logger.debug(
-            f"Published turn command: direction={turn_direction}"
+            f"Published turn command: direction={turn_cmd.pose.orientation}"
         )
         return py_trees.common.Status.SUCCESS
 
@@ -295,12 +323,15 @@ class CheckApproachSuccess(py_trees.behaviour.Behaviour):
         # Blackboard keys
         self.blackboard = self.attach_blackboard_client(name=name)
         self.blackboard.register_key(
-            key="subject_within_threshold",
+            key="subject_within_robot_threshold",
             access=py_trees.common.Access.READ
         )
 
     def update(self):
-        if self.blackboard.subject_within_threshold:
+        if self.blackboard.subject_within_robot_threshold is None:
+            self.logger.info("No subject-robot distance info yet")
+            return py_trees.common.Status.FAILURE
+        if self.blackboard.subject_within_robot_threshold:
             self.logger.info("Approach successful: within threshold")
             return py_trees.common.Status.SUCCESS
         else:
@@ -319,19 +350,21 @@ class CheckSubjectTargetSuccess(py_trees.behaviour.Behaviour):
         # Blackboard keys
         self.blackboard = self.attach_blackboard_client(name=name)
         self.blackboard.register_key(
-            key="target_subject_distance",
+            key="target_within_subject_threshold",
             access=py_trees.common.Access.READ
         )
 
     def update(self):
-        distance = self.blackboard.target_subject_distance
-        if distance is not None and distance <  self.threshold:
+
+        if self.blackboard.target_within_subject_threshold is None:
+            self.logger.info("No distance info yet")
+            return py_trees.common.Status.FAILURE
+        if self.blackboard.target_within_subject_threshold:
             self.logger.info("Subject reached target: within threshold")
             return py_trees.common.Status.SUCCESS
         else:
             self.logger.info("Subject has not reached target yet")
-            return py_trees.common.Status.RUNNING
-
+            return py_trees.common.Status.FAILURE
 
 def calculate_facing_orientation(robot_pose,target_position):
 
