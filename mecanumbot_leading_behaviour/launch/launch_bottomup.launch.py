@@ -1,0 +1,31 @@
+import os
+from launch import LaunchDescription
+from launch_ros.actions import Node
+from launch.substitutions import LaunchConfiguration
+from ament_index_python.packages import get_package_share_directory
+from launch.actions import DeclareLaunchArgument
+
+
+def generate_launch_description():
+
+    param_file = LaunchConfiguration("params")
+    leading_pkg_share_dir =  get_package_share_directory('mecanumbot_leading_behaviour')
+    param_path = os.path.join(leading_pkg_share_dir,'config',"behaviour_setting_constants.yaml")
+
+    return LaunchDescription([
+        # Allow user to override the param file
+        DeclareLaunchArgument(
+            "params",
+            default_value=param_path,
+            description="YAML file with all constant parameters"
+        ),
+
+        # Your behaviour-tree node
+        Node(
+            package="mecanumbot_leading_behaviour",
+            executable="bottom_up_tree_node",                # your executable that builds/runs the tree
+            name="bottom_up_tree_node",
+            output="screen",
+            parameters=[param_file]
+        ),
+    ])
