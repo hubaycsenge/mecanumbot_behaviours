@@ -1,20 +1,17 @@
 import ast
-import rclpy
 import math
 import py_trees
 from  py_trees_ros import subscribers
-from geometry_msgs.msg import PoseStamped
-
+from geometry_msgs.msg import PoseStamped, Pose, PoseWithCovarianceStamped
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 import py_trees
 import yaml
-import py_trees_ros
 from geometry_msgs.msg import Point
 from mecanumbot_msgs.msg import AccessMotorCmd
 from mecanumbot_msgs.srv import SetLedStatus
-from rclpy.node import Node
 
 
-class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
+class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - works
     """
     Reads parameters from the ROS 2 node at startup and writes them
     into the py_trees blackboard under well-defined keys.
@@ -34,8 +31,10 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
 
     Dog condition parameters:
         Dog following_min_threshold: [m], float, min distance to consider the subject is following the robot
-        Dog_indicate_tgt_seq: [rad]->[motor_state] x3, mecanumbot_msgs, AccessMotorCmd msg stored in a list of dicts 
+        Dog_indicate_target_seq: [rad]->[motor_state] x3, mecanumbot_msgs, AccessMotorCmd msg stored in a list of dicts 
+        Dog_indicate_target_times: [s], stored in a list with the same number of elements as corresp. seq 
         Dog_catch_attention_seq: [rad]->[motor_state] x3, mecanumbot_msgs, AccessMotorCmd msg stored in a list of dicts 
+        Dog_catch_attention_times: [s], stored in a list with the same number of elements as corresp. seq
         Dog_look_for_feedback_delay # [s], float
     """
     def __init__(self, name: str, yaml_path: str):
@@ -56,8 +55,11 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
 
         self.blackboard.register_key("Dog_look_for_feedback_delay", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_following_min_threshold", access=py_trees.common.Access.WRITE)
+
         self.blackboard.register_key("Dog_indicate_target_seq", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("Dog_indicate_target_times", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_catch_attention_seq", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("Dog_catch_attention_times", access=py_trees.common.Access.WRITE)
         
     def setup(self, **kwargs):
         with open(self.yaml_path, 'r') as f:
@@ -85,7 +87,7 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
 
         self.blackboard.init_delay = float(raw_params['init_delay'])
         self.blackboard.robot_closeness_threshold = float(raw_params['robot_closeness_threshold'])
-        self.blackboard.target_within_threshold = float(raw_params['target_within_threshold'])
+        self.blackboard.target_reached_threshold = float(raw_params['target_reached_threshold'])
         self.blackboard.Dog_look_for_feedback_delay = float(raw_params['Dog_look_for_feedback_delay'])
 
         target_pos_list = raw_params["target_position"]
@@ -100,7 +102,9 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
         self.blackboard.LED_catch_attention_times = raw_params["LED_catch_attention_times"]
 
         self.blackboard.Dog_indicate_target_seq = [parse_dog(e) for e in raw_params["Dog_indicate_target_seq"]]
+        self.blackboard.Dog_indicate_target_times = raw_params["Dog_indicate_target_times"]
         self.blackboard.Dog_catch_attention_seq = [parse_dog(e) for e in raw_params["Dog_catch_attention_seq"]]
+        self.blackboard.Dog_catch_attention_times = raw_params["Dog_catch_attention_times"]
         self.feedback_message = "ConstantParamsToBlackboard setup complete"
         self.logger.info(self.feedback_message)
 
@@ -109,129 +113,88 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
     def update(self):
         return py_trees.common.Status.SUCCESS      
 
-class SubjectToBlackboard(subscribers.ToBlackboard):
-    def __init__(self, name, topic_name):
-        super(SubjectToBlackboard, self).__init__(name=name,
-                                           topic_name=topic_name,
-                                           topic_type= PoseStamped,
-                                           blackboard_variables={"subject_pose": PoseStamped()},
-                                           clearing_policy=py_trees.common.ClearingPolicy.NEVER
-                                           )
-
-    def setup(self, **kwargs):
-        """
-        Called once when the behaviour is added to the tree.
-        """
-        self.blackboard.subject_pose = PoseStamped()
-        self.blackboard.subject_pose.header.frame_id = "map"
-        self.blackboard.subject_pose.pose.position.x = 0.0
-        self.blackboard.subject_pose.pose.position.y = 0.0
-        self.blackboard.subject_pose.pose.position.z = 0.0
-        self.blackboard.subject_pose.pose.orientation.x = 0.0
-        self.blackboard.subject_pose.pose.orientation.y = 0.0
-        self.blackboard.subject_pose.pose.orientation.z = 0.0
-        self.blackboard.subject_pose.pose.orientation.w = 1.0
-        self.logger.info('SubjectToBlackboard behaviour initialised  entries')
-        self.feedback_message = "SubjectToBlackboard setup complete"
-        self.logger.info(self.feedback_message)
-
-        return True
-    
-    def update(self):
-        """
-        Call the parent to write the raw data to the blackboard
-        """
-        self.logger.debug("%s.update()" % self.__class__.__name__)
-        status = super(SubjectToBlackboard, self).update()
-        if status != py_trees.common.Status.RUNNING:
-            self.node.get_logger().info("SubjectToBlackboard is finished")
-            # else don't do anything in between - i.e. avoid the ping pong problems
-        else: 
-            self.node.get_logger().info("SubjectToBlackboard is running")
-        return status
-
-class RobotToBlackboard(subscribers.ToBlackboard):
-    def __init__(self, name, topic_name):
-        super(RobotToBlackboard, self).__init__(name=name,
-                                           topic_name = topic_name,
-                                           topic_type = PoseStamped,
-                                           blackboard_variables={"robot_pose": PoseStamped()},
-                                           clearing_policy=py_trees.common.ClearingPolicy.NEVER
-                                           )
-
-    def setup(self, **kwargs):
-        """
-        Called once when the behaviour is added to the tree.
-        """
-        self.blackboard.robot_pose = PoseStamped()
-        self.blackboard.robot_pose.header.frame_id = "map"
-        self.blackboard.robot_pose.pose.position.x = 0.0
-        self.blackboard.robot_pose.pose.position.y = 0.0
-        self.blackboard.robot_pose.pose.position.z = 0.0
-        self.blackboard.robot_pose.pose.orientation.x = 0.0
-        self.blackboard.robot_pose.pose.orientation.y = 0.0
-        self.blackboard.robot_pose.pose.orientation.z = 0.0
-        self.blackboard.robot_pose.pose.orientation.w = 1.0
-        self.logger.info('RobotToBlackboard behaviour initialised  entries')
-        self.feedback_message = "RobotToBlackboard setup complete"
-        self.logger.info(self.feedback_message)
-
-        return True
-
-    def update(self):
-        """
-        Call the parent to write the raw data to the blackboard
-        """
-        self.logger.debug("%s.update()" % self.__class__.__name__)
-        status = super(RobotToBlackboard, self).update()
-        if status != py_trees.common.Status.RUNNING:
-            rclpy.loginfo("RobotToBlackboard is finished")
-            # else don't do anything in between - i.e. avoid the ping pong problems
-        else: 
-            rclpy.loginfo("RobotToBlackboard is running")
-        return status
-
-class DistanceToBlackboard(py_trees.behaviour.Behaviour):
+class DistanceToBlackboard(py_trees.behaviour.Behaviour): # Checks done - works
     """
-    Reads blackboard.robot.pose.position, blackboard.target and blackboard.subject.pose.position (Points),
-    computes Euclidean distance for d[tgt, subject]; d[robot, subject];d[robot, tgt], writes:  
-       - blackboard.distance
-       - blackboard.within_threshold (True/False)
+    Reads blackboard.subject_pose and blackboard.target_position, 
+    subscribes to /amcl_pose, computes Euclidean distances, and writes results 
+    to the blackboard.
     """
     def __init__(self, name="ComputeDistance"):
         super().__init__(name)
 
         # create a blackboard client
-        self.blackboard = py_trees.blackboard.BlackboardClient(name=name)
+        self.blackboard = self.attach_blackboard_client(name=name)
 
-        # register the keys we READ
-        self.blackboard.register_key("robot_pose", py_trees.common.Access.READ)
-        self.blackboard.register_key("subject_pose", py_trees.common.Access.READ)
+        # register the keys we READ (excluding robot_pose)
+        #self.blackboard.register_key("subject_position", py_trees.common.Access.READ)
         self.blackboard.register_key("target_position", py_trees.common.Access.READ)
-
         self.blackboard.register_key("robot_closeness_threshold", py_trees.common.Access.READ)
         self.blackboard.register_key("target_reached_threshold", py_trees.common.Access.READ)
 
         # register the keys we WRITE
         self.blackboard.register_key("robot_distance_from_subject", py_trees.common.Access.WRITE)
         self.blackboard.register_key("subject_within_robot_threshold", py_trees.common.Access.WRITE)
-
         self.blackboard.register_key("distance_from_target", py_trees.common.Access.WRITE)
         self.blackboard.register_key("target_within_robot_threshold", py_trees.common.Access.WRITE)
-
         self.blackboard.register_key("target_distance_from_subject", py_trees.common.Access.WRITE)
         self.blackboard.register_key("target_within_subject_threshold", py_trees.common.Access.WRITE)
+        
+        # Internal state for the subscriber
+        self.robot_pose = None
+        self.subscriber = None
     
     def setup(self, **kwargs):
         """
         Called once when the behaviour is added to the tree.
+        The main py_trees_ros Node must be passed via kwargs.
         """
-        #TODO: check how to init read-only blackboard variables
+        # Retrieve the ROS node handle from the setup kwargs
+        try:
+            node = kwargs['node']
+            self.node = node
+        except KeyError:
+            raise KeyError("The 'node' argument was not passed to setup()")
+
+        # Define QoS profile to match the amcl publisher (TRANSIENT_LOCAL)
+        qos_profile = QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST
+        )
+
+        # Create the subscriber using the provided node context
+        self.robot_subscriber = node.create_subscription(
+            PoseWithCovarianceStamped,
+            '/amcl_pose',
+            self.amcl_callback,
+            qos_profile=qos_profile
+        )
+        self.subject_subscriber = node.create_subscription(
+            PoseStamped,
+            '/mecanumbot/subject_pose',
+            self.subject_callback,
+            qos_profile=10
+        )
         self.feedback_message = "DistanceToBlackboard setup complete"
         self.logger.info(self.feedback_message)
         return True
- 
-    def calculate_distance(self, position1, position2):
+
+    def amcl_callback(self, msg: PoseWithCovarianceStamped):
+        """
+        Callback to store the latest robot pose.
+        We only need the Pose component (which contains the position Point).
+        """
+        self.robot_pose = msg.pose.pose # geometry_msgs/Pose
+
+    def subject_callback(self, msg: PoseStamped):
+        """
+        Callback to store the latest subject position.
+        We only need the position Point.
+        """
+        self.subject_position = msg.pose.position # geometry_msgs/Point
+
+    def calculate_distance(self, position1: Point, position2: Point):
         """
         Compute Euclidean distance between two Points
         """
@@ -242,34 +205,51 @@ class DistanceToBlackboard(py_trees.behaviour.Behaviour):
 
     def update(self):
         """
-        Read both poses, compute distance, update blackboard.
+        Read poses, compute distances, update blackboard.
         """
-        robot_position = self.blackboard.robot_pose.pose.position #geometry_msgs/PoseStamped -> Point
-        subject_position = self.blackboard.subject_pose.pose.position #geometry_msgs/PoseStamped -> Point
-        target_pose = self.blackboard.target # geometry_msgs/Point
-
-
-        if robot_position is None or subject_position is None:
-            self.feedback_message = "waiting for poses"
+        # The robot_pose is now stored internally and is a geometry_msgs/Pose
+        robot_pose = self.robot_pose 
+        subject_position = self.subject_position
+        
+        # The subject_pose is still read from the BB, and is a geometry_msgs/PoseStamped
+        try:
+            target_position = self.blackboard.target_position # geometry_msgs/Point
+        except AttributeError:
+            self.feedback_message = "waiting for target data on blackboard"
+            self.node.get_logger().info(self.feedback_message)
             return py_trees.common.Status.RUNNING
 
-        # compute Euclidean distance
-        d_subject = self.calculate_distance(robot_position, subject_position)
-        d_target = self.calculate_distance(robot_position, target_pose)
-        d_subject_target = self.calculate_distance(subject_position, target_pose)
 
-        # write to blackboard
+        if robot_pose is None:
+            self.feedback_message = "waiting for initial robot pose"
+            self.node.get_logger().info(self.feedback_message)
+            return py_trees.common.Status.RUNNING
+        
+        # Get the Point object from the internal robot_pose
+        robot_position = robot_pose.position 
+
+        # --- Distance Calculations ---
+        
+        # 1. Robot to Subject
+        d_subject = self.calculate_distance(robot_position, subject_position)
+        
+        # 2. Robot to Target
+        d_target = self.calculate_distance(robot_position, target_position)
+        
+        # 3. Subject to Target
+        d_subject_target = self.calculate_distance(subject_position, target_position)
+
+        # --- Write to Blackboard ---
+        
         self.blackboard.robot_distance_from_subject = d_subject
         self.blackboard.subject_within_robot_threshold = (d_subject < self.blackboard.robot_closeness_threshold)
 
-        # write to blackboard
-        self.blackboard.robot_distance_from_target = d_target
+        self.blackboard.distance_from_target = d_target
         self.blackboard.target_within_robot_threshold = (d_target < self.blackboard.robot_closeness_threshold)
 
         self.blackboard.target_distance_from_subject = d_subject_target
         self.blackboard.target_within_subject_threshold = (d_subject_target < self.blackboard.target_reached_threshold)
 
-        self.feedback_message = f"""distance from subject = {d_subject:.2f}, within = {self.blackboard.subject_within_threshold}/n 
-                                  distance from target = {d_target:.2f}, within = {self.blackboard.target_within_threshold}"""
-
+        self.feedback_message = f"""d(R, S) = {d_subject:.2f} | d(R, T) = {d_target:.2f} | d(S, T) = {d_subject_target:.2f}"""
+        self.node.get_logger().info(self.feedback_message)
         return py_trees.common.Status.SUCCESS

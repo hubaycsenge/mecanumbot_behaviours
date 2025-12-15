@@ -7,7 +7,7 @@ import py_trees_ros
 
 
 
-class DogBehaviourSequence(py_trees.behaviour.Behaviour):
+class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
 
     def __init__(self, name="DogBehaviourSequence",mode = "indicate_target"):
         super().__init__(name)
@@ -45,6 +45,11 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour):
             "cmd_accessory_pos",
             10
         )
+        self.index = 0
+        self.next_send_time = None
+        
+
+    def initialise(self):
         if self.mode not in ["indicate_target", "catch_attention"]:
             self.node.get_logger().error(f"Unknown Dog behaviour mode: {self.mode}")
         elif self.mode == "indicate_target":
@@ -54,11 +59,8 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour):
         elif self.mode == "catch_attention":
             self.behaviour_seq = self.blackboard.Dog_catch_attention_seq
             self.delay = self.blackboard.Dog_catch_attention_times  # in senconds
-            self.node.get_logger().info("Dog Catch Attention behaviour publisher ready")
-
-    def initialise(self):
-        self.index = 0
-        self.next_send_time = None
+            #self.node.get_logger().info("Dog Catch Attention behaviour publisher ready")
+        
    
     def update(self):
         # Safety checks
@@ -70,31 +72,34 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour):
         # First command
         if self.next_send_time is None:
             self._send_command(now)
+            self.node.get_logger().info(f"Dog behaviour {self.mode} started")
             return py_trees.common.Status.RUNNING
-
+        
         # Wait until delay has passed
         if now < self.next_send_time:
+            self.node.get_logger().info(f"Dog behaviour {self.mode} waiting...")
             return py_trees.common.Status.RUNNING
-
-        # Send next command
-        self._send_command(now)
-
-        # Finished sequence
-        if self.index >= len(self.behaviour_seq):
+        
+        elif self.index < len(self.behaviour_seq): # the commands are being sent out
+            self._send_command(now)
+            self.node.get_logger().info(f"Dog behaviour {self.mode} command {self.index} sent")
+            return py_trees.common.Status.RUNNING
+        
+        elif self.index >= len(self.behaviour_seq):
+            self.node.get_logger().info(f"Dog behaviour {self.mode} completed")
             return py_trees.common.Status.SUCCESS
-
-        return py_trees.common.Status.RUNNING
-
+        
     def _send_command(self, now):
         cmd = self.behaviour_seq[self.index]
         self.publisher.publish(cmd)
 
         # Compute next time
-        self.next_send_time = now + rclpy.time.Time([self.delay[self.index], 0])
-
+        current_delay = rclpy.duration.Duration()
+        current_delay.seconds = self.delay[self.index]
+        self.next_send_time = now + current_delay
         self.index += 1
 
-class DogLookForFeedback(py_trees.behaviour.Behaviour):
+class DogLookForFeedback(py_trees.behaviour.Behaviour): #TODO
 
     def __init__(self, name="DogLookForFeedback"):
         super().__init__(name)
@@ -161,7 +166,7 @@ class DogLookForFeedback(py_trees.behaviour.Behaviour):
 
         return py_trees.common.Status.SUCCESS
     
-class DogCheckSubjectTargetSuccess(py_trees.behaviour.Behaviour):
+class DogCheckSubjectTargetSuccess(py_trees.behaviour.Behaviour): #TODO
 
     def __init__(self, name="CheckSubjectTargetSuccess"):
         super().__init__(name)
@@ -197,7 +202,7 @@ class DogCheckSubjectTargetSuccess(py_trees.behaviour.Behaviour):
             else:
                 return py_trees.common.Status.FAILURE
 
-class DogCheckIfSubjLed(py_trees.behaviour.Behaviour):
+class DogCheckIfSubjLed(py_trees.behaviour.Behaviour): #TODO
 
     def __init__(self, name="CheckSubjectTargetSuccess"):
         super().__init__(name)

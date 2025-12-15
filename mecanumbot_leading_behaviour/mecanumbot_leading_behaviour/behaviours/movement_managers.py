@@ -5,7 +5,7 @@ from geometry_msgs.msg import PoseStamped
 from tf_transformations import quaternion_from_euler, euler_from_quaternion
 
 
-class SubjectToGoalPose(py_trees.behaviour.Behaviour):
+class SubjectToGoalPose(py_trees.behaviour.Behaviour): #TODO
     """
     Reads a PoseStamped 'subject' entry from the blackboard,
     and publishes it as a Nav2 goal pose to /goal_pose.
@@ -95,7 +95,7 @@ class SubjectToGoalPose(py_trees.behaviour.Behaviour):
 
         return py_trees.common.Status.SUCCESS
 
-class TargetToGoalPose(py_trees.behaviour.Behaviour):
+class TargetToGoalPose(py_trees.behaviour.Behaviour): #TODO
     """
     Reads a PoseStamped 'target' from the blackboard and publishes it
     to /goal_pose as a Nav2 goal.
@@ -184,7 +184,7 @@ class TargetToGoalPose(py_trees.behaviour.Behaviour):
         self.publisher.publish(stop)
         self.logger.info("Robot STOP goal published")
 
-class TurnTowardsSubject(py_trees.behaviour.Behaviour):
+class TurnTowardsSubject(py_trees.behaviour.Behaviour): #TODO
     """
     Reads a PoseStamped 'subject' entry from the blackboard,
     and publishes a turn goal position command to face the target.
@@ -247,7 +247,7 @@ class TurnTowardsSubject(py_trees.behaviour.Behaviour):
             f"Published turn command: direction={turn_cmd.pose.orientation}"
         )
 
-class TurnTowardTarget(py_trees.behaviour.Behaviour):
+class TurnTowardTarget(py_trees.behaviour.Behaviour): #TODO
     """
     Reads a Pose 'target' entry from the blackboard,
     and publishes a turn goal position command to face the target.
@@ -311,7 +311,7 @@ class TurnTowardTarget(py_trees.behaviour.Behaviour):
         )
         return py_trees.common.Status.SUCCESS
 
-class CheckApproachSuccess(py_trees.behaviour.Behaviour):
+class CheckApproachSuccess(py_trees.behaviour.Behaviour): #TODO
     """
     Checks if the robot has successfully approached the subject
     based on distance threshold from blackboard entries.
@@ -338,7 +338,7 @@ class CheckApproachSuccess(py_trees.behaviour.Behaviour):
             self.logger.info("Approach  not successful, restarting approach")
             return py_trees.common.Status.FAILURE
 
-class CheckSubjectTargetSuccess(py_trees.behaviour.Behaviour):
+class CheckSubjectTargetSuccess(py_trees.behaviour.Behaviour): #TODO
     """
     Checks if the subject has successfully reached the target
     based on distance threshold from blackboard entries.

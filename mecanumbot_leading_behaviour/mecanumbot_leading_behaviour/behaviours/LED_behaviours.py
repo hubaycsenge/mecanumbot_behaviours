@@ -6,7 +6,7 @@ import py_trees_ros
 
 from mecanumbot_msgs.srv  import GetLedStatus, SetLedStatus
 
-class LED_behaviour_seq(py_trees.behaviour.Behaviour):  
+class LEDBehaviourSequence(py_trees.behaviour.Behaviour):  # Checks done - works
     def __init__(self, name="LEDBehaviourSeq",mode = "catch_attention"):
         super().__init__(name)
 
@@ -36,8 +36,9 @@ class LED_behaviour_seq(py_trees.behaviour.Behaviour):
     def setup(self, **kwargs):
         node = kwargs["node"]
         self.node = node
-
-        self.srv_set = self.node.create_service(SetLedStatus, 'set_led_status', self.set_led_status_callback)
+        self.index = 0
+        self.srv_client = self.node.create_client(SetLedStatus,'/set_led_status')
+        self.next_send_time = None
 
     def initialise(self):
         if self.mode == "indicate_target":
@@ -49,13 +50,10 @@ class LED_behaviour_seq(py_trees.behaviour.Behaviour):
         else:
             self.node.get_logger().error(f"Unknown LED behaviour mode: {self.mode}")
             return
-        
-        self.index = 0
-        self.next_send_time = None
     
     def update(self):
         # Safety checks
-        if not self.behaviour_seq or self.delay is None:
+        if not self.LED_seq or self.delay is None:
             return py_trees.common.Status.RUNNING
 
         now = self.node.get_clock().now()
@@ -64,17 +62,36 @@ class LED_behaviour_seq(py_trees.behaviour.Behaviour):
         if self.next_send_time is None:
             self._send_command(now)
             return py_trees.common.Status.RUNNING
-
+        
         # Wait until delay has passed
         if now < self.next_send_time:
             return py_trees.common.Status.RUNNING
+        
+        elif self.index < len(self.LED_seq): # the commands are being sent out
+            self._send_command(now)
+            return py_trees.common.Status.RUNNING
+        
+        elif self.index >= len(self.LED_seq):
+            return py_trees.common.Status.SUCCESS
+
 
     def _send_command(self, now):
-        cmd = self.LED_seq[self.index]
-        self.publisher.publish(cmd)
 
+        cmd = self.LED_seq[self.index]
+        # Call the service asynchronously
+        future = self.srv_client.call_async(cmd)
+
+        # Optional: store future if you want to check result later
+        self.last_future = future
+        current_delay = rclpy.duration.Duration()
+        current_delay.seconds = self.delay[self.index]
         # Compute next time
-        self.next_send_time = now + rclpy.time.Time([self.delay[self.index], 0])
+        self.node.get_logger().info(f"index: {self.index}")
+        self.node.get_logger().info(f"LED Command sent: {cmd}")
+        #self.node.get_logger().info(f"Waiting for {self.delay[self.index]} seconds until next command.")
+        
+        self.next_send_time = now + current_delay
+        self.node.get_logger().info(f"Next command scheduled at: {self.next_send_time.nanoseconds // 1_000_000_000}.{self.next_send_time.nanoseconds % 1_000_000_000:09d} s, which is in {current_delay.seconds} seconds.")
 
         self.index += 1
 
