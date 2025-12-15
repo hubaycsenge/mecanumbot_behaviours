@@ -5,12 +5,13 @@ from launch.substitutions import LaunchConfiguration
 from ament_index_python.packages import get_package_share_directory
 from launch.actions import DeclareLaunchArgument
 
-
 def generate_launch_description():
 
     param_file = LaunchConfiguration("params")
-    leading_pkg_share_dir =  get_package_share_directory('mecanumbot_leading_behaviour')
-    param_path = os.path.join(leading_pkg_share_dir,'config',"behaviour_setting_constants.yaml")
+    namespace = LaunchConfiguration("namespace")
+
+    leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour')
+    param_path = os.path.join(leading_pkg_share_dir, 'config', "behaviour_setting_constants.yaml")
 
     return LaunchDescription([
         # Allow user to override the param file
@@ -20,12 +21,20 @@ def generate_launch_description():
             description="YAML file with all constant parameters"
         ),
 
-        # Your behaviour-tree node
+        # Allow user to set namespace
+        DeclareLaunchArgument(
+            "namespace",
+            default_value="mecanumbot",
+            description="Namespace for the behaviour node"
+        ),
+
         Node(
             package="mecanumbot_leading_behaviour",
-            executable="bottom_up_tree_node",                # your executable that builds/runs the tree
+            executable="bottom_up_tree_node",
             name="bottom_up_tree_node",
+            namespace=namespace,
             output="screen",
+            remappings= [('/mecanumbot/cmd_vel','/cmd_vel'),('/mecanumbot/cmd_accessory_pos','/cmd_accessory_pos') ],
             parameters=[param_file]
         ),
     ])

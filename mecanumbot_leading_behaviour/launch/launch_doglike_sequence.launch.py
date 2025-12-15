@@ -19,11 +19,7 @@ def generate_launch_description():
             executable='rviz2',
             name='rviz2',
             arguments=['-d', rviz_config_dir],
-            output='screen',
-            remappings=[
-                ('/tf', '/mecanumbot/tf'),
-                ('/tf_static', '/mecanumbot/tf_static'),
-            ]),
+            output='screen'),
     map_name = 'ethodept_old'
     mecanumbot_description_pkg_share = get_package_share_directory('mecanumbot_description')
     param_file = os.path.join(mecanumbot_description_pkg_share, 'param', 'mecanumbot_custom_nav2.yaml')
