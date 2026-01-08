@@ -18,8 +18,8 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
 
     universally needed:
         init_delay: [s], float 
-        robot_closeness_threshold: [m], float 
-        robot_approach_subject_distance: [m], float, desired distance between robot and subject when robot going to subject
+        robot_closeness_threshold: [m], float robot is considered close to subject/target if within this distance
+        robot_approach_distance: [m], float, desired distance between robot and subject when robot going to subject
         target_reached_threshold: [m], float subject reached the target
         target_position: [m] stored in a dict, converted to geometry_msgs Point message 
 
@@ -43,7 +43,7 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard = self.attach_blackboard_client(name=name)
 
         self.blackboard.register_key("init_delay", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("robot_approach_subject_distance", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("robot_approach_distance", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("robot_closeness_threshold", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("target_reached_threshold", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("target_position", access=py_trees.common.Access.WRITE)
@@ -141,6 +141,7 @@ class DistanceToBlackboard(py_trees.behaviour.Behaviour): # Checks done - works
         
         # Internal state for the subscriber
         self.robot_pose = None
+        self.subject_position = None
         self.subscriber = None
     
     def setup(self, **kwargs):
@@ -222,6 +223,10 @@ class DistanceToBlackboard(py_trees.behaviour.Behaviour): # Checks done - works
 
         if robot_pose is None:
             self.feedback_message = "waiting for initial robot pose"
+            self.node.get_logger().info(self.feedback_message)
+            return py_trees.common.Status.RUNNING
+        if subject_position is None:
+            self.feedback_message = "waiting for initial subject pose"
             self.node.get_logger().info(self.feedback_message)
             return py_trees.common.Status.RUNNING
         

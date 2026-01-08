@@ -5,14 +5,16 @@ import py_trees_ros
 from ament_index_python.packages import get_package_share_directory 
 from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourSequence
 from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
-
+from mecanumbot_leading_behaviour.behaviours.movement_managers import SubjectToGoalPose, TargetToGoalPose, \
+                                                                      TurnToward, \
+                                                                      CheckApproachSuccess, CheckSubjectTargetSuccess
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard, \
                                                                         DistanceToBlackboard
 
 leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour') 
 YAML_PATH = os.path.join(leading_pkg_share_dir,'config',"behaviour_setting_constants.yaml") 
 def create_root(): 
-    root = py_trees.composites.Sequence("ROOT", memory = False) 
+    root = py_trees.composites.Sequence("ROOT", memory = True) 
 
     params_loader = ConstantParamsToBlackboard( name="LoadConstantParams", yaml_path=YAML_PATH) 
     delay_timer = py_trees.timers.Timer(name="DelayTimer",  duration=2) 
@@ -22,20 +24,23 @@ def create_root():
 
     
     dog_show_target = DogBehaviourSequence('DB1', 'indicate_target')
-    '''
+    
     dog_catch_att = DogBehaviourSequence('DB2', 'catch_attention')
-    LED_show_target = LEDBehaviourSequence('DB1', 'indicate_target')
-    LED_catch_att = LEDBehaviourSequence('DB2', 'catch_attention')
-    root.add_children([params_loader,delay_timer,dog_catch_att,dog_show_target,LED_catch_att,LED_show_target]) 
-    '''
+    LED_show_target = LEDBehaviourSequence('LB1', 'indicate_target')
+    LED_catch_att = LEDBehaviourSequence('LB2', 'catch_attention')
+    #oot.add_children([params_loader,delay_timer,dog_catch_att,dog_show_target,LED_catch_att,LED_show_target]) 
+    
     distance_to_bb = DistanceToBlackboard(name="DistanceToBB")
-
-    root.add_children([params_loader, delay_timer, distance_to_bb, dog_show_target])
-
-
+    turn_toward_subject = TurnToward(name="TurnTowardSubject",target_type ="subject")
+    turn_toward_target = TurnToward(name="TurnTowardTarget",target_type ="target")
+    target_to_goal = TargetToGoalPose(name="TargetToGoal")    
+    subject_to_goal = SubjectToGoalPose(name="SubjectToGoal")
+    check_subject_target = CheckSubjectTargetSuccess(name="CheckSubjectTargetSuccess")
     
-    
-    
+
+    root.add_children([params_loader, delay_timer, distance_to_bb, turn_toward_subject,turn_toward_target,dog_show_target])
+
+
     return root 
 
 def main(args=None):

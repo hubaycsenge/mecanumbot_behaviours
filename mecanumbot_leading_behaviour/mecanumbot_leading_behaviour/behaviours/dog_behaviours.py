@@ -50,12 +50,14 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
         
 
     def initialise(self):
+        self.index = 0
+        self.next_send_time = None
         if self.mode not in ["indicate_target", "catch_attention"]:
             self.node.get_logger().error(f"Unknown Dog behaviour mode: {self.mode}")
         elif self.mode == "indicate_target":
             self.behaviour_seq = self.blackboard.Dog_indicate_target_seq
             self.delay = self.blackboard.Dog_indicate_target_times  # in senconds
-            self.node.get_logger().info("Dog Indicate Target behaviour publisher ready")
+            #self.node.get_logger().info("Dog Indicate Target behaviour publisher ready")
         elif self.mode == "catch_attention":
             self.behaviour_seq = self.blackboard.Dog_catch_attention_seq
             self.delay = self.blackboard.Dog_catch_attention_times  # in senconds
@@ -77,7 +79,7 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
         
         # Wait until delay has passed
         if now < self.next_send_time:
-            self.node.get_logger().info(f"Dog behaviour {self.mode} waiting...")
+            #self.node.get_logger().info(f"Dog behaviour {self.mode} waiting...")
             return py_trees.common.Status.RUNNING
         
         elif self.index < len(self.behaviour_seq): # the commands are being sent out
@@ -94,9 +96,8 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
         self.publisher.publish(cmd)
 
         # Compute next time
-        current_delay = rclpy.duration.Duration()
-        current_delay.seconds = self.delay[self.index]
-        self.next_send_time = now + current_delay
+        delay_sec =  float(self.delay[self.index])
+        self.next_send_time = now + rclpy.duration.Duration(seconds=delay_sec)
         self.index += 1
 
 class DogLookForFeedback(py_trees.behaviour.Behaviour): #TODO

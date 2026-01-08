@@ -1,15 +1,15 @@
 bottom_up_tree_node:
   ros__parameters:
     init_delay: 1.5
-    robot_approach_subject_distance : 0.25 #TODO: test optimum
+    robot_approach_distance : 0.25 #TODO: test optimum
     robot_closeness_threshold: 0.4 #TODO: test optimum
     target_reached_threshold: 0.4  #TODO: test optimum
     Dog_look_for_feedback_delay: 2.0
 
     target_position:
-      - 1.2 #X
-      - 0.8 #Y
-      - 0.0 #Z
+      - -0.286 #X
+      - 0.2024 #Y
+      - 0.000 #Z
       
     LED_indicate_target_seq:
       - "{'fl':{'mode':1, 'color':1},'fr':{'mode':2, 'color':1},'bl':{'mode':2, 'color':1},'br':{'mode':1, 'color':1}}" #pulse ahead white
