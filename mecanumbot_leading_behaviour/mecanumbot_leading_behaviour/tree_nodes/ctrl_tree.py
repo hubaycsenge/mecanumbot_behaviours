@@ -1,69 +1,56 @@
-import rclpy
-import py_trees
-import py_trees_ros
-from mecanumbot_behaviours.mecanumbot_leading_behaviour.mecanumbot_leading_behaviour.utils.subtrees import create_approach_subject_until_success_subtree
-from mecanumbot_leading_behaviour.behaviours.movement_managers import TargetToGoalPose, TurnTowardsTarget,TurnTowardsSubject
+import os 
+import rclpy 
+import py_trees 
+import py_trees_ros 
+from ament_index_python.packages import get_package_share_directory 
+from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourSequence
+from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
+from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach, \
+                                                                      TurnToward, CheckSubjectTargetSuccess
+from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard, \
+                                                                        DistanceToBlackboard
 
-def create_core_sequence(wait_duration = 1.0):
-    """
-    Creates the core sequence for leading behaviour.
-    """
-    root = py_trees.composites.Sequence("CoreLeadingSequence")
+leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour') 
+YAML_PATH = os.path.join(leading_pkg_share_dir,'config',"behaviour_setting_constants.yaml") 
+def create_root(): 
+    root = py_trees.composites.Sequence("ROOT", memory = True) 
 
-    approach_subject_subtree = create_approach_subject_until_success_subtree()
-    delay_timer = py_trees.timers.Timer(name="CoreDelayTimer", duration=wait_duration)
-    target_to_goal_pose = TargetToGoalPose(name="TargetToGoalPose")
-    turn_towards_target = TurnTowardsTarget(name="TurnTowardsTarget")
-    turn_towards_subject = TurnTowardsSubject(name="TurnTowardsSubject")
+    params_loader = ConstantParamsToBlackboard( name="LoadConstantParams", yaml_path=YAML_PATH) 
+    delay_timer = py_trees.timers.Timer(name="DelayTimer",  duration=2) 
+    ''' 
+    Sanity checks, on tested nodes
+    '''
 
-    root.add_children([
-        target_to_goal_pose,
-        turn_towards_target,
-        delay_timer,
-        approach_subject_subtree,
-        turn_towards_subject,
-        delay_timer
-    ])
+    
+    dog_show_target = DogBehaviourSequence('DB1', 'indicate_target')
+    
+    dog_catch_att = DogBehaviourSequence('DB2', 'catch_attention')
+    LED_show_target = LEDBehaviourSequence('LB1', 'indicate_target')
+    LED_catch_att = LEDBehaviourSequence('LB2', 'catch_attention')
+    #oot.add_children([params_loader,delay_timer,dog_catch_att,dog_show_target,LED_catch_att,LED_show_target]) 
+    
+    distance_to_bb = DistanceToBlackboard(name="DistanceToBB")
+    turn_toward_subject = TurnToward(name="TurnTowardSubject",target_type ="subject")
+    turn_toward_target = TurnToward(name="TurnTowardTarget",target_type ="target")
+    approach_target = Approach(name="ApproachTarget", target_type="target")    
+    approach_subject = Approach(name="ApproachSubject", target_type="subject")
+    check_subject_target = CheckSubjectTargetSuccess(name="CheckSubjectTargetSuccess")
 
-    return root
-
-def create_leading_ctrl_tree(wait_duration = 10.0,time_switch_duration = 1.0):
-    """
-    Creates the control tree for the mecanumbot leading behaviour.
-    """
-    root = py_trees.composites.Sequence("MecanumbotLeadingCtrlTree")
-
-    core_sequence = create_core_sequence(wait_duration = time_switch_duration)
-    delay_timer = py_trees.timers.Timer(name="DelayTimer", duration = wait_duration)
-    repeated_core_sequence = py_trees.decorators.Repeat(name="RepeatCoreSequence", child = core_sequence, num_iterations = 10000000) # TODO have inf retries
-
-    root.add_children([delay_timer,
-                    repeated_core_sequence])
-
-    return root
+    root.add_children([params_loader, delay_timer, distance_to_bb, approach_subject, approach_target])
 
 
+    return root 
 
 def main(args=None):
-    rclpy.init(args=args)
+    rclpy.init(args=args) 
+    
+    tree = create_root() 
+    tree_node = py_trees_ros.trees.BehaviourTree(root=tree)
+    tree_node.setup(timeout=15.0, node_name="bottom_up_tree_node")
+    print("Starting bottom-up behaviour tree...") 
+    # Tick the tree at 10 Hz indefinitely 
+    tree_node.tick_tock(period_ms=10.0)
+    rclpy.spin(tree_node.node)     # <--- keeps node alive
 
-    # Create the tree
-    tree = create_leading_ctrl_tree(wait_duration = 10.0,time_switch_duration = 1.0)
-
-    # Wrap tree in ROS behaviour tree executor
-    tree_node = py_trees_ros.trees.BehaviourTree(tree)
-
-    # Setup lifecycle (similar to ROS nodes)
-    tree_node.setup(timeout=15.0)
-
-    try:
-        tree_node.tick_tock(period_ms=100)  # run tree at 10 Hz
-    except KeyboardInterrupt:
-        pass
-
-    tree_node.shutdown()
-    rclpy.shutdown()
-
-
-if __name__ == "__main__":
+if __name__ == "__main__": 
     main()

@@ -5,9 +5,8 @@ import py_trees_ros
 from ament_index_python.packages import get_package_share_directory 
 from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourSequence
 from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
-from mecanumbot_leading_behaviour.behaviours.movement_managers import SubjectToGoalPose, TargetToGoalPose, \
-                                                                      TurnToward, \
-                                                                      CheckApproachSuccess, CheckSubjectTargetSuccess
+from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach, \
+                                                                      TurnToward, CheckSubjectTargetSuccess
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard, \
                                                                         DistanceToBlackboard
 
@@ -33,12 +32,11 @@ def create_root():
     distance_to_bb = DistanceToBlackboard(name="DistanceToBB")
     turn_toward_subject = TurnToward(name="TurnTowardSubject",target_type ="subject")
     turn_toward_target = TurnToward(name="TurnTowardTarget",target_type ="target")
-    target_to_goal = TargetToGoalPose(name="TargetToGoal")    
-    subject_to_goal = SubjectToGoalPose(name="SubjectToGoal")
+    approach_target = Approach(name="ApproachTarget", target_type="target")    
+    approach_subject = Approach(name="ApproachSubject", target_type="subject")
     check_subject_target = CheckSubjectTargetSuccess(name="CheckSubjectTargetSuccess")
-    
 
-    root.add_children([params_loader, delay_timer, distance_to_bb, turn_toward_subject,turn_toward_target,dog_show_target])
+    root.add_children([params_loader, delay_timer, distance_to_bb, approach_subject, approach_target, dog_show_target])
 
 
     return root 
