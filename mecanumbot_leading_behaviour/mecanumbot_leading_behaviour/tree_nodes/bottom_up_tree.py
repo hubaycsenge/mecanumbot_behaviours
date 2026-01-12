@@ -12,34 +12,52 @@ from mecanumbot_leading_behaviour.behaviours.blackboard_managers import Constant
 
 leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour') 
 YAML_PATH = os.path.join(leading_pkg_share_dir,'config',"behaviour_setting_constants.yaml") 
-def create_root(): 
-    root = py_trees.composites.Sequence("ROOT", memory = True) 
+def create_root():
+    root = py_trees.composites.Sequence("ROOT", memory=True)
 
-    params_loader = ConstantParamsToBlackboard( name="LoadConstantParams", yaml_path=YAML_PATH) 
-    delay_timer = py_trees.timers.Timer(name="DelayTimer",  duration=2) 
-    ''' 
-    Sanity checks, on tested nodes
-    '''
+    params_loader = ConstantParamsToBlackboard(
+        name="LoadConstantParams", yaml_path=YAML_PATH
+    )
 
-    
-    dog_show_target = DogBehaviourSequence('DB1', 'indicate_target')
-    
-    dog_catch_att = DogBehaviourSequence('DB2', 'catch_attention')
-    LED_show_target = LEDBehaviourSequence('LB1', 'indicate_target')
-    LED_catch_att = LEDBehaviourSequence('LB2', 'catch_attention')
-    #oot.add_children([params_loader,delay_timer,dog_catch_att,dog_show_target,LED_catch_att,LED_show_target]) 
-    
-    distance_to_bb = DistanceToBlackboard(name="DistanceToBB")
-    turn_toward_subject = TurnToward(name="TurnTowardSubject",target_type ="subject")
-    turn_toward_target = TurnToward(name="TurnTowardTarget",target_type ="target")
-    approach_target = Approach(name="ApproachTarget", target_type="target")    
+    delay_timer = py_trees.timers.Timer(name="DelayTimer", duration=2)
+
+    LED_show_target = LEDBehaviourSequence('LShow', 'indicate_target')
+    LED_catch_attention = LEDBehaviourSequence('LCatch', 'catch_attention')
+    LED_indicate_near_target = LEDBehaviourSequence('LNear', 'indicate_close_target')
+
+    approach_target = Approach(name="ApproachTarget", target_type="target")
     approach_subject = Approach(name="ApproachSubject", target_type="subject")
-    check_subject_target = CheckSubjectTargetSuccess(name="CheckSubjectTargetSuccess")
+    turn_toward_subject = TurnToward(name="TurnTowardSubject", target_type="subject")
+    turn_toward_target = TurnToward(name="TurnTowardTarget", target_type="target")
 
-    root.add_children([params_loader, delay_timer, distance_to_bb, approach_subject, approach_target, dog_show_target])
+    check_subject_near_target = CheckSubjectTargetSuccess(
+        name="CheckSubjectNearTarget"
+    )
 
+    # Selector will keep showing target until condition succeeds
+    show_until_close = py_trees.composites.Selector(
+        name="ShowUntilSubjectClose",
+        memory=False
+    )
 
-    return root 
+    show_until_close.add_children([
+        check_subject_near_target,
+        turn_toward_subject,
+        LED_catch_attention,
+        turn_toward_target,
+        LED_indicate_near_target
+    ])
+
+    root.add_children([
+        params_loader,
+        delay_timer,
+        approach_subject,
+        approach_target,
+        LED_show_target,
+        show_until_close
+    ])
+
+    return root
 
 def main(args=None):
     rclpy.init(args=args) 
@@ -51,16 +69,6 @@ def main(args=None):
     # Tick the tree at 10 Hz indefinitely 
     tree_node.tick_tock(period_ms=10.0)
     rclpy.spin(tree_node.node)     # <--- keeps node alive
-    '''try: 
-        # Tick the tree at 10 Hz indefinitely 
-        tree_node.tick_tock(period_ms=1000.0)
-        rclpy.spin(tree_node.node)     # <--- keeps node alive
-    except KeyboardInterrupt: pass 
-
-    finally: 
-        print("Ticking failed, shutting down")
-        tree_node.shutdown() 
-        rclpy.shutdown() '''
 
 if __name__ == "__main__": 
     main()

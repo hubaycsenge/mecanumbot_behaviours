@@ -47,6 +47,9 @@ class LEDBehaviourSequence(py_trees.behaviour.Behaviour):  # Checks done - works
         elif self.mode == "catch_attention":
             self.LED_seq = self.blackboard.LED_catch_attention_seq
             self.delay = self.blackboard.LED_catch_attention_times  # [s]
+        elif self.mode == "indicate_close_target":
+            self.LED_seq = self.blackboard.LED_indicate_close_target_seq
+            self.delay = self.blackboard.LED_indicate_close_target_times  # [s]
         else:
             self.node.get_logger().error(f"Unknown LED behaviour mode: {self.mode}")
             return

@@ -1,8 +1,7 @@
 import ast
 import math
 import py_trees
-from  py_trees_ros import subscribers
-from geometry_msgs.msg import PoseStamped, Pose, PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 import py_trees
 import yaml
@@ -43,15 +42,19 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard = self.attach_blackboard_client(name=name)
 
         self.blackboard.register_key("init_delay", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("robot_approach_distance", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("robot_closeness_threshold", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("target_reached_threshold", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("LED_start_setting", access=py_trees.common.Access.WRITE)
+        
+        self.blackboard.register_key("robot_approach_distance", access=py_trees.common.Access.WRITE) #how much a robot should go at once if it checks for following
+        self.blackboard.register_key("robot_closeness_threshold", access=py_trees.common.Access.WRITE) #how close the robot should approach
+        self.blackboard.register_key("target_reached_threshold", access=py_trees.common.Access.WRITE) #how close the subject should be to the target to consider it reached
         self.blackboard.register_key("target_position", access=py_trees.common.Access.WRITE)
 
         self.blackboard.register_key("LED_indicate_target_seq", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("LED_catch_attention_seq", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("LED_indicate_close_target_seq", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("LED_indicate_target_times", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("LED_catch_attention_times", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("LED_indicate_close_target_times", access=py_trees.common.Access.WRITE)
 
         self.blackboard.register_key("Dog_look_for_feedback_delay", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_following_min_threshold", access=py_trees.common.Access.WRITE)
@@ -86,6 +89,8 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         raw_params = raw_params['bottom_up_tree_node']['ros__parameters']
 
         self.blackboard.init_delay = float(raw_params['init_delay'])
+        self.blackboard.LED_start_setting = parse_led(raw_params['LED_start_setting'])[0]
+
         self.blackboard.robot_closeness_threshold = float(raw_params['robot_closeness_threshold'])
         self.blackboard.target_reached_threshold = float(raw_params['target_reached_threshold'])
         self.blackboard.Dog_look_for_feedback_delay = float(raw_params['Dog_look_for_feedback_delay'])
@@ -105,12 +110,17 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.Dog_indicate_target_times = raw_params["Dog_indicate_target_times"]
         self.blackboard.Dog_catch_attention_seq = [parse_dog(e) for e in raw_params["Dog_catch_attention_seq"]]
         self.blackboard.Dog_catch_attention_times = raw_params["Dog_catch_attention_times"]
+
+        self.srv_client = self.node.create_client(SetLedStatus,'/set_led_status')
         self.feedback_message = "ConstantParamsToBlackboard setup complete"
         self.logger.info(self.feedback_message)
 
         return True
     
     def update(self):
+        cmd = self.blackboard.LED_start_setting
+        # Call the service asynchronously
+        future = self.srv_client.call_async(cmd)
         return py_trees.common.Status.SUCCESS      
 
 class DistanceToBlackboard(py_trees.behaviour.Behaviour): # Checks done - works
@@ -128,7 +138,7 @@ class DistanceToBlackboard(py_trees.behaviour.Behaviour): # Checks done - works
         # register the keys we READ (excluding robot_pose)
         #self.blackboard.register_key("subject_position", py_trees.common.Access.READ)
         self.blackboard.register_key("target_position", py_trees.common.Access.READ)
-        self.blackboard.register_key("robot_closeness_threshold", py_trees.common.Access.READ)
+        self.blackboard.register_key("robot_closeness_threshold", py_trees.common.Access.READ) 
         self.blackboard.register_key("target_reached_threshold", py_trees.common.Access.READ)
 
         # register the keys we WRITE

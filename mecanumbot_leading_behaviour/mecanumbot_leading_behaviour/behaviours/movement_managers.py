@@ -186,7 +186,7 @@ class TurnToward(py_trees.behaviour.Behaviour): # Tested, works
 
 class Approach(py_trees.behaviour.Behaviour): # TODO
 
-    def __init__(self, name="Approach", target_type="subject",mode ="exact", threshold_distance=0.3):
+    def __init__(self, name="Approach", target_type="subject", mode ="exact"):
         super().__init__(name)
 
         # Create the ROS publisher
@@ -195,10 +195,11 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
         self.robot_pose = None
         self.robot_orientation = None
         self.mode = mode
-        self.threshold_distance = threshold_distance
         # Blackboard
         self.blackboard = self.attach_blackboard_client(name=name)
         self.blackboard.register_key(key="target_position", access=py_trees.common.Access.READ)
+        self.blackboard.register_key(key="robot_closeness_threshold", access=py_trees.common.Access.READ) #stop_threshold
+        self.blackboard.register_key(key="robot_approach_distance", access=py_trees.common.Access.READ) #go_threshold
         
         self.turning = False
         self.target_type = target_type
@@ -322,8 +323,10 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
         return False
     
     def send_goal_command(self):
+        stop_threshold = self.blackboard.robot_closeness_threshold
+        go_threshold = self.blackboard.robot_approach_distance
         """Helper to create and publish the command with fresh timestamp"""
-        desired_pose = pose_to_goal(self.compare_position, self.robot_pose, self.threshold_distance, mode=self.mode)
+        desired_pose = pose_to_goal(self.compare_position, self.robot_pose, stop_threshold, mode=self.mode, go_threshold)
         
         self.goal_cmd = PoseStamped()
         self.goal_cmd.header.frame_id = "map"
@@ -359,22 +362,40 @@ class CheckSubjectTargetSuccess(py_trees.behaviour.Behaviour): #TODO
 
         # Blackboard keys
         self.blackboard = self.attach_blackboard_client(name=name)
-        self.blackboard.register_key(
-            key="target_within_subject_threshold",
-            access=py_trees.common.Access.READ
+        self.blackboard.register_key(key="target_reached_threshold",access=py_trees.common.Access.READ)
+        self.blackboard.register_key(key="target_position",access=py_trees.common.Access.READ)
+
+
+    def setup(self, **kwargs):
+        node = kwargs["node"]
+        self.node = node
+        
+        self.subject_subscriber = node.create_subscription(
+            PoseStamped,
+            "/mecanumbot/subject_pose",
+            self.subject_callback,
+            10
         )
+        
+        self.logger.info(f"{self.name}: Setup complete")
 
     def update(self):
-
-        if self.blackboard.target_within_subject_threshold is None:
-            self.logger.info("No distance info yet")
-            return py_trees.common.Status.FAILURE
-        if self.blackboard.target_within_subject_threshold:
-            self.logger.info("Subject reached target: within threshold")
+        if self.subject_pose is None:
+            self.node.get_logger().info(f"{self.name}: No subject pose received yet")
+            return py_trees.common.Status.RUNNING
+        if self.blackboard.target_reached_threshold>=self.dist:
+            self.node.get_logger().info(f"{self.name}: Subject reached target: within threshold")
             return py_trees.common.Status.SUCCESS
         else:
-            self.logger.info("Subject has not reached target yet")
+            self.node.get_logger().info(f"{self.name}: Subject has not reached target yet")
             return py_trees.common.Status.FAILURE
+
+    def subject_callback(self, msg):
+        self.subject_pose = msg
+        target_position = self.blackboard.target_position
+        dx = target_position.x - self.subject_pose.pose.position.x
+        dy = target_position.y - self.subject_pose.pose.position.y
+        self.dist = math.sqrt(dx*dx + dy*dy)
 
 def calculate_facing_orientation(robot_pose, target_position):
     # 1. Vector FROM Robot TO Target (Target - Robot)
@@ -396,7 +417,7 @@ def calculate_facing_orientation(robot_pose, target_position):
     
     return orientation
 
-def pose_to_goal(object_position,robot_pose,threshold_distance = 0.3, mode="exact"):
+def pose_to_goal(object_position,robot_pose,stop_threshold = 0.3, mode="exact", go_threshold = 1.0):
             
             Ox = object_position.x
             Oy = object_position.y
@@ -408,16 +429,21 @@ def pose_to_goal(object_position,robot_pose,threshold_distance = 0.3, mode="exac
             dist = math.sqrt(dx*dx + dy*dy)
 
             # If already too close, do nothing
-            if dist < threshold_distance:
+            if dist < stop_threshold:
                 return robot_pose
 
             # Compute approach position
-            if mode == "exact": # go [threshold_distance] near to object
-                X = Rx + dx*(1-threshold_distance/dist) 
-                Y = Ry + dy*(1-threshold_distance/dist) 
-            elif mode == "fixed_distance": # go [threshold_distance] away from robot
-                X = Rx + dx*(threshold_distance/dist) 
-                Y = Ry + dy*(threshold_distance/dist) 
+            if mode == "exact": # go [stop_threshold] near to object
+                X = Rx + dx*(1-stop_threshold/dist) 
+                Y = Ry + dy*(1-stop_threshold/dist) 
+
+            elif mode == "fixed_distance": # go [go_threshold] closer to object, except if too close to object, then go to [stop_threshold]
+                if dist < go_threshold:
+                    X = Rx + dx*(1-stop_threshold/dist) 
+                    Y = Ry + dy*(1-stop_threshold/dist)
+                else:
+                    X = Rx + dx*(go_threshold/dist) 
+                    Y = Ry + dy*(go_threshold/dist) 
             # Orientation: face the person
             yaw = math.atan2(Oy - Y, Ox - X)
             q = quaternion_from_euler(0, 0, yaw)
