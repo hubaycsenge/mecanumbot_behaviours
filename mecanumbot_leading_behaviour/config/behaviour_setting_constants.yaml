@@ -1,10 +1,11 @@
 bottom_up_tree_node:
   ros__parameters:
     init_delay: 1.5
-    robot_approach_distance : 0.5 #TODO: test optimum
-    robot_closeness_threshold: 0.25 #TODO: test optimum
-    target_reached_threshold: 0.4  #TODO: test optimum
-    Dog_look_for_feedback_delay: 2.0
+    robot_closeness_threshold: 0.25 #minimum approach distance of the robot, we do not want to hit subject or targetTODO: test optimum
+    target_reached_threshold: 0.5  # the critical distance of target and subject to tell if reached TODO: test optimum
+    robot_approach_distance : 0.5 #how much the robot should go at once in dog condition TODO: test optimum
+    Dog_following_max_threshold: 0.20 # maximum distance difference allowed to still consider following 
+    Dog_max_wander_allowed: 5 # maximum allowed wander count before considering the subject lost
 
     target_position:
       - -0.286 #X

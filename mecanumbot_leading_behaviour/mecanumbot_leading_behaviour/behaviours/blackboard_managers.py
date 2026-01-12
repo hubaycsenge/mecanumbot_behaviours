@@ -56,8 +56,8 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.register_key("LED_catch_attention_times", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("LED_indicate_close_target_times", access=py_trees.common.Access.WRITE)
 
-        self.blackboard.register_key("Dog_look_for_feedback_delay", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("Dog_following_min_threshold", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("Dog_following_max_threshold", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("Dog_lost_subject_distance_threshold", access=py_trees.common.Access.WRITE)
 
         self.blackboard.register_key("Dog_indicate_target_seq", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_indicate_target_times", access=py_trees.common.Access.WRITE)
@@ -93,7 +93,6 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
 
         self.blackboard.robot_closeness_threshold = float(raw_params['robot_closeness_threshold'])
         self.blackboard.target_reached_threshold = float(raw_params['target_reached_threshold'])
-        self.blackboard.Dog_look_for_feedback_delay = float(raw_params['Dog_look_for_feedback_delay'])
 
         target_pos_list = raw_params["target_position"]
         self.blackboard.target_position = Point()
@@ -105,6 +104,9 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.LED_catch_attention_seq = [parse_led(e) for e in raw_params["LED_catch_attention_seq"]]
         self.blackboard.LED_indicate_target_times = raw_params["LED_indicate_target_times"]
         self.blackboard.LED_catch_attention_times = raw_params["LED_catch_attention_times"]
+
+        self.blackboard.Dog_following_max_threshold = float(raw_params["Dog_following_max_threshold"])
+        self.blackboard.Dog_lost_subject_distance_threshold = float(raw_params["Dog_lost_subject_distance_threshold"])
 
         self.blackboard.Dog_indicate_target_seq = [parse_dog(e) for e in raw_params["Dog_indicate_target_seq"]]
         self.blackboard.Dog_indicate_target_times = raw_params["Dog_indicate_target_times"]

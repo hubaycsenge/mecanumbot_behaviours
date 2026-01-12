@@ -35,18 +35,24 @@ def create_root():
     )
 
     # Selector will keep showing target until condition succeeds
-    show_until_close = py_trees.composites.Selector(
-        name="ShowUntilSubjectClose",
-        memory=False
+    show_while_close_seq = py_trees.composites.Sequence(
+        name="ShowWhileSubjectClose",
+        memory=True
     )
 
-    show_until_close.add_children([
+    show_while_close_seq.add_children([
         check_subject_near_target,
         turn_toward_subject,
         LED_catch_attention,
         turn_toward_target,
         LED_indicate_near_target
     ])
+    
+    show_while_close_loop = py_trees.decorators.Repeat(
+        name="ShowWhileCloseLoop",
+        child=show_while_close_seq,
+        num_successes=-1 
+    )
 
     root.add_children([
         params_loader,
@@ -54,7 +60,7 @@ def create_root():
         approach_subject,
         approach_target,
         LED_show_target,
-        show_until_close
+        show_while_close_loop
     ])
 
     return root

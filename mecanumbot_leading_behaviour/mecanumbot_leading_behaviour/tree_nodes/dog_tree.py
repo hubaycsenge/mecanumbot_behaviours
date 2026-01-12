@@ -1,100 +1,122 @@
-import rclpy
-import py_trees
-import py_trees_ros
-from mecanumbot_behaviours.mecanumbot_leading_behaviour.mecanumbot_leading_behaviour.utils.subtrees import create_approach_subject_until_success_subtree,create_indicate_target_subtree
-from mecanumbot_leading_behaviour.behaviours.movement_managers import TargetToGoalPose, \
-                                                                     TurnTowardsTarget, \
-                                                                     TurnTowardsSubject, \
-                                                                     CheckSubjectTargetSuccess
-from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogIndicateTarget, \
-                                                                   DogLookForFeedback,\
-                                                                   DogCatchAttention,\
-                                                                   DogCheckIfSubjLed, \
-                                                                   DogCheckSubjectTargetSuccess
+import os 
+import rclpy 
+import py_trees 
+import py_trees_ros 
+from ament_index_python.packages import get_package_share_directory 
+from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourSequence, DogCheckFollowing, DogCheckIfReached
+from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach, \
+                                                                      TurnToward, CheckSubjectTargetSuccess
+from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard
 
-def create_core_sequence(wait_duration = 1.0,feedback_duration = 2.0):
+leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour') 
+YAML_PATH = os.path.join(leading_pkg_share_dir,'config',"behaviour_setting_constants.yaml") 
+def create_root():
+    root = py_trees.composites.Sequence("ROOT", memory=True)
 
-    root = py_trees.composites.Sequence("CoreLeadingSequence")
+    params_loader = ConstantParamsToBlackboard(
+        name="LoadConstantParams", yaml_path=YAML_PATH
+    )
 
-    approach_subject_subtree = create_approach_subject_until_success_subtree()
-    delay_timer = py_trees.timers.Timer(name="CoreDelayTimer", duration = wait_duration)
+    delay_timer = py_trees.timers.Timer(name="DelayTimer", duration=2)
 
-    target_to_goal_pose = TargetToGoalPose(name="TargetToGoalPose",timeout_sec = feedback_duration)
-    turn_towards_target = TurnTowardsTarget(name="TurnTowardsTarget")
-    turn_towards_subject = TurnTowardsSubject(name="TurnTowardsSubject")
+    Dog_show_target = DogBehaviourSequence('DShow', 'indicate_target')
+    Dog_catch_attention = DogBehaviourSequence('DCatch', 'catch_attention')
+    Dog_check_following = DogCheckFollowing(name="DogCheckFollowing")
+    Dog_check_if_target_reached = DogCheckIfReached(name="DogCheckIfTargetReached")
 
-    catch_attention = DogCatchAttention(name="DogCatchAttention")
-    look_for_feedback = DogLookForFeedback(name="DogLookForFeedback")
-    check_if_subj_led = DogCheckIfSubjLed(name="DogCheckIfSubjectLed")
-    dog_check_subject_target_success = DogCheckSubjectTargetSuccess(name="DogCheckSubjectTargetSuccess")
-    indicate_target = create_indicate_target_subtree(condition='Dog')
+    approach_target_step = Approach(name="ApproachTarget", target_type="target",mode="fixed_distance")
+    approach_subject = Approach(name="ApproachSubject", target_type="subject")
 
-    approach_subject_catch_attention_subtree = py_trees.composites.Sequence("ApproachSubjectCatchAttentionSequence")
-    approach_subject_catch_attention_subtree.add_children([
-        approach_subject_subtree,
-        turn_towards_subject,
-        catch_attention
+    turn_toward_subject = TurnToward(name="TurnTowardSubject", target_type="subject")
+    turn_toward_target = TurnToward(name="TurnTowardTarget", target_type="target")
+
+    check_subject_near_target = CheckSubjectTargetSuccess(name="CheckSubjectNearTarget")
+
+    # Approach subject and catch attention
+    seek_attention = py_trees.composites.Sequence(
+        name="SeekAttention",
+        memory=True
+    )
+    seek_attention.add_children([
+        approach_subject,
+        turn_toward_subject,
+        Dog_catch_attention
     ])
+
+    # Indicate close target until subject is close enough
+    show_while_close_seq = py_trees.composites.Sequence(
+        name="ShowWhileSubjectCloseSeq",
+        memory=True
+    )
+
+    show_while_close_seq.add_children([
+        check_subject_near_target,
+        turn_toward_subject,
+        Dog_catch_attention,
+        turn_toward_target,
+        Dog_show_target
+    ]) 
+
+    show_while_close_loop = py_trees.decorators.Repeat(
+        name="ShowWhileCloseLoop",
+        child=show_while_close_seq,
+        num_successes=-1 
+    )
     
-    lead_with_feedback_subtree = py_trees.composites.Sequence("LeadWithFeedbackSequence")
-    lead_with_feedback_subtree.add_children([
-        target_to_goal_pose,
-        look_for_feedback,
-        check_if_subj_led,
-        turn_towards_subject     
-    ])
-    lead_with_feedback_repeats = py_trees.decorators.Repeat(name="LeadWithFeedbackRepeats", child=lead_with_feedback_subtree, num_iterations=50)
+    # Check following, go a step forward if so
+    lead_until_follows_seq = py_trees.composites.Sequence(
+        name="LeadUntilFollows",
+        memory=True
+    )
+    lead_until_follows_seq.add_children([
+        Dog_check_following,
+        approach_target_step,
+    ]) 
 
-    lead_handlelost_subtree = py_trees.composites.Sequence("LeadHandleLostSequence")
-    lead_handlelost_subtree.add_children([
-        approach_subject_catch_attention_subtree, 
-        lead_with_feedback_repeats,
-        dog_check_subject_target_success
+    lead_until_follows_loop = py_trees.decorators.Repeat(
+        name="LeadUntilFollowsLoop",
+        child=lead_until_follows_seq,
+        num_successes=-1
+    )
+    lead_to_target_seq = py_trees.composites.Sequence(
+        name="LeadToTargetSeq",
+        memory=True
+    )  
+    
+    # seek attention, then lead until follows, check if reached target, retry until target reached
+    lead_to_target_seq.add_children([
+        seek_attention,
+        lead_until_follows_loop,
+        Dog_check_if_target_reached
     ])
-    lead_handlelost_retries = py_trees.decorators.Retry(name="LeadHandleLostRetries", child=lead_handlelost_subtree, num_iterations=100000)
+
+    lead_to_target_loop = py_trees.decorators.Retry(
+        name="LeadToTargetLoop",
+        child=lead_to_target_seq,
+        num_failures=-1
+    )
 
     root.add_children([
-        lead_handlelost_retries,
-        indicate_target,
-        delay_timer
+        params_loader,
+        delay_timer,
+        lead_to_target_loop,
+        show_while_close_loop
     ])
-    return root
-
-def create_leading_ctrl_tree(wait_duration = 10.0,time_switch_duration = 1.0,feedback_duration = 2.0):
-    """
-    Creates the control tree for the mecanumbot leading behaviour.
-    """
-    root = py_trees.composites.Sequence("MecanumbotLeadingDogTree")
-
-    core_sequence = create_core_sequence(wait_duration = time_switch_duration,feedback_duration = feedback_duration)
-    delay_timer = py_trees.timers.Timer(name="DelayTimer", duration = wait_duration)
-    repeated_core_sequence = py_trees.decorators.Repeat(name="RepeatCoreSequence", child = core_sequence, num_iterations = 10000000) # TODO have inf retries
-
-    root.add_children([delay_timer,
-                    repeated_core_sequence])
 
     return root
 
 def main(args=None):
-    rclpy.init(args=args)
+    rclpy.init(args=args) 
+    
+    tree = create_root() 
+    tree_node = py_trees_ros.trees.BehaviourTree(root=tree)
+    tree_node.setup(timeout=15.0, node_name="bottom_up_tree_node")
+    print("Starting bottom-up behaviour tree...") 
+    # Tick the tree at 10 Hz indefinitely 
+    tree_node.tick_tock(period_ms=10.0)
+    rclpy.spin(tree_node.node)     # <--- keeps node alive
 
-    # Create the tree
-    tree = create_leading_ctrl_tree(wait_duration = 10.0,time_switch_duration = 1.0)
-
-    # Wrap tree in ROS behaviour tree executor
-    tree_node = py_trees_ros.trees.BehaviourTree(tree)
-
-    # Setup lifecycle (similar to ROS nodes)
-    tree_node.setup(timeout=15.0)
-
-    try:
-        tree_node.tick_tock(period_ms=100)  # run tree at 10 Hz
-    except KeyboardInterrupt:
-        pass
-
-    tree_node.shutdown()
-    rclpy.shutdown()
-
-
-if __name__ == "__main__":
+if __name__ == "__main__": 
     main()
+
+    

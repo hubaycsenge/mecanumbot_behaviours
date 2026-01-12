@@ -1,10 +1,12 @@
 from mecanumbot_msgs.msg import AccessMotorCmd
+from geometry_msgs.msg import PoseStamped
 import rclpy
 from rclpy.node import Node
 import numpy as np
 import py_trees
 import py_trees_ros
-
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
+from geometry_msgs.msg import PoseStamped,PoseWithCovarianceStamped,Pose
 
 
 class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
@@ -46,8 +48,7 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
             10
         )
         self.index = 0
-        self.next_send_time = None
-        
+        self.next_send_time = None       
 
     def initialise(self):
         self.index = 0
@@ -62,8 +63,7 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
             self.behaviour_seq = self.blackboard.Dog_catch_attention_seq
             self.delay = self.blackboard.Dog_catch_attention_times  # in senconds
             #self.node.get_logger().info("Dog Catch Attention behaviour publisher ready")
-        
-   
+    
     def update(self):
         # Safety checks
         if not self.behaviour_seq or self.delay is None:
@@ -100,141 +100,133 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
         self.next_send_time = now + rclpy.duration.Duration(seconds=delay_sec)
         self.index += 1
 
-class DogLookForFeedback(py_trees.behaviour.Behaviour): #TODO
+class DogCheckFollowing(py_trees.behaviour.Behaviour): # TODO
 
-    def __init__(self, name="DogLookForFeedback"):
+    def __init__(self, name="DogCheckFollowing"):
         super().__init__(name)
 
         # Blackboard keys
         self.blackboard = self.attach_blackboard_client(name=name)
-
+        self.blackboard.register_key(key="target_position", access=py_trees.common.Access.READ)
         self.blackboard.register_key(
-            key="target_within_subject_threshold", # bool
-            access=py_trees.common.Access.READ
-        )        
-        self.blackboard.register_key(
-            key = "target_distance_from_subject", # True/False
+            key="Dog_following_max_threshold", 
             access=py_trees.common.Access.READ
         )
-
         self.blackboard.register_key(
-            key="dog_leading_status", # reached/leading/lost
-            access=py_trees.common.Access.WRITE
-        )
-        self.blackboard.register_key(
-            key="dog_last_target_distance_from_subject", # float
-            access=py_trees.common.Access.WRITE
-        )
-        self.blackboard.register_key(
-            key="Dog_following_min_threshold", # [m]
+            key="Dog_max_wander_allowed", 
             access=py_trees.common.Access.READ
+        )
+        self.blackboard.register_key(
+            key="last_distance",
+            access = py_trees.common.Access.WRITE
         )
 
     def setup(self, **kwargs):
-        """
-        Called once by py_trees_ros after ROS init.
-        Create publisher here.
-        """
         node = kwargs["node"]
-        self.target_within_subject_threshold = self.blackboard.target_reached_within_threshold
-        self.target_distance_from_subject = self.blackboard.target_distance_from_subject
-        self.logger.info("Turn command publisher ready")
-    
-    def update(self):
-        """
-        Read target-subject distance from blackboard and decide if feedback is needed.
-        """
-        self.target_within_subject_threshold = self.blackboard.target_reached_within_threshold
-        self.target_distance_from_subject = self.blackboard.target_distance_from_subject
-
-        if self.target_within_subject_threshold is None or self.target_distance_from_subject is None:
-            self.logger.warn("No target-subject distance on blackboard yet")
-            return py_trees.common.Status.FAILURE
-        else:
-            if self.target_within_subject_threshold: # If the suject reached the target
-                self.blackboard.dog_last_target_distance_from_subject
-                self.blackboard.dog_leading_status = "reached"
-            else:
-                if self.blackboard.dog_last_target_distance_from_subject is None: #first time checking
-                    self.blackboard.dog_last_target_distance_from_subject = self.target_distance_from_subject
-                    self.blackboard.dog_leading_status = "leading"
-                elif self.target_distance_from_subject - self.blackboard.dog_last_target_distance_from_subject  > self.blackboard.Dog_following_min_threshold: # subject going away
-                    self.blackboard.dog_last_target_distance_from_subject = self.target_distance_from_subject
-                    self.blackboard.dog_leading_status = "lost"
-                else: # subject following
-                    self.blackboard.dog_last_target_distance_from_subject = self.target_distance_from_subject
-                    self.blackboard.dog_leading_status = "leading"
-
-        return py_trees.common.Status.SUCCESS
-    
-class DogCheckSubjectTargetSuccess(py_trees.behaviour.Behaviour): #TODO
-
-    def __init__(self, name="CheckSubjectTargetSuccess"):
-        super().__init__(name)
-
-        # Blackboard keys
-        self.blackboard = self.attach_blackboard_client(name=name)
-        self.blackboard.register_key(
-            key="dog_leading_status", # True/False 
-            access=py_trees.common.Access.READ
+        self.node = node
+        
+        self.subject_subscriber = node.create_subscription(
+            PoseStamped,
+            "/mecanumbot/subject_pose",
+            self.subject_callback,
+            10
         )
+        self.wanders = 0
 
-    def setup(self, **kwargs):
-        """
-        Called once by py_trees_ros after ROS init.
-        Create publisher here.
-        """
-        node = kwargs["node"]
-
+    def initialise(self):
+        self.current_distance = None
     
     def update(self):
-        """
-        Read target_reached_within_threshold from blackboard and decide if target is reached.
-        """
+        distance = self.current_distance
+        last_distance = self.blackboard.last_distance
 
-        leading_status = self.blackboard.dog_leading_status
+        distance_diff = distance - last_distance
 
-        if leading_status is None:
-            self.logger.warn("No  leading status on blackboard yet")
-            return py_trees.common.Status.FAILURE
-        else:
-            if leading_status == "reached":
-                return py_trees.common.Status.SUCCESS
-            else:
-                return py_trees.common.Status.FAILURE
-
-class DogCheckIfSubjLed(py_trees.behaviour.Behaviour): #TODO
-
-    def __init__(self, name="CheckSubjectTargetSuccess"):
-        super().__init__(name)
-
-        # Blackboard keys
-        self.blackboard = self.attach_blackboard_client(name=name)
-        self.blackboard.register_key(
-            key="dog_leading_status", # True/False 
-            access=py_trees.common.Access.READ
-        )
-
-    def setup(self, **kwargs):
-        """
-        Called once by py_trees_ros after ROS init.
-        Create publisher here.
-        """
-        node = kwargs["node"]
-
-    
-    def update(self):
-        """
-        Read target_reached_within_threshold from blackboard and decide if target is reached.
-        """
-
-        leading_status = self.blackboard.dog_leading_status
-
-        if leading_status is None:
-            self.logger.warn("No leading status on blackboard yet")
+        if distance is None:
+            self.node.get_logger().info("DogCheckFollowing: No distance data yet")
             return py_trees.common.Status.RUNNING
+        if distance_diff > 0:
+            self.wanders += 1
+        if self.wanders > self.blackboard.Dog_max_wander_allowed:
+            self.node.get_logger().info("DogCheckFollowing: Subject wandered too much, lost")
+            return py_trees.common.Status.FAILURE
+        elif distance_diff > self.blackboard.Dog_following_max_threshold:
+            self.node.get_logger().info(f"DogCheckFollowing: Subject too far, distance increased by {distance_diff:.2f} m")
+            self.blackboard.last_distance = distance
+            return py_trees.common.Status.FAILURE
+        elif distance_diff <= self.blackboard.Dog_following_max_threshold:
+            self.node.get_logger().info(f"DogCheckFollowing: Following OK, distance change {distance_diff:.2f} m")
+            self.blackboard.last_distance = distance
+            return py_trees.common.Status.SUCCESS
+    
+    def subject_callback(self, msg):
+        subject_pos = msg.pose.position
+        target_pos = self.blackboard.target_position
+
+        dist = np.sqrt(
+            (subject_pos.x - target_pos.x) ** 2 +
+            (subject_pos.y - target_pos.y) ** 2
+        )
+
+        # Update last distance
+        self.current_distance = dist
+
+class DogCheckIfReached(py_trees.behaviour.Behaviour): # TODO 
+
+    def __init__(self, name="DogCheckFollowing"):
+        super().__init__(name)
+
+        # Blackboard keys
+        self.blackboard = self.attach_blackboard_client(name=name)
+        self.blackboard.register_key(key="target_position", access=py_trees.common.Access.READ)
+        self.blackboard.register_key(
+            key="robot_closeness_threshold", 
+            access=py_trees.common.Access.READ
+        )
+    def setup(self, **kwargs):
+        node = kwargs["node"]
+        self.node = node
+        
+        qos_profile = QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST
+        )
+
+        self.robot_subscriber = node.create_subscription(
+            PoseWithCovarianceStamped,
+            "/amcl_pose",
+            self.amcl_callback,
+            qos_profile
+        )
+        return super().setup(**kwargs)
+    
+    def initialise(self):
+        self.current_distance = None
+
+    def update(self):
+        distance = self.current_distance
+
+        if distance is None:
+            self.node.get_logger().info("DogCheckIfReached: No distance data yet")
+            return py_trees.common.Status.RUNNING
+        elif distance <= self.blackboard.robot_closeness_threshold:
+            self.node.get_logger().info(f"DogCheckIfReached: Target reached, distance {distance:.2f} m")
+            return py_trees.common.Status.SUCCESS
         else:
-            if leading_status == "leading":
-                return py_trees.common.Status.SUCCESS
-            else:
-                return py_trees.common.Status.FAILURE
+            self.node.get_logger().info(f"DogCheckIfReached: Target not reached yet, distance {distance:.2f} m")
+            return py_trees.common.Status.FAILURE
+        
+    def amcl_callback(self, msg):
+        robot_pos = msg.pose.pose.position
+        target_pos = self.blackboard.target_position
+
+        dist = np.sqrt(
+            (robot_pos.x - target_pos.x) ** 2 +
+            (robot_pos.y - target_pos.y) ** 2
+        )
+
+        # Update last distance
+        self.current_distance = dist
+    
