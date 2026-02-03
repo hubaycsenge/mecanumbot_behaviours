@@ -120,7 +120,6 @@ class DogCheckFollowing(py_trees.behaviour.Behaviour): # TODO
             key="last_distance",
             access = py_trees.common.Access.WRITE
         )
-
     def setup(self, **kwargs):
         node = kwargs["node"]
         self.node = node
@@ -137,25 +136,27 @@ class DogCheckFollowing(py_trees.behaviour.Behaviour): # TODO
         self.current_distance = None
     
     def update(self):
+        if self.current_distance is None:
+            return py_trees.common.Status.RUNNING
         distance = self.current_distance
         last_distance = self.blackboard.last_distance
 
         distance_diff = distance - last_distance
 
         if distance is None:
-            self.node.get_logger().info("DogCheckFollowing: No distance data yet")
+            #self.node.get_logger().info("DogCheckFollowing: No distance data yet")
             return py_trees.common.Status.RUNNING
         if distance_diff > 0:
             self.wanders += 1
         if self.wanders > self.blackboard.Dog_max_wander_allowed:
-            self.node.get_logger().info("DogCheckFollowing: Subject wandered too much, lost")
+            self.node.get_logger().info(f"{self.name}: Subject wandered too much, lost")
             return py_trees.common.Status.FAILURE
         elif distance_diff > self.blackboard.Dog_following_max_threshold:
-            self.node.get_logger().info(f"DogCheckFollowing: Subject too far, distance increased by {distance_diff:.2f} m")
+            self.node.get_logger().info(f"{self.name}: Subject too far, distance increased by {distance_diff:.2f} m")
             self.blackboard.last_distance = distance
             return py_trees.common.Status.FAILURE
         elif distance_diff <= self.blackboard.Dog_following_max_threshold:
-            self.node.get_logger().info(f"DogCheckFollowing: Following OK, distance change {distance_diff:.2f} m")
+            self.node.get_logger().info(f"{self.name}: Following OK, distance change {distance_diff:.2f} m")
             self.blackboard.last_distance = distance
             return py_trees.common.Status.SUCCESS
     
@@ -173,7 +174,7 @@ class DogCheckFollowing(py_trees.behaviour.Behaviour): # TODO
 
 class DogCheckIfReached(py_trees.behaviour.Behaviour): # TODO 
 
-    def __init__(self, name="DogCheckFollowing"):
+    def __init__(self, name="DogCheckIfReached"):
         super().__init__(name)
 
         # Blackboard keys
@@ -194,12 +195,18 @@ class DogCheckIfReached(py_trees.behaviour.Behaviour): # TODO
             history=HistoryPolicy.KEEP_LAST
         )
 
-        self.robot_subscriber = node.create_subscription(
+        self.subject_subscriber = node.create_subscription(
+            PoseStamped,
+            "/mecanumbot/subject_pose",
+            self.subject_callback,
+            10
+        )
+        '''self.robot_subscriber = node.create_subscription(
             PoseWithCovarianceStamped,
             "/amcl_pose",
             self.amcl_callback,
             qos_profile
-        )
+        )'''
         return super().setup(**kwargs)
     
     def initialise(self):
@@ -209,15 +216,25 @@ class DogCheckIfReached(py_trees.behaviour.Behaviour): # TODO
         distance = self.current_distance
 
         if distance is None:
-            self.node.get_logger().info("DogCheckIfReached: No distance data yet")
+            #self.node.get_logger().info(f"{self.name}: No distance data yet")
             return py_trees.common.Status.RUNNING
         elif distance <= self.blackboard.robot_closeness_threshold:
-            self.node.get_logger().info(f"DogCheckIfReached: Target reached, distance {distance:.2f} m")
+            self.node.get_logger().info(f"{self.name}: Target reached, distance {distance:.2f} m")
             return py_trees.common.Status.SUCCESS
         else:
-            self.node.get_logger().info(f"DogCheckIfReached: Target not reached yet, distance {distance:.2f} m")
+            self.node.get_logger().info(f"{self.name}: Target not reached yet, distance {distance:.2f} m")
             return py_trees.common.Status.FAILURE
-        
+    def subject_callback(self, msg):
+        subject_pos = msg.pose.position
+        target_pos = self.blackboard.target_position
+
+        dist = np.sqrt(
+            (subject_pos.x - target_pos.x) ** 2 +
+            (subject_pos.y - target_pos.y) ** 2
+        )
+
+        # Update last distance
+        self.current_distance = dist
     def amcl_callback(self, msg):
         robot_pos = msg.pose.pose.position
         target_pos = self.blackboard.target_position

@@ -1,17 +1,16 @@
 bottom_up_tree_node:
   ros__parameters:
     init_delay: 1.5
-    robot_closeness_threshold: 0.25 #minimum approach distance of the robot, we do not want to hit subject or targetTODO: test optimum
-    target_reached_threshold: 0.5  # the critical distance of target and subject to tell if reached TODO: test optimum
-    robot_approach_distance : 0.5 #how much the robot should go at once in dog condition TODO: test optimum
+    robot_closeness_threshold: 0.25 #minimum approach distance of the robot, we do not want to hit subject TODO: test optimum
+    target_reached_threshold: 0.75  # the critical distance of target and subject to tell if reached TODO: test optimum
+    robot_approach_distance : 1.0 #how much the robot should go at once in dog condition TODO: test optimum
     Dog_following_max_threshold: 0.20 # maximum distance difference allowed to still consider following 
     Dog_max_wander_allowed: 5 # maximum allowed wander count before considering the subject lost
 
     target_position:
-      - -0.286 #X
-      - 0.2024 #Y
+      - -3.41455 
+      - -3.93387 
       - 0.000 #Z
-
     LED_start_setting: 
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"
 
@@ -22,16 +21,16 @@ bottom_up_tree_node:
       - "{'fl':{'mode':4, 'color':1},'fr':{'mode':4, 'color':1},'bl':{'mode':4, 'color':1},'br':{'mode':4, 'color':1}}" #white fix
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
       - "{'fl':{'mode':4, 'color':1},'fr':{'mode':4, 'color':1},'bl':{'mode':4, 'color':1},'br':{'mode':4, 'color':1}}" #white fix
-      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color'::0],'br':{'mode'::0}}" #black fix
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
 
     LED_indicate_target_times:
-      - 0.1 #black
-      - 0.1 #white
-      - 0.1 #black
-      - 0.1 #white
-      - 0.1 #black
-      - 0.1 #white
-      - 0.1 #black
+      - 1 #black
+      - 1 #white
+      - 1 #black
+      - 1 #white
+      - 1 #black
+      - 1 #white
+      - 1 #black
       
     LED_indicate_close_target_seq:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
@@ -44,27 +43,27 @@ bottom_up_tree_node:
       
 
     LED_indicate_close_target_times:
-      - 0.05 #black
-      - 0.05 #yellow
-      - 0.05 #black
-      - 0.05 #yellow
-      - 0.05 #black
-      - 0.05 #yellow
-      - 0.05 #black
-      - 0.05 #yellow
-      - 0.05 #black
+      - 0.5 #black
+      - 0.5 #yellow
+      - 0.5 #black
+      - 0.5 #yellow
+      - 0.5 #black
+      - 0.5 #yellow
+      - 0.5 #black
+      - 0.5 #yellow
+      - 0.5 #black
       
     LED_catch_attention_seq:
-      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':2, 'color':1},'bl':{'mode':2, 'color':1},'br':{'mode':1, 'color':1}}" #pulse ahead white
+      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':1, 'color':1},'bl':{'mode':1, 'color':1},'br':{'mode':1, 'color':1}}" #pulse ahead white
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':2, 'color':1},'bl':{'mode':2, 'color':1},'br':{'mode':1, 'color':1}}" #pulse ahead white
+      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':1, 'color':1},'bl':{'mode':1, 'color':1},'br':{'mode':1, 'color':1}}" #pulse ahead white
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
     
     LED_catch_attention_times:
-        - 0.15 #white
-        - 0.05 #black
-        - 0.15 #white
-        - 0.05 #black
+        - 1.5 #white
+        - 0.5 #black
+        - 1.5 #white
+        - 0.5 #black
 
     Dog_indicate_target_seq:
        - "{'n_pos':8.5,'gl_pos':3.19,'gr_pos':7.05}" #gripper open, look ahead

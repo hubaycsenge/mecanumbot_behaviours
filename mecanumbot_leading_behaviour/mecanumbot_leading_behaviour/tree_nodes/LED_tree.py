@@ -23,6 +23,7 @@ def create_root():
 
     LED_show_target = LEDBehaviourSequence('LShow', 'indicate_target')
     LED_catch_attention = LEDBehaviourSequence('LCatch', 'catch_attention')
+    LED_catch_attention_outside = LEDBehaviourSequence('LCatchO', 'catch_attention')
     LED_indicate_near_target = LEDBehaviourSequence('LNear', 'indicate_close_target')
 
     approach_target = Approach(name="ApproachTarget", target_type="target")
@@ -51,13 +52,14 @@ def create_root():
     show_while_close_loop = py_trees.decorators.Repeat(
         name="ShowWhileCloseLoop",
         child=show_while_close_seq,
-        num_successes=-1 
+        num_success=-1 
     )
 
     root.add_children([
         params_loader,
         delay_timer,
         approach_subject,
+        LED_catch_attention_outside,
         approach_target,
         LED_show_target,
         show_while_close_loop
@@ -73,7 +75,7 @@ def main(args=None):
     tree_node.setup(timeout=15.0, node_name="bottom_up_tree_node")
     print("Starting bottom-up behaviour tree...") 
     # Tick the tree at 10 Hz indefinitely 
-    tree_node.tick_tock(period_ms=10.0)
+    tree_node.tick_tock(period_ms=100.0)
     rclpy.spin(tree_node.node)     # <--- keeps node alive
 
 if __name__ == "__main__": 

@@ -48,7 +48,7 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.register_key("robot_closeness_threshold", access=py_trees.common.Access.WRITE) #how close the robot should approach
         self.blackboard.register_key("target_reached_threshold", access=py_trees.common.Access.WRITE) #how close the subject should be to the target to consider it reached
         self.blackboard.register_key("target_position", access=py_trees.common.Access.WRITE)
-
+        
         self.blackboard.register_key("LED_indicate_target_seq", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("LED_catch_attention_seq", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("LED_indicate_close_target_seq", access=py_trees.common.Access.WRITE)
@@ -57,16 +57,20 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.register_key("LED_indicate_close_target_times", access=py_trees.common.Access.WRITE)
 
         self.blackboard.register_key("Dog_following_max_threshold", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("Dog_lost_subject_distance_threshold", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("Dog_max_wander_allowed", access=py_trees.common.Access.WRITE)
 
         self.blackboard.register_key("Dog_indicate_target_seq", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_indicate_target_times", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_catch_attention_seq", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_catch_attention_times", access=py_trees.common.Access.WRITE)
+
+        self.blackboard.register_key("last_distance",access=py_trees.common.Access.WRITE)
         
     def setup(self, **kwargs):
         with open(self.yaml_path, 'r') as f:
             raw_params = yaml.safe_load(f)
+        node = kwargs["node"]
+        self.node = node
 
          # LED helper function
         def parse_led(d):
@@ -86,12 +90,14 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
             cmd.gl_pos = float(d["gl_pos"])
             cmd.gr_pos = float(d["gr_pos"])
             return cmd
+        
         raw_params = raw_params['bottom_up_tree_node']['ros__parameters']
 
         self.blackboard.init_delay = float(raw_params['init_delay'])
-        self.blackboard.LED_start_setting = parse_led(raw_params['LED_start_setting'])[0]
+        self.blackboard.LED_start_setting = parse_led(raw_params['LED_start_setting'][0])
 
         self.blackboard.robot_closeness_threshold = float(raw_params['robot_closeness_threshold'])
+        self.blackboard.robot_approach_distance = float(raw_params['robot_approach_distance'])
         self.blackboard.target_reached_threshold = float(raw_params['target_reached_threshold'])
 
         target_pos_list = raw_params["target_position"]
@@ -102,27 +108,35 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
 
         self.blackboard.LED_indicate_target_seq = [parse_led(e) for e in raw_params["LED_indicate_target_seq"]]
         self.blackboard.LED_catch_attention_seq = [parse_led(e) for e in raw_params["LED_catch_attention_seq"]]
+        self.blackboard.LED_indicate_close_target_seq = [parse_led(e) for e in raw_params["LED_indicate_close_target_seq"]]
         self.blackboard.LED_indicate_target_times = raw_params["LED_indicate_target_times"]
         self.blackboard.LED_catch_attention_times = raw_params["LED_catch_attention_times"]
+        self.blackboard.LED_indicate_close_target_times = raw_params["LED_indicate_target_times"]
 
         self.blackboard.Dog_following_max_threshold = float(raw_params["Dog_following_max_threshold"])
-        self.blackboard.Dog_lost_subject_distance_threshold = float(raw_params["Dog_lost_subject_distance_threshold"])
+        self.blackboard.Dog_max_wander_allowed = raw_params["Dog_max_wander_allowed"]
 
         self.blackboard.Dog_indicate_target_seq = [parse_dog(e) for e in raw_params["Dog_indicate_target_seq"]]
         self.blackboard.Dog_indicate_target_times = raw_params["Dog_indicate_target_times"]
         self.blackboard.Dog_catch_attention_seq = [parse_dog(e) for e in raw_params["Dog_catch_attention_seq"]]
         self.blackboard.Dog_catch_attention_times = raw_params["Dog_catch_attention_times"]
 
+        self.blackboard.last_distance = 15.0
+
         self.srv_client = self.node.create_client(SetLedStatus,'/set_led_status')
         self.feedback_message = "ConstantParamsToBlackboard setup complete"
         self.logger.info(self.feedback_message)
 
         return True
-    
-    def update(self):
+    def initialise(self):
         cmd = self.blackboard.LED_start_setting
         # Call the service asynchronously
         future = self.srv_client.call_async(cmd)
+        self.node.get_logger().info(f"INIT LED Command sent: {cmd}")
+        return super().initialise()
+    
+    def update(self):
+        
         return py_trees.common.Status.SUCCESS      
 
 class DistanceToBlackboard(py_trees.behaviour.Behaviour): # Checks done - works

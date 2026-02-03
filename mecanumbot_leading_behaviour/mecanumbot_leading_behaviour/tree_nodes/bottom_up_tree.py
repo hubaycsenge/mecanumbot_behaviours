@@ -37,7 +37,7 @@ def create_root():
     # Selector will keep showing target until condition succeeds
     show_until_close = py_trees.composites.Selector(
         name="ShowUntilSubjectClose",
-        memory=False
+        memory=True
     )
 
     show_until_close.add_children([
