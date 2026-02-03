@@ -87,7 +87,7 @@ def create_root():
         approach_target_step, 
         turn_toward_subject_check_follow,
         delay_timer,
-        turn_toward_target_check_follow
+        #turn_toward_target_check_follow
     ])
 
     behaviour_selector = py_trees.composites.Selector("ShowOrLeadSelector",memory=True)
