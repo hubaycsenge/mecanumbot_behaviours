@@ -86,6 +86,7 @@ class LEDBehaviourSequence(py_trees.behaviour.Behaviour):  # Checks done - works
 
         # All commands done
         if self.index >= len(self.LED_seq):
+            self.index = 0 # re-init for next loop
             return py_trees.common.Status.SUCCESS
 
         # Send next command

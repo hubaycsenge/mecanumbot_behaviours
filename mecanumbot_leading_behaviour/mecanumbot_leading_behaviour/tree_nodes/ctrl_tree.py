@@ -22,7 +22,7 @@ def create_root():
     approach_subject = Approach(name="ApproachSubject", target_type="subject")
 
 
-    root.add_children([params_loader, delay_timer, approach_subject, turn_toward_subject, approach_target, turn_toward_target])
+    root.add_children([params_loader, approach_subject, turn_toward_subject, approach_target, turn_toward_target])
 
 
     return root 

@@ -43,6 +43,7 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
 
         self.blackboard.register_key("init_delay", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("LED_start_setting", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("visibility_time_threshold",access=py_trees.common.Access.WRITE)
         
         self.blackboard.register_key("robot_approach_distance", access=py_trees.common.Access.WRITE) #how much a robot should go at once if it checks for following
         self.blackboard.register_key("robot_closeness_threshold", access=py_trees.common.Access.WRITE) #how close the robot should approach
@@ -59,10 +60,16 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.register_key("Dog_following_max_threshold", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_max_wander_allowed", access=py_trees.common.Access.WRITE)
 
+        self.blackboard.register_key("Dog_checkpoints",access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("Dog_current_checkpoint",access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("Dog_max_checkpoint",access=py_trees.common.Access.WRITE)
+
+
         self.blackboard.register_key("Dog_indicate_target_seq", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_indicate_target_times", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_catch_attention_seq", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_catch_attention_times", access=py_trees.common.Access.WRITE)
+
 
         self.blackboard.register_key("last_distance",access=py_trees.common.Access.WRITE)
         
@@ -81,6 +88,14 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
             req.bl_color, req.bl_mode = d["bl"]["color"], d["bl"]["mode"]
             req.br_color, req.br_mode = d["br"]["color"], d["br"]["mode"]
             return req
+        
+        def parse_ckpt(ckpt):
+            ckpt = ast.literal_eval(ckpt)
+            pos = Point()
+            pos.x = ckpt['X']
+            pos.y = ckpt['Y']
+            pos.z = ckpt['Z']
+            return pos
 
         # Dog helper function
         def parse_dog(d):
@@ -99,6 +114,7 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.robot_closeness_threshold = float(raw_params['robot_closeness_threshold'])
         self.blackboard.robot_approach_distance = float(raw_params['robot_approach_distance'])
         self.blackboard.target_reached_threshold = float(raw_params['target_reached_threshold'])
+        self.blackboard.visibility_time_threshold =float(raw_params['visibility_time_threshold'])
 
         target_pos_list = raw_params["target_position"]
         self.blackboard.target_position = Point()
@@ -120,6 +136,10 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.Dog_indicate_target_times = raw_params["Dog_indicate_target_times"]
         self.blackboard.Dog_catch_attention_seq = [parse_dog(e) for e in raw_params["Dog_catch_attention_seq"]]
         self.blackboard.Dog_catch_attention_times = raw_params["Dog_catch_attention_times"]
+
+        self.blackboard.Dog_checkpoints = [parse_ckpt(ckpt) for ckpt in raw_params["Dog_checkpoints"]]
+        self.blackboard.Dog_current_checkpoint = 0
+        self.blackboard.Dog_max_checkpoint = len(self.blackboard.Dog_checkpoints) - 1
 
         self.blackboard.last_distance = 15.0
 

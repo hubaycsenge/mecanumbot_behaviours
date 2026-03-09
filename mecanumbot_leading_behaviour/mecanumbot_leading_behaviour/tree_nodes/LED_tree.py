@@ -31,6 +31,15 @@ def create_root():
     turn_toward_subject = TurnToward(name="TurnTowardSubject", target_type="subject")
     turn_toward_target = TurnToward(name="TurnTowardTarget", target_type="target")
 
+    approach_subject_seq = py_trees.composites.Sequence( # seems OK 
+                                                        name="SubjectApproachDecorSelector",
+                                                        memory=True,
+                                                        children=[approach_subject]
+                                                        )
+    retry_approach_subject = py_trees.decorators.Retry("RetrySubjectApproach",
+                                                child = approach_subject_seq,
+                                                num_failures=-1)
+
     check_subject_near_target = CheckSubjectTargetSuccess(
         name="CheckSubjectNearTarget"
     )
@@ -58,7 +67,7 @@ def create_root():
     root.add_children([
         params_loader,
         delay_timer,
-        approach_subject,
+        retry_approach_subject,
         LED_catch_attention_outside,
         approach_target,
         LED_show_target,

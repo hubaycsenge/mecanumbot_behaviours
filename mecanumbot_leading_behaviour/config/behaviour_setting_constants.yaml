@@ -3,13 +3,23 @@ bottom_up_tree_node:
     init_delay: 1.5
     robot_closeness_threshold: 0.25 #minimum approach distance of the robot, we do not want to hit subject TODO: test optimum
     target_reached_threshold: 0.75  # the critical distance of target and subject to tell if reached TODO: test optimum
+
+    visibility_time_threshold: 5 # time threshold of lastz incoming 'subject' data
     robot_approach_distance : 1.0 #how much the robot should go at once in dog condition TODO: test optimum
     Dog_following_max_threshold: 0.20 # maximum distance difference allowed to still consider following 
     Dog_max_wander_allowed: 5 # maximum allowed wander count before considering the subject lost
 
+    Dog_checkpoints:
+      - "{'X':0.452756, 'Y':-0.713444, 'Z':0.0 }"
+      - "{'X':-0.469606, 'Y':-0.640191, 'Z':0.0 }"
+      - "{'X':-1.27948, 'Y':-1.91089, 'Z':0.0 }"
+      - "{'X':-2.59768, 'Y':-3.46202, 'Z':0.0 }"
+      - "{'X':-3.51496, 'Y':-4.63466, 'Z':0.0 }"
+      - "{'X':-2.76527, 'Y':-6.12262, 'Z':0.0 }"
+
     target_position:
-      - -3.41455 
-      - -3.93387 
+      - -2.76527 
+      - -6.12262
       - 0.000 #Z
     LED_start_setting: 
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"

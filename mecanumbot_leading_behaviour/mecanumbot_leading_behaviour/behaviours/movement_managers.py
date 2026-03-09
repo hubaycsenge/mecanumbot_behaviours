@@ -29,7 +29,6 @@ class TurnToward(py_trees.behaviour.Behaviour): # Tested, works
         self.publisher = None
         self.subject_pose = None
         self.robot_pose = None
-        self.robot_orientation = None
         
         # Blackboard
         self.blackboard = self.attach_blackboard_client(name=name)
@@ -191,7 +190,6 @@ class TurnToward(py_trees.behaviour.Behaviour): # Tested, works
         
     def amcl_callback(self, msg):
         self.robot_pose = msg.pose.pose
-        self.robot_orientation = msg.pose.pose.orientation
 
     def subject_callback(self, msg):
         self.subject_pose = msg
@@ -205,13 +203,17 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
         self.publisher = None
         self.subject_pose = None
         self.robot_pose = None
-        self.robot_orientation = None
         self.mode = mode
         # Blackboard
         self.blackboard = self.attach_blackboard_client(name=name)
+        self.blackboard.register_key(key="visibility_time_threshold", access=py_trees.common.Access.READ)
         self.blackboard.register_key(key="target_position", access=py_trees.common.Access.READ)
         self.blackboard.register_key(key="robot_closeness_threshold", access=py_trees.common.Access.READ) #stop_threshold
         self.blackboard.register_key(key="robot_approach_distance", access=py_trees.common.Access.READ) #go_threshold
+
+        self.blackboard.register_key("Dog_checkpoints",access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("Dog_current_checkpoint",access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("Dog_max_checkpoint",access=py_trees.common.Access.WRITE)
         
         self.turning = False
         self.target_type = target_type
@@ -272,7 +274,22 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
             if self.target_type == "subject":
                 if self.subject_pose is None:
                     return py_trees.common.Status.RUNNING
-                self.compare_position = self.subject_pose.pose.position
+                now_ns = self.node.get_clock().now().nanoseconds
+                seen_ns = Time.from_msg(self.subj_last_seen).nanoseconds
+                dt = (now_ns - seen_ns) / 1e9
+                if float(dt) > self.blackboard.visibility_time_threshold:
+                    self.blackboard.Dog_current_checkpoint = self.select_closest_checkpoint_to_direction()
+                    self.node.get_logger().info('Sending robot to checkpoint')
+                    self.compare_position = self.blackboard.Dog_checkpoints[self.blackboard.Dog_current_checkpoint]
+                    self.send_goal_command()
+                    
+                    return py_trees.common.Status.FAILURE
+                self.compare_position = self.subject_pose.position
+            elif self.target_type == "checkpoint":
+                    self.compare_position = self.blackboard.Dog_checkpoints[self.blackboard.Dog_current_checkpoint]
+                    self.node.get_logger().info(f'Robot sent to point {self.compare_position}, which is checkpoint NO. {self.blackboard.Dog_current_checkpoint}')
+                    if self.blackboard.Dog_current_checkpoint != self.blackboard.Dog_max_checkpoint:
+                        self.blackboard.Dog_current_checkpoint += 1
             else:
                 self.compare_position = self.blackboard.target_position
         if self.compare_position is None:
@@ -376,15 +393,39 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
         else:
             self.goals_in_sys = msg.status_list
         
-        # Optional: reduce logging verbosity to prevent console lag
         # self.logger.debug(f"{self.name}: Updated goal status list")
         
     def amcl_callback(self, msg):
         self.robot_pose = msg.pose.pose
-        self.robot_orientation = msg.pose.pose.orientation
 
     def subject_callback(self, msg):
-        self.subject_pose = msg
+        self.subj_last_seen = msg.header.stamp
+        self.subject_pose = msg.pose
+    
+    def select_closest_checkpoint_to_direction(self):
+        subject_dir = np.array([
+                                self.subject_pose.position.x - self.robot_pose.position.x,
+                                self.subject_pose.position.y - self.robot_pose.position.y
+                                ])
+        subject_dir = subject_dir / np.linalg.norm(subject_dir)
+        best_checkpoint_idx = None
+        best_score = -float("inf")
+
+        for idx,cp in enumerate(self.blackboard.Dog_checkpoints):
+
+            cp_vec = np.array([
+                cp.x - self.robot_pose.position.x,
+                cp.y - self.robot_pose.position.y
+            ])
+
+            cp_dir = cp_vec / np.linalg.norm(cp_vec)
+
+            score = np.dot(subject_dir, cp_dir)   # cosine similarity
+
+            if score > best_score:
+                best_score = score
+                best_checkpoint_idx = idx
+        return best_checkpoint_idx
 class CheckSubjectTargetSuccess(py_trees.behaviour.Behaviour): #TODO
     """
     Checks if the subject has successfully reached the target
