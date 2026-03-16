@@ -1,0 +1,114 @@
+bottom_up_tree_node:
+  ros__parameters:
+    init_delay: 1.5
+    robot_closeness_threshold: 0.25 #minimum approach distance of the robot, we do not want to hit subject TODO: test optimum
+    target_reached_threshold: 0.75  # the critical distance of target and subject to tell if reached TODO: test optimum
+
+    visibility_time_threshold: 5 # time threshold of lastz incoming 'subject' data
+    robot_approach_distance : 1.0 #how much the robot should go at once in dog condition TODO: test optimum
+    Dog_following_max_threshold: 0.20 # maximum distance difference allowed to still consider following 
+    Dog_max_wander_allowed: 5 # maximum allowed wander count before considering the subject lost
+
+    Dog_checkpoints:
+      - "{'X':1.18051, 'Y':4.42363, 'Z':0.0 }"
+      - "{'X':-0.0246487, 'Y':3.40804, 'Z':0.0 }"
+      - "{'X':-2.63347, 'Y':5.39973, 'Z':0.0 }"
+      - "{'X':-3.03085, 'Y':2.35092, 'Z':0.0 }"
+      - "{'X':-3.88019, 'Y':0.850578, 'Z':0.0 }"
+      - "{'X':-1.83485, 'Y':0.167838, 'Z':0.0 }"
+      - "{'X':-0.0589914, 'Y':0.156723, 'Z':0.0 }"
+
+
+    target_position:
+      - -0.0589914 
+      - 0.156723
+      - 0.000 #Z
+    LED_start_setting: 
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"
+
+    LED_indicate_target_seq:
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
+      - "{'fl':{'mode':4, 'color':1},'fr':{'mode':4, 'color':1},'bl':{'mode':4, 'color':1},'br':{'mode':4, 'color':1}}" #white fix
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
+      - "{'fl':{'mode':4, 'color':1},'fr':{'mode':4, 'color':1},'bl':{'mode':4, 'color':1},'br':{'mode':4, 'color':1}}" #white fix
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
+      - "{'fl':{'mode':4, 'color':1},'fr':{'mode':4, 'color':1},'bl':{'mode':4, 'color':1},'br':{'mode':4, 'color':1}}" #white fix
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
+
+    LED_indicate_target_times:
+      - 1 #black
+      - 1 #white
+      - 1 #black
+      - 1 #white
+      - 1 #black
+      - 1 #white
+      - 1 #black
+      
+    LED_indicate_close_target_seq:
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
+      - "{'fl':{'mode':4, 'color':7},'fr':{'mode':4, 'color':7},'bl':{'mode':4, 'color':7},'br':{'mode':4, 'color':7}}" # yellow fix
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
+      - "{'fl':{'mode':4, 'color':7},'fr':{'mode':4, 'color':7},'bl':{'mode':4, 'color':7},'br':{'mode':4, 'color':7}}" # yellow fix
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
+      - "{'fl':{'mode':4, 'color':7},'fr':{'mode':4, 'color':7},'bl':{'mode':4, 'color':7},'br':{'mode':4, 'color':7}}" # yellow fix
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
+      
+
+    LED_indicate_close_target_times:
+      - 0.5 #black
+      - 0.5 #yellow
+      - 0.5 #black
+      - 0.5 #yellow
+      - 0.5 #black
+      - 0.5 #yellow
+      - 0.5 #black
+      - 0.5 #yellow
+      - 0.5 #black
+      
+    LED_catch_attention_seq:
+      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':1, 'color':1},'bl':{'mode':1, 'color':1},'br':{'mode':1, 'color':1}}" #pulse ahead white
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
+      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':1, 'color':1},'bl':{'mode':1, 'color':1},'br':{'mode':1, 'color':1}}" #pulse ahead white
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
+    
+    LED_catch_attention_times:
+        - 1.5 #white
+        - 0.5 #black
+        - 1.5 #white
+        - 0.5 #black
+
+    Dog_indicate_target_seq:
+       - "{'n_pos':8.5,'gl_pos':3.19,'gr_pos':7.05}" #gripper open, look ahead
+       - "{'n_pos':8.5,'gl_pos':7.05,'gr_pos':3.19}" #gripper close, look ahead
+       - "{'n_pos':8.5,'gl_pos':3.19,'gr_pos':7.05}" #gripper open, look ahead
+       - "{'n_pos':8.5,'gl_pos':7.05,'gr_pos':3.19}" #gripper close, look ahead
+       - "{'n_pos':8.5,'gl_pos':3.19,'gr_pos':7.05}" #gripper open, look ahead
+       - "{'n_pos':8.5,'gl_pos':7.05,'gr_pos':3.19}" #gripper close, look ahead
+       - "{'n_pos':8.5,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look ahead
+       - "{'n_pos':8.5,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look ahead
+  
+    Dog_indicate_target_times:
+        - 0.25
+        - 0.25
+        - 0.25
+        - 0.25
+        - 0.25
+        - 0.25
+        - 0.25
+
+    Dog_catch_attention_seq:
+       - "{'n_pos':8.90,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look up
+       - "{'n_pos':8.5,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look ahead
+       - "{'n_pos':8.90,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look up
+       - "{'n_pos':8.90,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look ahead
+       - "{'n_pos':8.80,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look up
+       - "{'n_pos':8.90,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look ahead
+    
+    Dog_catch_attention_times:
+        - 0.25
+        - 0.25
+        - 0.25
+        - 0.25
+        - 0.25
+        - 0.25
+      
