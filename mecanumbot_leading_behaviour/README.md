@@ -22,7 +22,7 @@ The ROS interfaces are created inside BT behaviour classes and used by the execu
 | Topic | Data type | Function |
 | --- | --- | --- |
 | `/goal_pose` | `geometry_msgs/msg/PoseStamped` | Sends Nav2 navigation goals for turn/approach actions. |
-| `cmd_accessory_pos` | `mecanumbot_msgs/msg/AccessMotorCmd` | Sends neck/gripper command sequences (dog-like gestures). |
+| `cmd_accessory_pos` | `mecanumbot_msgs/msg/AccessMotorCmd` | Sends neck/gripper command sequences (gestures for dog inspired behaviour). |
 
 ### Subscribers
 
