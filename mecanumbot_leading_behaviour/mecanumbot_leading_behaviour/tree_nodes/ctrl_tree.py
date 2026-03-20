@@ -7,36 +7,62 @@ from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach, 
                                                                       TurnToward
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard
 
-leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour') 
-YAML_PATH = os.path.join(leading_pkg_share_dir,'config',"behaviour_setting_constants.yaml") 
+leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour')
+DEFAULT_YAML_FILENAME = "behaviour_setting_constants.yaml"
 
-def create_root(): 
-    root = py_trees.composites.Sequence("ROOT", memory = True) 
 
-    params_loader = ConstantParamsToBlackboard( name="LoadConstantParams", yaml_path=YAML_PATH) 
-    delay_timer = py_trees.timers.Timer(name="DelayTimer",  duration=2)  
-    
-    turn_toward_subject = TurnToward(name="TurnTowardSubject",target_type ="subject")
-    turn_toward_target = TurnToward(name="TurnTowardTarget",target_type ="target")
+def get_yaml_path():
+    import argparse
+    import os
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--yaml_path", type=str, default=None)
+    parsed, _ = parser.parse_known_args()
+
+    yaml_path = parsed.yaml_path
+    if not yaml_path:
+        yaml_path = os.getenv("YAML_PATH") or os.getenv("BEHAVIOUR_YAML_PATH")
+
+    if yaml_path:
+        print(f"[ctrl_tree] Using YAML_PATH: {yaml_path}")
+        return yaml_path
+
+    fallback = os.path.join(leading_pkg_share_dir, "config", DEFAULT_YAML_FILENAME)
+    print(f"[ctrl_tree] YAML_PATH unset, fallback to: {fallback}")
+    return fallback
+
+
+def create_root(yaml_path=None):
+    if yaml_path is None:
+        yaml_path = get_yaml_path()
+
+    root = py_trees.composites.Sequence("ROOT", memory=True)
+
+    params_loader = ConstantParamsToBlackboard(name="LoadConstantParams", yaml_path=yaml_path)
+    turn_toward_target = TurnToward(name="TurnTowardTarget", target_type="target")
+    turn_toward_start = TurnToward(name="TurnTowardStart", target_type="start")
     approach_target = Approach(name="ApproachTarget", target_type="target")    
-    approach_subject = Approach(name="ApproachSubject", target_type="subject")
+    approach_start = Approach(name="ApproachStart", target_type="start")
 
 
-    root.add_children([params_loader, approach_subject, turn_toward_subject, approach_target, turn_toward_target])
+    root.add_children([params_loader, turn_toward_start, approach_start, turn_toward_target, approach_target])
 
 
     return root 
 
 def main(args=None):
-    rclpy.init(args=args) 
-    
-    tree = create_root() 
+    rclpy.init(args=args)
+
+    yaml_path = get_yaml_path()
+    tree = create_root(yaml_path=yaml_path)
+
     tree_node = py_trees_ros.trees.BehaviourTree(root=tree)
     tree_node.setup(timeout=15.0, node_name="bottom_up_tree_node")
-    print("Starting bottom-up behaviour tree...") 
-    # Tick the tree at 10 Hz indefinitely 
+    print(f"Starting control behaviour tree using YAML: {yaml_path}")
+
     tree_node.tick_tock(period_ms=10.0)
     rclpy.spin(tree_node.node)     # <--- keeps node alive
 
-if __name__ == "__main__": 
+
+if __name__ == "__main__":
     main()

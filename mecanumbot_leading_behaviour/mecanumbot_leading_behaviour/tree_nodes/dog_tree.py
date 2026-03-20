@@ -8,14 +8,39 @@ from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach, 
                                                                       TurnToward, CheckSubjectTargetSuccess
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard
 
-leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour') 
-YAML_PATH = os.path.join(leading_pkg_share_dir,'config',"behaviour_setting_constants.yaml") 
-def create_root():
+leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour')
+DEFAULT_YAML_FILENAME = "Eto_behaviour_setting_constants.yaml"
+
+
+def get_yaml_path():
+    import argparse
+    import os
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--yaml_path", type=str, default=None)
+    parsed, _ = parser.parse_known_args()
+
+    yaml_path = parsed.yaml_path
+    if not yaml_path:
+        yaml_path = os.getenv("YAML_PATH") or os.getenv("BEHAVIOUR_YAML_PATH")
+
+    if yaml_path:
+        print(f"[dog_tree] Using YAML_PATH: {yaml_path}")
+        return yaml_path
+
+    fallback = os.path.join(leading_pkg_share_dir, "config", DEFAULT_YAML_FILENAME)
+    print(f"[dog_tree] YAML_PATH unset, fallback to: {fallback}")
+    return fallback
+
+
+def create_root(yaml_path=None):
+    if yaml_path is None:
+        yaml_path = get_yaml_path()
+
     root = py_trees.composites.Sequence("ROOT", memory=True)
 
-    params_loader = ConstantParamsToBlackboard(
-        name="LoadConstantParams", yaml_path=YAML_PATH
-    )
+    params_loader = ConstantParamsToBlackboard(name="LoadConstantParams", yaml_path=yaml_path)
+
 
     delay_timer = py_trees.timers.Timer(name="DelayTimer", duration=1)
 
@@ -32,6 +57,7 @@ def create_root():
     turn_toward_subject_check_follow = TurnToward(name="TurnTowardSubjectCheckFollow", target_type="subject")
     turn_toward_subject_show_tgt = TurnToward(name="TurnTowardSubjectShowTgt", target_type="subject")
     turn_toward_target_show = TurnToward(name="TurnTowardTargetShow", target_type="target")
+    turn_toward_checkpoint_step = TurnToward(name="TurnTowardCheckpointStep", target_type="checkpoint")
 
     check_subject_near_target = CheckSubjectTargetSuccess(name="CheckSubjectNearTarget")
 
@@ -53,12 +79,9 @@ def create_root():
         name="SeekAttentionInit",
         memory=True
     )
-    seek_attention_init.add_children([ 
-        retry_approach_subject,
+    seek_attention_init.add_children([
         turn_toward_subject_init_seek,
-        Dog_catch_attention_init,
-        Dog_select_target,
-        approach_target_init
+        Dog_catch_attention_init
     ])
 
     # Indicate close target until subject is close enough
@@ -82,10 +105,10 @@ def create_root():
     )
     lead_step_sequence.add_children([ 
         Dog_check_following,
+        turn_toward_checkpoint_step,
         approach_target_step, 
         turn_toward_subject_check_follow,
-        delay_timer,
-        #turn_toward_target_check_follow
+        delay_timer
     ])
 
     behaviour_selector = py_trees.composites.Selector("ShowOrLeadSelector",memory=True)
@@ -109,17 +132,20 @@ def create_root():
     return root
 
 def main(args=None):
-    rclpy.init(args=args) 
-    
-    tree = create_root() 
+    rclpy.init(args=args)
+
+    yaml_path = get_yaml_path()
+    tree = create_root(yaml_path=yaml_path)
+
     tree_node = py_trees_ros.trees.BehaviourTree(root=tree)
     tree_node.setup(timeout=15.0, node_name="bottom_up_tree_node")
-    print("Starting bottom-up behaviour tree...") 
-    # Tick the tree at 10 Hz indefinitely 
+    print(f"Starting doglike behaviour tree using YAML: {yaml_path}")
+
     tree_node.tick_tock(period_ms=100.0)
     rclpy.spin(tree_node.node)     # <--- keeps node alive
 
-if __name__ == "__main__": 
+
+if __name__ == "__main__":
     main()
 
     

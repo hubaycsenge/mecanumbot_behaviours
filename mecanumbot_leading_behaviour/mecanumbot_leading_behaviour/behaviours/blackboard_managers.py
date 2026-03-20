@@ -49,6 +49,7 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.register_key("robot_closeness_threshold", access=py_trees.common.Access.WRITE) #how close the robot should approach
         self.blackboard.register_key("target_reached_threshold", access=py_trees.common.Access.WRITE) #how close the subject should be to the target to consider it reached
         self.blackboard.register_key("target_position", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("start_position", access=py_trees.common.Access.WRITE)
         
         self.blackboard.register_key("LED_indicate_target_seq", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("LED_catch_attention_seq", access=py_trees.common.Access.WRITE)
@@ -116,11 +117,6 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.target_reached_threshold = float(raw_params['target_reached_threshold'])
         self.blackboard.visibility_time_threshold =float(raw_params['visibility_time_threshold'])
 
-        target_pos_list = raw_params["target_position"]
-        self.blackboard.target_position = Point()
-        self.blackboard.target_position.x = float(target_pos_list[0])
-        self.blackboard.target_position.y = float(target_pos_list[1])
-        self.blackboard.target_position.z = float(target_pos_list[2])
 
         self.blackboard.LED_indicate_target_seq = [parse_led(e) for e in raw_params["LED_indicate_target_seq"]]
         self.blackboard.LED_catch_attention_seq = [parse_led(e) for e in raw_params["LED_catch_attention_seq"]]
@@ -138,6 +134,8 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.Dog_catch_attention_times = raw_params["Dog_catch_attention_times"]
 
         self.blackboard.Dog_checkpoints = [parse_ckpt(ckpt) for ckpt in raw_params["Dog_checkpoints"]]
+        self.blackboard.start_position = self.blackboard.Dog_checkpoints[0] # Assuming the first checkpoint is the start position
+        self.blackboard.target_position = self.blackboard.Dog_checkpoints[-1] # Assuming the last checkpoint is the target position
         self.blackboard.Dog_current_checkpoint = 0
         self.blackboard.Dog_max_checkpoint = len(self.blackboard.Dog_checkpoints) - 1
 
