@@ -1,110 +1,128 @@
 # mecanumbot_leading_behaviour
 
-`mecanumbot_leading_behaviour` provides a set of **behavior-tree driven control sequences** for the Mecanumbot platform.
+`py_trees_ros` behaviour-tree package for Mecanumbot leading experiments.
 
-It is built on **py_trees** + **py_trees_ros** and implements a set of reusable behaviour building blocks (movement managers, LED sequences, target selection, etc.) that can be configured via YAML.
+It coordinates navigation goals, accessory gestures, and LED service calls to guide a human subject toward checkpoints.
 
----
+## Executable nodes
 
-## 🔧 Key concepts
+| Executable | Source file | Main behavior |
+| --- | --- | --- |
+| `control_leading_bt_node` | `tree_nodes/ctrl_tree.py` | Start/target turn and approach sequence. |
+| `doglike_leading_bt_node` | `tree_nodes/dog_tree.py` | Dog-style lead loop (catch attention, point, move checkpoint-by-checkpoint). |
+| `LED_leading_bt_node` | `tree_nodes/LED_tree.py` | LED-driven guidance sequence with approach + near-target signaling. |
+| `bottom_up_tree_node` | `tree_nodes/bottom_up_tree.py` | Baseline sequence combining approach and LED indication. |
 
-### Behavior trees
-The package defines multiple behaviour trees (one per experiment mode), each built from:
-- **movement managers** (`movement_managers.py`) for turning, approaching, etc.
-- **LED behaviours** (`LED_behaviours.py`) for visual feedback
-- **Dog behaviours** (`dog_behaviours.py`) for sequence-driven “dog-like” interactions
-- **Blackboard managers** (`blackboard_managers.py`) for loading constants and publishing state
+## Node interfaces
 
-### Runtime entrypoints
-This package exposes the following console scripts (via `setup.py`):
+The ROS interfaces are created inside BT behaviour classes and used by the executable tree nodes.
 
-| Executable | Tree file | Typical use |
-|-----------|-----------|-------------|
-| `control_leading_bt_node` | `tree_nodes/ctrl_tree.py` | Generic control + approach sequence |
-| `doglike_leading_bt_node` | `tree_nodes/dog_tree.py` | “Dog-like” follow-and-point behaviour |
-| `LED_leading_bt_node` | `tree_nodes/LED_tree.py` | LED-only signalling behaviour |
+### Publishers
 
----
+| Topic | Data type | Function |
+| --- | --- | --- |
+| `/goal_pose` | `geometry_msgs/msg/PoseStamped` | Sends Nav2 navigation goals for turn/approach actions. |
+| `cmd_accessory_pos` | `mecanumbot_msgs/msg/AccessMotorCmd` | Sends neck/gripper command sequences (dog-like gestures). |
 
-## ▶️ Running the behaviour trees
+### Subscribers
 
-### Recommended: use provided launch files
+| Topic | Data type | Processing |
+| --- | --- | --- |
+| `/amcl_pose` | `geometry_msgs/msg/PoseWithCovarianceStamped` | Tracks robot pose for goal generation and checkpoint selection. |
+| `/mecanumbot/subject_pose` | `geometry_msgs/msg/PoseStamped` | Tracks detected subject pose for following and success checks. |
+| `/navigate_to_pose/_action/status` | `action_msgs/msg/GoalStatusArray` | Monitors Nav2 goal execution states and retries/failure handling. |
 
-The package ships with launch files for each behaviour mode.
+### Services handled
+
+| Service | Type | Behavior |
+| --- | --- | --- |
+| None | - | Nodes do not provide ROS services. |
+
+### Service clients used
+
+| Service | Type | Function |
+| --- | --- | --- |
+| `/set_led_status` | `mecanumbot_msgs/srv/SetLedStatus` | Sends LED patterns during init, attention cues, and target indication. |
+
+## Launch files
+
+### `launch/launch_wifi_condition_sequence.launch.py`
+
+Functions:
+
+1. Detects active Wi-Fi SSID (`nmcli` fallback `iwgetid`).
+2. Chooses default constants YAML based on SSID.
+3. Declares launch args: `params`, `yaml_path`, `namespace`, `condition`.
+4. Exports `YAML_PATH` and `BEHAVIOUR_YAML_PATH` env vars for BT scripts.
+5. Starts exactly one node by `condition`: `Doglike` -> `doglike_leading_bt_node`, `Control` -> `control_leading_bt_node`, `LED` -> `LED_leading_bt_node`.
+
+## Folder structure
+
+| Path | Role |
+| --- | --- |
+| `mecanumbot_leading_behaviour/tree_nodes/` | Top-level BT compositions and executable entry points. |
+| `mecanumbot_leading_behaviour/behaviours/` | Reusable BT leaf behaviours (movement, LED, dog gestures, blackboard loaders). |
+| `mecanumbot_leading_behaviour/utils/` | Subtree construction helpers (legacy/experimental composition utilities). |
+| `launch/` | Runtime launcher with condition-based node selection. |
+| `config/` | Behaviour constants and sequences in YAML (`behaviour_setting_constants.yaml`, `Eto_behaviour_setting_constants.yaml`). |
+| `resource/` | ROS package resource marker. |
+| `test/` | Package lint tests. |
+
+## BT logic
+
+### Common pattern
+
+1. Load YAML constants into blackboard (`ConstantParamsToBlackboard`).
+2. Build a sequence/selector/retry structure from movement and signalling behaviours.
+3. Tick tree periodically (`tick_tock`) and keep node alive with `rclpy.spin`.
+
+### `ctrl_tree.py` logic
+
+1. Load constants.
+2. Turn toward start.
+3. Approach start.
+4. Turn toward target.
+5. Approach target.
+
+### `dog_tree.py` logic
+
+1. Load constants.
+2. Initial seek-attention stage (turn to subject + catch attention gesture).
+3. Repeat loop with selector.
+   - Branch A: if subject near target, run show/point sequence;
+   - Branch B: lead one step to checkpoint and verify following behavior.
+4. Continue until externally stopped.
+
+### `LED_tree.py` logic
+
+1. Load constants and wait delay.
+2. Retry subject-approach until successful.
+3. Catch attention with LED.
+4. Approach target and indicate target.
+5. Loop near-target indication while success condition remains active.
+
+### `bottom_up_tree.py` logic
+
+1. Load constants and wait delay.
+2. Approach subject.
+3. Approach target.
+4. Indicate target with LED.
+5. Selector repeatedly alternates check/show behavior until close condition is satisfied.
+
+## Configuration model
+
+`config/*.yaml` keys define:
+
+- Thresholds: `robot_closeness_threshold`, `target_reached_threshold`, `visibility_time_threshold`.
+- Navigation guidance: `robot_approach_distance`, `Dog_checkpoints`.
+- LED scripts: `LED_*_seq`, `LED_*_times`.
+- Accessory scripts: `Dog_*_seq`, `Dog_*_times`.
+
+## Run examples
 
 ```bash
-ros2 launch mecanumbot_leading_behaviour launch_control_sequence.launch.py
+ros2 launch mecanumbot_leading_behaviour launch_wifi_condition_sequence.launch.py condition:=Doglike
+ros2 launch mecanumbot_leading_behaviour launch_wifi_condition_sequence.launch.py condition:=Control
+ros2 launch mecanumbot_leading_behaviour launch_wifi_condition_sequence.launch.py condition:=LED
+ros2 run mecanumbot_leading_behaviour bottom_up_tree_node
 ```
-
-Other launch options:
-- `launch_doglike_sequence.launch.py` – dog-like sequence
-- `launch_LED_sequence.launch.py` – LED signalling only
-- `launch_bottomup.launch.py` – bottom-up mode
-
-There are also `Eto_*` variants (experimental/experiment configs) whose launch names match the non-`Eto` equivalents.
-
-### Running directly (without launch)
-
-If you prefer, you can run the node directly:
-
-```bash
-ros2 run mecanumbot_leading_behaviour control_leading_bt_node
-```
-
----
-
-## ⚙️ Configuration
-
-All behaviour constants are loaded from YAML at startup.
-
-Default config file:
-- `config/behaviour_setting_constants.yaml`
-
-You can override the YAML path at launch using the `params` argument (see the launch files):
-
-```bash
-ros2 launch mecanumbot_leading_behaviour launch_control_sequence.launch.py params:=/path/to/my_params.yaml
-```
-
-### What’s in the config file
-The YAML contains:
-- distances/thresholds (e.g., `robot_closeness_threshold`, `target_reached_threshold`)
-- LED sequences & timing (`LED_indicate_target_seq`, `LED_catch_attention_times`, etc.)
-- gripper/camera setpoints (e.g., `Dog_indicate_target_seq`)
-- waypoint/checkpoint lists (e.g., `Dog_checkpoints`)
-
----
-
-## 🧩 Topics (expected)
-
-The behaviour node does not directly control the motors. It typically drives other nodes by publishing/reading from standard topics such as:
-
-- `/cmd_vel` (geometry_msgs/Twist) – velocity commands
-- `/cmd_accessory_pos` (mecanumbot_msgs/AccessMotorCmd) – accessory position commands
-- `/subject` (custom topic containing LiDAR-based info about the subject's whereabouts)
-
-> ⚠️ Topic names may vary depending on how you remap them in your system; the included launch files apply a remap for `/mecanumbot/cmd_vel` → `/cmd_vel` and `/mecanumbot/cmd_accessory_pos` → `/cmd_accessory_pos`.
-
----
-
-## ✅ Build & test
-
-From your workspace root:
-
-```bash
-colcon build --symlink-install --packages-select mecanumbot_leading_behaviour
-source install/setup.bash
-```
-
-Run tests:
-
-```bash
-colcon test --packages-select mecanumbot_leading_behaviour
-```
-
----
-
-## 📌 Notes
-
-- This package is intended for higher-level behaviour experimentation, not for low-level motor control (that is handled by other `mecanumbot_*` packages).
-- If you update the YAML config, restart the behaviour node to reload new parameters.

@@ -1,34 +1,60 @@
 # mecanumbot_behaviours
 
-This repository contains ROS 2 packages that implement higher-level behaviour trees and control sequences for the **Mecanumbot** platform.
+ROS 2 repository for high-level behaviour orchestration on Mecanumbot.
 
-The primary package in this repo so far is:
+## Packages in this repository
 
-- `mecanumbot_leading_behaviour` - a `py_trees_ros` based behaviour tree implementation used to drive the robot's leading behaviour using predefined sequences and sensor-based decisions.
+| Package | Type | Purpose |
+| --- | --- | --- |
+| `mecanumbot_behaviours` | Meta package | Groups behaviour packages for build/release. No executable nodes. |
+| `mecanumbot_leading_behaviour` | Python package | `py_trees_ros` behaviour trees for leading/attention-guidance experiments. |
 
----
+## Node overview
 
-## 🧩 Repository structure
+### `mecanumbot_behaviours` (meta package)
 
-- `mecanumbot_leading_behaviour/` – the main behaviour tree implementation plus launch/config files.
+| Item | Value |
+| --- | --- |
+| Nodes | None |
+| Launch files | None |
+| Role | Dependency aggregation only |
 
----
+### `mecanumbot_leading_behaviour`
 
-## 🚀 Build & install
+Provided executables:
 
-From your ROS 2 workspace root (e.g., `~/dev_ws`):
+- `control_leading_bt_node`
+- `doglike_leading_bt_node`
+- `LED_leading_bt_node`
+- `bottom_up_tree_node`
+
+See the package README for full node interface tables and BT logic details.
+
+## Repository structure
+
+| Path | Function |
+| --- | --- |
+| `mecanumbot_behaviours/` | Meta package (`CMakeLists.txt`, `package.xml`) with no runtime node logic. |
+| `mecanumbot_leading_behaviour/` | Full behaviour-tree implementation: nodes, behaviours, launch, and config. |
+| `resource/` | ROS 2 resource index entries for Python package registration. |
+| `test/` | Lint/test scaffolding (`flake8`, `pep257`, copyright). |
+
+## Launch and runtime logic
+
+Primary launcher:
+
+- `mecanumbot_leading_behaviour/launch/launch_wifi_condition_sequence.launch.py`
+
+What it does:
+
+1. Detects current Wi-Fi SSID.
+2. Selects default parameter YAML (`behaviour_setting_constants.yaml` or `Eto_behaviour_setting_constants.yaml`).
+3. Sets `YAML_PATH` and `BEHAVIOUR_YAML_PATH` environment variables.
+4. Starts one BT node based on `condition` argument (`Doglike`, `Control`, or `LED`).
+
+## Build
 
 ```bash
-colcon build --symlink-install
+colcon build --symlink-install --packages-select mecanumbot_behaviours mecanumbot_leading_behaviour
 source install/setup.bash
 ```
-
-> ⚠️ The behaviour nodes depend on other `mecanumbot_*` packages (e.g., the LED control and navigation nodes and the low-level drive/actuator drivers). Make sure those packages are also built and sourced.
-
----
-
-
-## 📄 Notes
-
-- This repository is mainly intended for research/behaviour experimentation (experiment sequences, visual cues, and controlled movement patterns).
-- For low-level motion control, see the `mecanumbot_core` / `mecanumbot_msgs` packages in the main workspace.
