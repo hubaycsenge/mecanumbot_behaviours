@@ -136,6 +136,7 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.Dog_checkpoints = [parse_ckpt(ckpt) for ckpt in raw_params["Dog_checkpoints"]]
         self.blackboard.start_position = self.blackboard.Dog_checkpoints[0] # Assuming the first checkpoint is the start position
         self.blackboard.target_position = self.blackboard.Dog_checkpoints[-1] # Assuming the last checkpoint is the target position
+        self.blackboard.Dog_checkpoints = self.blackboard.Dog_checkpoints[:-1] 
         self.blackboard.Dog_current_checkpoint = 0
         self.blackboard.Dog_max_checkpoint = len(self.blackboard.Dog_checkpoints) - 1
 

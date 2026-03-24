@@ -2,11 +2,11 @@ bottom_up_tree_node:
   ros__parameters:
     init_delay: 1.5
     robot_closeness_threshold: 0.25 #minimum approach distance of the robot, we do not want to hit subject TODO: test optimum
-    target_reached_threshold: 0.75  # the critical distance of target and subject to tell if reached TODO: test optimum
+    target_reached_threshold: 1.5  # the critical distance of target and subject to tell if reached TODO: test optimum
 
-    visibility_time_threshold: 5 # time threshold of lastz incoming 'subject' data
+    visibility_time_threshold: 5 # time threshold of last incoming 'subject' data
     robot_approach_distance : 1.0 #how much the robot should go at once in dog condition TODO: test optimum
-    Dog_following_max_threshold: 0.0 # maximum distance difference allowed to still consider following 
+    Dog_following_max_threshold: 0.1 # maximum distance difference allowed to still consider following 
     Dog_max_wander_allowed: 5 # maximum allowed wander count before considering the subject lost
 
     Dog_checkpoints:
@@ -18,11 +18,13 @@ bottom_up_tree_node:
       #- "{'X':-1.83485, 'Y':0.167838, 'Z':0.0 }"
       #- "{'X':-0.0589914, 'Y':0.156723, 'Z':0.0 }"
       - "{'X':8.71365, 'Y':20.043, 'Z':0.0 }"
-      - "{'X':6.20838, 'Y':18.3011, 'Z':0.0 }"
+      - "{'X':8.519, 'Y':18.0837, 'Z':0.0 }"
       - "{'X':9.35348, 'Y':17.5724, 'Z':0.0 }"
       - "{'X':2.71861, 'Y':16.8758, 'Z':0.0 }"
-      - "{'X':3.10368, 'Y':13.7904, 'Z':0.0 }"
-      - "{'X':-0.799175, 'Y':12.8057, 'Z':0.0 }"
+      - "{'X':1.89235, 'Y':20.1364, 'Z':0.0 }"
+      - "{'X':2.0025, 'Y':18.715, 'Z':0.0 }"
+      - "{'X':1.80331, 'Y':19.9152, 'Z':0.0 }"
+      - "{'X':1.64292, 'Y':20.8728, 'Z':0.0 }"
       
     LED_start_setting: 
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"
@@ -89,6 +91,7 @@ bottom_up_tree_node:
        - "{'n_pos':8.5,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look ahead
   
     Dog_indicate_target_times:
+        - 0.25
         - 0.25
         - 0.25
         - 0.25

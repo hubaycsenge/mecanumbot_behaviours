@@ -50,7 +50,6 @@ def create_root(yaml_path=None):
     Dog_check_following = DogCheckFollowing(name="DogCheckFollowing")
 
     approach_target_step = Approach(name="ApproachTarget", target_type="checkpoint")
-    approach_target_init = Approach(name="ApproachTargetInit", target_type="checkpoint")
     approach_subject_init = Approach(name="ApproachSubjectInit", target_type="subject",mode ="fixed_distance")
 
     turn_toward_subject_init_seek = TurnToward(name="TurnTowardSubjectInitSeek", target_type="subject")
@@ -60,17 +59,6 @@ def create_root(yaml_path=None):
     turn_toward_checkpoint_step = TurnToward(name="TurnTowardCheckpointStep", target_type="checkpoint")
 
     check_subject_near_target = CheckSubjectTargetSuccess(name="CheckSubjectNearTarget")
-
-    Dog_select_target = DogSelectTarget(name="SelectTarget")
-
-    approach_subject_seq = py_trees.composites.Sequence( # seems OK 
-                                                        name="SubjectApproachDecorSelector",
-                                                        memory=True,
-                                                        children=[approach_subject_init]
-                                                        )
-    retry_approach_subject = py_trees.decorators.Retry("RetrySubjectApproach",
-                                                child = approach_subject_seq,
-                                                num_failures=-1)
     
     
 
@@ -80,6 +68,7 @@ def create_root(yaml_path=None):
         memory=True
     )
     seek_attention_init.add_children([
+        approach_subject_init,
         turn_toward_subject_init_seek,
         Dog_catch_attention_init
     ])

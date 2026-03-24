@@ -88,7 +88,8 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
             return py_trees.common.Status.RUNNING
         
         elif self.index >= len(self.behaviour_seq):
-            #self.node.get_logger().info(f"Dog behaviour {self.mode} completed")
+            self.index = 0
+            self.node.get_logger().info(f"Dog behaviour {self.mode} completed")
             return py_trees.common.Status.SUCCESS
         
     def _send_command(self, now):
@@ -150,6 +151,7 @@ class DogCheckFollowing(py_trees.behaviour.Behaviour): # TODO
             self.wanders += 1
         if self.wanders > self.blackboard.Dog_max_wander_allowed:
             self.node.get_logger().info(f"{self.name}: Subject wandered too much, lost")
+            self.wanders = 0
             return py_trees.common.Status.FAILURE
         elif distance_diff > self.blackboard.Dog_following_max_threshold:
             self.node.get_logger().info(f"{self.name}: Subject too far, distance increased by {distance_diff:.2f} m")
