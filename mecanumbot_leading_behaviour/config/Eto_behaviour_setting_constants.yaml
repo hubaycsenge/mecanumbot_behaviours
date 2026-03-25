@@ -31,47 +31,39 @@ bottom_up_tree_node:
 
     LED_indicate_target_seq:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':4, 'color':1},'fr':{'mode':4, 'color':1},'bl':{'mode':4, 'color':1},'br':{'mode':4, 'color':1}}" #white fix
+      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}" #white slow blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':4, 'color':1},'fr':{'mode':4, 'color':1},'bl':{'mode':4, 'color':1},'br':{'mode':4, 'color':1}}" #white fix
+      -  "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}" #white slow blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':4, 'color':1},'fr':{'mode':4, 'color':1},'bl':{'mode':4, 'color':1},'br':{'mode':4, 'color':1}}" #white fix
-      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-
+     
     LED_indicate_target_times:
       - 1 #black
-      - 1 #white
+      - 3 #white
       - 1 #black
-      - 1 #white
-      - 1 #black
-      - 1 #white
+      - 3 #white
       - 1 #black
       
     LED_indicate_close_target_seq:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':4, 'color':7},'fr':{'mode':4, 'color':7},'bl':{'mode':4, 'color':7},'br':{'mode':4, 'color':7}}" # yellow fix
+      - "{'fl':{'mode':5, 'color':7},'fr':{'mode':5, 'color':7},'bl':{'mode':5, 'color':7},'br':{'mode':5, 'color':7}}" # yellow fast blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':4, 'color':7},'fr':{'mode':4, 'color':7},'bl':{'mode':4, 'color':7},'br':{'mode':4, 'color':7}}" # yellow fix
+      - "{'fl':{'mode':5, 'color':7},'fr':{'mode':5, 'color':7},'bl':{'mode':5, 'color':7},'br':{'mode':5, 'color':7}}" # yellow fast blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':4, 'color':7},'fr':{'mode':4, 'color':7},'bl':{'mode':4, 'color':7},'br':{'mode':4, 'color':7}}" # yellow fix
+      - "{'fl':{'mode':5, 'color':7},'fr':{'mode':5, 'color':7},'bl':{'mode':5, 'color':7},'br':{'mode':5, 'color':7}}" # yellow fast blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
       
 
     LED_indicate_close_target_times:
-      - 0.5 #black
-      - 0.5 #yellow
-      - 0.5 #black
-      - 0.5 #yellow
-      - 0.5 #black
-      - 0.5 #yellow
-      - 0.5 #black
-      - 0.5 #yellow
-      - 0.5 #black
-      
+      - 1 #black
+      - 3 #yellow
+      - 1 #black
+      - 3 #yellow
+      - 1 #black
+
     LED_catch_attention_seq:
-      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':1, 'color':1},'bl':{'mode':1, 'color':1},'br':{'mode':1, 'color':1}}" #pulse ahead white
+      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}" #white slow blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':1, 'color':1},'bl':{'mode':1, 'color':1},'br':{'mode':1, 'color':1}}" #pulse ahead white
+      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}" #white slow blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
     
     LED_catch_attention_times:
