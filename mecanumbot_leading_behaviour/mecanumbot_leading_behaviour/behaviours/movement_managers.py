@@ -301,7 +301,7 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
             elif self.target_type == "start":
                 self.compare_position = self.blackboard.start_position
             else:
-                self.compare_position = self.blackboard.target_position
+                self.compare_position = self.blackboard.Dog_checkpoints[-1]
         if self.compare_position is None:
             return py_trees.common.Status.FAILURE
 
