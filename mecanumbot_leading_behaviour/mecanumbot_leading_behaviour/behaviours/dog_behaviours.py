@@ -7,7 +7,7 @@ import py_trees
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from geometry_msgs.msg import PoseStamped,PoseWithCovarianceStamped,Point
 import math
-
+from rclpy.time import Time
 
 class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
 
@@ -107,8 +107,10 @@ class DogCheckFollowing(py_trees.behaviour.Behaviour): # TODO
         super().__init__(name)
 
         # Blackboard keys
+        self.robot_pose = None
         self.blackboard = self.attach_blackboard_client(name=name)
         self.blackboard.register_key(key="target_position", access=py_trees.common.Access.READ)
+        self.blackboard.register_key(key="visibility_time_threshold", access=py_trees.common.Access.READ)
         self.blackboard.register_key(
             key="Dog_following_max_threshold", 
             access=py_trees.common.Access.READ
@@ -121,15 +123,27 @@ class DogCheckFollowing(py_trees.behaviour.Behaviour): # TODO
             key="last_distance",
             access = py_trees.common.Access.WRITE
         )
+        self.last_seen_time = None
     def setup(self, **kwargs):
         node = kwargs["node"]
         self.node = node
-        
         self.subject_subscriber = node.create_subscription(
             PoseStamped,
             "/mecanumbot/subject_pose",
             self.subject_callback,
             10
+        )
+        qos_profile = QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST
+        )
+        self.robot_subscriber = node.create_subscription(
+            PoseWithCovarianceStamped,
+            "/amcl_pose",
+            self.amcl_callback,
+            qos_profile
         )
         self.wanders = 0
 
@@ -143,37 +157,42 @@ class DogCheckFollowing(py_trees.behaviour.Behaviour): # TODO
         last_distance = self.blackboard.last_distance
 
         distance_diff = distance - last_distance
+        now_ns = self.node.get_clock().now().nanoseconds
+        seen_ns = Time.from_msg(self.subj_last_seen).nanoseconds
+        dt = (now_ns - seen_ns) / 1e9
 
         if distance is None:
             #self.node.get_logger().info("DogCheckFollowing: No distance data yet")
             return py_trees.common.Status.RUNNING
-        if distance_diff >= 0:
+        
+        if float(dt) > self.blackboard.visibility_time_threshold:
             self.wanders += 1
         if self.wanders > self.blackboard.Dog_max_wander_allowed:
             self.node.get_logger().info(f"{self.name}: Subject wandered too much, lost")
             self.wanders = 0
             return py_trees.common.Status.FAILURE
-        elif distance_diff > self.blackboard.Dog_following_max_threshold:
-            self.node.get_logger().info(f"{self.name}: Subject too far, distance increased by {distance_diff:.2f} m")
+        elif self.current_distance > self.blackboard.Dog_following_max_threshold:
+            self.node.get_logger().info(f"{self.name}: Subject too far, distance increased by {self.current_distance:.2f} m")
             self.blackboard.last_distance = distance
             return py_trees.common.Status.FAILURE
-        elif distance_diff <= self.blackboard.Dog_following_max_threshold:
-            self.node.get_logger().info(f"{self.name}: Following OK, distance change {distance_diff:.2f} m")
+        elif self.current_distance <= self.blackboard.Dog_following_max_threshold:
+            self.node.get_logger().info(f"{self.name}: Following OK, distance change {self.current_distance:.2f} m")
             self.blackboard.last_distance = distance
             return py_trees.common.Status.SUCCESS
     
     def subject_callback(self, msg):
         subject_pos = msg.pose.position
-        target_pos = self.blackboard.target_position
+        self.subj_last_seen = msg.header.stamp
+        if self.robot_pose is not None:
+            dist = np.sqrt(
+                (subject_pos.x - self.robot_pose.position.x) ** 2 +
+                (subject_pos.y - self.robot_pose.position.y) ** 2
+            )
 
-        dist = np.sqrt(
-            (subject_pos.x - target_pos.x) ** 2 +
-            (subject_pos.y - target_pos.y) ** 2
-        )
-
-        # Update last distance
-        self.current_distance = dist
-
+            # Update last distance
+            self.current_distance = dist
+    def amcl_callback(self, msg):
+        self.robot_pose = msg.pose.pose
 class DogSelectTarget(py_trees.behaviour.Behaviour): #TODO
     def __init__(self, name="DogCheckFollowing"):
         super().__init__(name)

@@ -45,7 +45,7 @@ class LEDBehaviourSequence(py_trees.behaviour.Behaviour):  # Checks done - works
         node = kwargs["node"]
         self.node = node
         self.index = 0
-        self.srv_client = self.node.create_client(SetLedStatus,'/set_led_status')
+        self.srv_client = self.node.create_client(SetLedStatus,'/mecanumbot/set_led_status')
         
     def initialise(self):
         self.next_send_time = None

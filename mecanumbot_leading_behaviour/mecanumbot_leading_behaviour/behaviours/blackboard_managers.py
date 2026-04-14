@@ -142,7 +142,7 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
 
         self.blackboard.last_distance = 15.0
 
-        self.srv_client = self.node.create_client(SetLedStatus,'/set_led_status')
+        self.srv_client = self.node.create_client(SetLedStatus,'/mecanumbot/set_led_status')
         self.feedback_message = "ConstantParamsToBlackboard setup complete"
         self.logger.info(self.feedback_message)
 

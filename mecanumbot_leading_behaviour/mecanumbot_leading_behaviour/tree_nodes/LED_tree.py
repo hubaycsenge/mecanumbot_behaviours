@@ -5,7 +5,7 @@ import py_trees_ros
 from ament_index_python.packages import get_package_share_directory 
 from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourSequence
 from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
-from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach, \
+from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach,CheckRobotAtLastCheckpoint, \
                                                                       TurnToward, CheckSubjectTargetSuccess
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard, \
                                                                         DistanceToBlackboard
@@ -52,18 +52,26 @@ def create_root(yaml_path=None):
     LED_indicate_near_target = LEDBehaviourSequence('LNear', 'indicate_close_target')
 
     approach_target = Approach(name="ApproachTarget", target_type="target")
+    approach_ckpt = Approach(name="ApproachCheckpoint", target_type="checkpoint")
+    check_if_at_last_checkpoint = CheckRobotAtLastCheckpoint(name="CheckAtLastCheckpoint")
     approach_subject = Approach(name="ApproachSubject", target_type="subject")
     turn_toward_subject = TurnToward(name="TurnTowardSubject", target_type="subject")
     turn_toward_target = TurnToward(name="TurnTowardTarget", target_type="target")
 
-    approach_subject_seq = py_trees.composites.Sequence( # seems OK 
-                                                        name="SubjectApproachDecorSelector",
-                                                        memory=True,
-                                                        children=[approach_subject]
-                                                        )
-    retry_approach_subject = py_trees.decorators.Retry("RetrySubjectApproach",
-                                                child = approach_subject_seq,
-                                                num_failures=-1)
+    go_to_last_checkpoint_seq = py_trees.composites.Sequence(
+        name="GoToLastCheckpoint",
+        memory=True
+    )
+    go_to_last_checkpoint_seq.add_children([
+        approach_ckpt,
+        check_if_at_last_checkpoint
+        
+    ])
+    approach_target_loop = py_trees.decorators.Retry(
+        name="ApproachTargetLoop",
+        child=go_to_last_checkpoint_seq,
+        num_failures=-1 
+    )
 
     check_subject_near_target = CheckSubjectTargetSuccess(
         name="CheckSubjectNearTarget"
@@ -92,9 +100,10 @@ def create_root(yaml_path=None):
     root.add_children([
         params_loader,
         delay_timer,
-        retry_approach_subject,
+        approach_subject,
         LED_catch_attention_outside,
         approach_target,
+        approach_target_loop,
         LED_show_target,
         show_while_close_loop
     ])

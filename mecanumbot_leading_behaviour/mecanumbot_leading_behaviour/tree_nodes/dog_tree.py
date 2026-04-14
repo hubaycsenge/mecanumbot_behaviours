@@ -5,7 +5,7 @@ import py_trees_ros
 from ament_index_python.packages import get_package_share_directory 
 from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourSequence, DogCheckFollowing, DogSelectTarget
 from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach, \
-                                                                      TurnToward, CheckSubjectTargetSuccess
+                                                                      TurnToward, CheckSubjectTargetSuccess, RelativeTurnPattern
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard
 
 leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour')
@@ -57,6 +57,8 @@ def create_root(yaml_path=None):
     turn_toward_subject_show_tgt = TurnToward(name="TurnTowardSubjectShowTgt", target_type="subject")
     turn_toward_target_show = TurnToward(name="TurnTowardTargetShow", target_type="target")
     turn_toward_checkpoint_step = TurnToward(name="TurnTowardCheckpointStep", target_type="checkpoint")
+    attention_turn_pattern_init = RelativeTurnPattern(name="AttentionTurnPatternInit", step_angle_deg=15.0)
+    attention_turn_pattern_show = RelativeTurnPattern(name="AttentionTurnPatternShow", step_angle_deg=15.0)
 
     check_subject_near_target = CheckSubjectTargetSuccess(name="CheckSubjectNearTarget")
     
@@ -70,6 +72,7 @@ def create_root(yaml_path=None):
     seek_attention_init.add_children([
         approach_subject_init,
         turn_toward_subject_init_seek,
+        attention_turn_pattern_init,
         Dog_catch_attention_init
     ])
 
@@ -82,6 +85,7 @@ def create_root(yaml_path=None):
     show_while_close_seq.add_children([
         check_subject_near_target,
         turn_toward_subject_show_tgt,
+        attention_turn_pattern_show,
         Dog_catch_attention_show_tgt,
         turn_toward_target_show,
         Dog_show_target

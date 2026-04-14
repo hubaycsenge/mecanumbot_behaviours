@@ -4,7 +4,7 @@ import py_trees
 import py_trees_ros 
 from ament_index_python.packages import get_package_share_directory 
 from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach, \
-                                                                      TurnToward
+                                                                      TurnToward, CheckRobotAtLastCheckpoint
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard
 
 leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour')
@@ -43,6 +43,21 @@ def create_root(yaml_path=None):
     turn_toward_start = TurnToward(name="TurnTowardStart", target_type="start")
     approach_target = Approach(name="ApproachTarget", target_type="target")    
     approach_start = Approach(name="ApproachStart", target_type="start")
+    go_to_last_checkpoint_seq = py_trees.composites.Sequence(
+        name="GoToLastCheckpoint",
+        memory=True
+    )
+    approach_ckpt = Approach(name="ApproachCheckpoint", target_type="checkpoint")
+    check_if_at_last_checkpoint = CheckRobotAtLastCheckpoint(name="CheckAtLastCheckpoint")
+    go_to_last_checkpoint_seq.add_children([
+        approach_ckpt,
+        check_if_at_last_checkpoint
+    ])
+    approach_target_loop = py_trees.decorators.Retry(
+        name="ApproachTargetLoop",
+        child=go_to_last_checkpoint_seq,
+        num_failures=-1 
+    )
 
 
     root.add_children([params_loader, turn_toward_start, approach_start, turn_toward_target, approach_target])

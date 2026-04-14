@@ -4,7 +4,8 @@ import py_trees
 import numpy as np
 from geometry_msgs.msg import PoseStamped,PoseWithCovarianceStamped,Pose
 import numpy as np
-from tf_transformations import quaternion_from_euler, euler_from_quaternion
+#from tf_transformations import quaternion_from_euler, euler_from_quaternion
+from transforms3d.euler import quat2euler, euler2quat
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from rclpy.time import Time
 from action_msgs.msg import GoalStatusArray, GoalStatus
@@ -201,6 +202,150 @@ class TurnToward(py_trees.behaviour.Behaviour): # Tested, works
     def subject_callback(self, msg):
         self.subject_pose = msg
 
+
+class RelativeTurnPattern(py_trees.behaviour.Behaviour):
+    """Perform a small turn pattern: left, right, right, back to start heading."""
+
+    def __init__(self, name="RelativeTurnPattern", step_angle_deg=20.0):
+        super().__init__(name)
+        self.publisher = None
+        self.robot_pose = None
+        self.cmd_send_time = None
+        self.goal_uuid = None
+        self.goals_in_sys = []
+        self.goal_sent = False
+        self.turn_offsets = [
+            math.radians(step_angle_deg),
+            -math.radians(2*step_angle_deg),
+            math.radians(2*step_angle_deg),
+            -math.radians(step_angle_deg),
+            
+        ]
+
+    def setup(self, **kwargs):
+        node = kwargs["node"]
+        self.node = node
+
+        qos_profile = QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST
+        )
+
+        self.publisher = node.create_publisher(PoseStamped, "/goal_pose", 10)
+
+        self.robot_subscriber = node.create_subscription(
+            PoseWithCovarianceStamped,
+            "/amcl_pose",
+            self.amcl_callback,
+            qos_profile
+        )
+
+        self.status_sub = node.create_subscription(
+            GoalStatusArray,
+            "/navigate_to_pose/_action/status",
+            self.goal_status_callback,
+            10
+        )
+
+    def initialise(self):
+        self.phase_index = 0
+        self.goal_sent = False
+        self.cmd_send_time = None
+        self.goal_uuid = None
+        self.goal_status = STATUS_UNKNOWN
+
+    def update(self):
+        if self.robot_pose is None:
+            return py_trees.common.Status.RUNNING
+
+        if self.phase_index >= len(self.turn_offsets):
+            self.node.get_logger().info(f"{self.name}: Turn pattern completed")
+            return py_trees.common.Status.SUCCESS
+
+        if not self.goal_sent:
+            if self.check_if_running():
+                return py_trees.common.Status.RUNNING
+            self.send_relative_turn(self.turn_offsets[self.phase_index])
+            return py_trees.common.Status.RUNNING
+
+        if self.goal_uuid is None:
+            self.assign_goal_uuid()
+        if self.goal_uuid is None:
+            return py_trees.common.Status.RUNNING
+
+        self.goal_status = STATUS_UNKNOWN
+        for goal in self.goals_in_sys:
+            if np.array_equal(goal.goal_info.goal_id.uuid, self.goal_uuid):
+                self.goal_status = goal.status
+                break
+
+        if self.goal_status == STATUS_SUCCEEDED:
+            self.phase_index += 1
+            self.goal_sent = False
+            self.goal_uuid = None
+            self.cmd_send_time = None
+            return py_trees.common.Status.RUNNING
+        if self.goal_status in [STATUS_EXECUTING, STATUS_ACCEPTED]:
+            return py_trees.common.Status.RUNNING
+        if self.goal_status in [STATUS_ABORTED, STATUS_CANCELED, STATUS_CANCELING, STATUS_UNKNOWN]:
+            self.node.get_logger().info(f"{self.name}: Turn phase failed, retrying phase {self.phase_index}")
+            self.goal_sent = False
+            self.goal_uuid = None
+            self.cmd_send_time = None
+            return py_trees.common.Status.RUNNING
+
+        return py_trees.common.Status.RUNNING
+
+    def send_relative_turn(self, yaw_offset):
+        current_yaw = yaw_from_quaternion(self.robot_pose.orientation)
+        desired_yaw = normalize_angle(current_yaw + yaw_offset)
+        q = euler2quat(0, 0, desired_yaw)
+
+        turn_cmd = PoseStamped()
+        turn_cmd.header.frame_id = "map"
+        self.cmd_send_time = self.node.get_clock().now()
+        turn_cmd.header.stamp = self.cmd_send_time.to_msg()
+        turn_cmd.pose.position = self.robot_pose.position
+        turn_cmd.pose.orientation.w = q[0]
+        turn_cmd.pose.orientation.x = q[1]
+        turn_cmd.pose.orientation.y = q[2]
+        turn_cmd.pose.orientation.z = q[3]
+
+        self.publisher.publish(turn_cmd)
+        self.goal_sent = True
+        self.node.get_logger().info(f"{self.name}: Sent turn phase {self.phase_index + 1}/{len(self.turn_offsets)}")
+
+    def assign_goal_uuid(self):
+        if self.goals_in_sys is None or self.cmd_send_time is None:
+            return
+
+        cmd_time = Time.from_msg(self.cmd_send_time.to_msg())
+        for goal_status in reversed(self.goals_in_sys):
+            goal_time = Time.from_msg(goal_status.goal_info.stamp)
+            if goal_time >= cmd_time:
+                self.goal_uuid = goal_status.goal_info.goal_id.uuid
+                return
+
+    def check_if_running(self):
+        if self.goals_in_sys is None:
+            return False
+
+        for goal_status in self.goals_in_sys:
+            if goal_status.status == STATUS_EXECUTING:
+                return True
+        return False
+
+    def goal_status_callback(self, msg):
+        if len(msg.status_list) > 5:
+            self.goals_in_sys = msg.status_list[-5:]
+        else:
+            self.goals_in_sys = msg.status_list
+
+    def amcl_callback(self, msg):
+        self.robot_pose = msg.pose.pose
+
 class Approach(py_trees.behaviour.Behaviour): # TODO
 
     def __init__(self, name="Approach", target_type="subject", mode ="exact"):
@@ -225,6 +370,8 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
         
         self.turning = False
         self.target_type = target_type
+        self.subject_recovery_plan = None
+        self.subject_recovery_index = 0
     
         self.cmd_send_time = None 
 
@@ -286,12 +433,13 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
                 seen_ns = Time.from_msg(self.subj_last_seen).nanoseconds
                 dt = (now_ns - seen_ns) / 1e9
                 if float(dt) > self.blackboard.visibility_time_threshold:
-                    self.blackboard.Dog_current_checkpoint = self.select_closest_checkpoint_to_direction()
+                    self.blackboard.Dog_current_checkpoint = self.select_recovery_checkpoint_for_lost_subject()
                     self.node.get_logger().info(f'Sending robot to checkpoint {self.blackboard.Dog_current_checkpoint}')
                     self.compare_position = self.blackboard.Dog_checkpoints[self.blackboard.Dog_current_checkpoint]
                     self.send_goal_command()
                     
                     return py_trees.common.Status.FAILURE
+                self.reset_subject_recovery_plan()
                 self.compare_position = self.subject_pose.position
             elif self.target_type == "checkpoint":
                     self.compare_position = self.blackboard.Dog_checkpoints[self.blackboard.Dog_current_checkpoint]
@@ -411,6 +559,44 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
     def subject_callback(self, msg):
         self.subj_last_seen = msg.header.stamp
         self.subject_pose = msg.pose
+        self.reset_subject_recovery_plan()
+
+    def reset_subject_recovery_plan(self):
+        self.subject_recovery_plan = None
+        self.subject_recovery_index = 0
+
+    def select_recovery_checkpoint_for_lost_subject(self):
+        if self.subject_recovery_plan is None:
+            nearest_idx = self.select_closest_checkpoint_to_direction()
+            prev_idx = max(0, nearest_idx - 1)
+            next_idx = min(self.blackboard.Dog_max_checkpoint, nearest_idx + 1)
+
+            plan = [nearest_idx]
+            if prev_idx not in plan:
+                plan.append(prev_idx)
+            if next_idx not in plan:
+                plan.append(next_idx)
+
+            self.subject_recovery_plan = plan
+            self.subject_recovery_index = 0
+
+        active_idx = self.subject_recovery_plan[self.subject_recovery_index]
+        if self.is_robot_near_checkpoint(active_idx):
+            if self.subject_recovery_index < len(self.subject_recovery_plan) - 1:
+                self.subject_recovery_index += 1
+                active_idx = self.subject_recovery_plan[self.subject_recovery_index]
+
+        return active_idx
+
+    def is_robot_near_checkpoint(self, checkpoint_idx):
+        if self.robot_pose is None:
+            return False
+
+        checkpoint = self.blackboard.Dog_checkpoints[checkpoint_idx]
+        dx = checkpoint.x - self.robot_pose.position.x
+        dy = checkpoint.y - self.robot_pose.position.y
+        dist = math.sqrt(dx * dx + dy * dy)
+        return dist <= float(self.blackboard.robot_closeness_threshold)
     
     def select_closest_checkpoint_to_direction(self):
         best_checkpoint_idx = None
@@ -431,6 +617,8 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
                 best_score = dist
                 best_checkpoint_idx = idx
 
+        if best_checkpoint_idx is None:
+            return 0
         return best_checkpoint_idx
 class CheckSubjectTargetSuccess(py_trees.behaviour.Behaviour): #TODO
     """
@@ -478,6 +666,36 @@ class CheckSubjectTargetSuccess(py_trees.behaviour.Behaviour): #TODO
         dy = target_position.y - self.subject_pose.pose.position.y
         self.dist = math.sqrt(dx*dx + dy*dy)
 
+
+class CheckRobotAtLastCheckpoint(py_trees.behaviour.Behaviour):
+    """Return SUCCESS when the robot reached the last checkpoint index."""
+
+    def __init__(self, name="CheckRobotAtLastCheckpoint"):
+        super().__init__(name)
+
+        self.blackboard = self.attach_blackboard_client(name=name)
+        self.blackboard.register_key("Dog_current_checkpoint", access=py_trees.common.Access.READ)
+        self.blackboard.register_key("Dog_max_checkpoint", access=py_trees.common.Access.READ)
+
+    def setup(self, **kwargs):
+        self.node = kwargs["node"]
+        self.logger.info(f"{self.name}: Setup complete")
+
+    def update(self):
+        current_checkpoint = self.blackboard.Dog_current_checkpoint
+        max_checkpoint = self.blackboard.Dog_max_checkpoint
+
+        if current_checkpoint >= max_checkpoint:
+            self.node.get_logger().info(
+                f"{self.name}: Robot is at last checkpoint ({current_checkpoint}/{max_checkpoint})"
+            )
+            return py_trees.common.Status.SUCCESS
+
+        self.node.get_logger().info(
+            f"{self.name}: Robot not at last checkpoint yet ({current_checkpoint}/{max_checkpoint})"
+        )
+        return py_trees.common.Status.FAILURE
+
 def calculate_facing_orientation(robot_pose, target_position):
     # 1. Vector FROM Robot TO Target (Target - Robot)
     dx = target_position.x - robot_pose.position.x
@@ -488,7 +706,7 @@ def calculate_facing_orientation(robot_pose, target_position):
 
     # 3. Convert to Quaternion
     # We do NOT subtract robot_yaw. We want the absolute compass direction.
-    q = quaternion_from_euler(0, 0, desired_yaw)
+    q = euler2quat(0, 0, desired_yaw)
 
     orientation = PoseStamped().pose.orientation
     orientation.x = q[0]
@@ -538,7 +756,7 @@ def pose_to_goal(object_position, robot_pose, stop_threshold=0.3, mode="exact", 
 
     # Orientation: face the person
     yaw = math.atan2(Oy - Y, Ox - X)
-    q = quaternion_from_euler(0, 0, yaw)
+    q = euler2quat(0, 0, yaw)
 
     goal = Pose()
     goal.position.x = X
@@ -553,3 +771,7 @@ def yaw_from_quaternion(q):
     siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
     cosy_cosp = 1.0 - 2.0 * (q.y*q.y + q.z*q.z)
     return math.atan2(siny_cosp, cosy_cosp)
+
+
+def normalize_angle(angle):
+    return math.atan2(math.sin(angle), math.cos(angle))

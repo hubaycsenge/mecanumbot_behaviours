@@ -4,18 +4,19 @@ bottom_up_tree_node:
     robot_closeness_threshold: 0.25 #minimum approach distance of the robot, we do not want to hit subject TODO: test optimum
     target_reached_threshold: 0.75  # the critical distance of target and subject to tell if reached TODO: test optimum
 
-    visibility_time_threshold: 5 # time threshold of lastz incoming 'subject' data
+    visibility_time_threshold: 5 # time threshold of last incoming 'subject' data
     robot_approach_distance : 1.0 #how much the robot should go at once in dog condition TODO: test optimum
     Dog_following_max_threshold: 0.20 # maximum distance difference allowed to still consider following 
-    Dog_max_wander_allowed: 5 # maximum allowed wander count before considering the subject lost
+    Dog_max_wander_allowed: 1 # maximum allowed wander count before considering the subject lost
 
     Dog_checkpoints:
-      - "{'X':0.452756, 'Y':-0.713444, 'Z':0.0 }"
-      - "{'X':-0.469606, 'Y':-0.640191, 'Z':0.0 }"
+      - "{'X':0.452756, 'Y':-0.71344, 'Z':0.0 }"
+      - "{'X':-0.46960, 'Y':-0.64019, 'Z':0.0 }"
       - "{'X':-1.27948, 'Y':-1.91089, 'Z':0.0 }"
       - "{'X':-2.59768, 'Y':-3.46202, 'Z':0.0 }"
       - "{'X':-3.51496, 'Y':-4.63466, 'Z':0.0 }"
       - "{'X':-2.76527, 'Y':-6.12262, 'Z':0.0 }"
+      - "{'X':-2.31523, 'Y':-6.30414, 'Z':0.0 }"
       - "{'X':-2.15523, 'Y':-6.55595, 'Z':0.0 }"
 
     LED_start_setting: 
@@ -25,7 +26,7 @@ bottom_up_tree_node:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
       - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}" #white slow blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      -  "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}" #white slow blink
+      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}" #white slow blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
      
     LED_indicate_target_times:
@@ -34,18 +35,22 @@ bottom_up_tree_node:
       - 1 #black
       - 3 #white
       - 1 #black
-      
+      - 3 #white
+      - 1 #black
+
     LED_indicate_close_target_seq:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':5, 'color':7},'fr':{'mode':5, 'color':7},'bl':{'mode':5, 'color':7},'br':{'mode':5, 'color':7}}" # yellow fast blink
+      - "{'fl':{'mode':5, 'color':2},'fr':{'mode':5, 'color':2},'bl':{'mode':5, 'color':2},'br':{'mode':5, 'color':2}}" # yellow fast blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':5, 'color':7},'fr':{'mode':5, 'color':7},'bl':{'mode':5, 'color':7},'br':{'mode':5, 'color':7}}" # yellow fast blink
+      - "{'fl':{'mode':5, 'color':2},'fr':{'mode':5, 'color':2},'bl':{'mode':5, 'color':2},'br':{'mode':5, 'color':2}}" # yellow fast blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':5, 'color':7},'fr':{'mode':5, 'color':7},'bl':{'mode':5, 'color':7},'br':{'mode':5, 'color':7}}" # yellow fast blink
+      - "{'fl':{'mode':5, 'color':2},'fr':{'mode':5, 'color':2},'bl':{'mode':5, 'color':2},'br':{'mode':5, 'color':2}}" # yellow fast blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
       
 
     LED_indicate_close_target_times:
+      - 1 #black
+      - 3 #yellow
       - 1 #black
       - 3 #yellow
       - 1 #black
@@ -63,6 +68,7 @@ bottom_up_tree_node:
         - 0.5 #black
         - 1.5 #white
         - 0.5 #black
+
 
     Dog_indicate_target_seq:
        - "{'n_pos':8.5,'gl_pos':3.19,'gr_pos':7.05}" #gripper open, look ahead
