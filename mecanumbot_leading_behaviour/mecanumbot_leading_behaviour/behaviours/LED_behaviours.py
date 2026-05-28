@@ -39,6 +39,14 @@ class LEDBehaviourSequence(py_trees.behaviour.Behaviour):  # Checks done - works
             key="LED_catch_attention_times", 
             access=py_trees.common.Access.READ
         )
+        self.blackboard.register_key(
+            key="LED_thank_seq", # list of 
+            access=py_trees.common.Access.READ
+        )
+        self.blackboard.register_key(
+            key="LED_thank_times", 
+            access=py_trees.common.Access.READ
+        )
         self.mode = mode
     
     def setup(self, **kwargs):
@@ -59,6 +67,9 @@ class LEDBehaviourSequence(py_trees.behaviour.Behaviour):  # Checks done - works
         elif self.mode == "indicate_close_target":
             self.LED_seq = self.blackboard.LED_indicate_close_target_seq
             self.delay = self.blackboard.LED_indicate_close_target_times  # [s]
+        elif self.mode == "thank":
+            self.LED_seq = self.blackboard.LED_thank_seq
+            self.delay = self.blackboard.LED_thank_times  # [s] 
         else:
             self.node.get_logger().error(f"{self.name}:Unknown LED behaviour mode: {self.mode}")
             return

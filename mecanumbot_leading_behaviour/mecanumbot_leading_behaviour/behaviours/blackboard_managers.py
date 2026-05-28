@@ -57,6 +57,8 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.register_key("LED_indicate_target_times", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("LED_catch_attention_times", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("LED_indicate_close_target_times", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("LED_thank_seq", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("LED_thank_times", access=py_trees.common.Access.WRITE)
 
         self.blackboard.register_key("Dog_following_max_threshold", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_max_wander_allowed", access=py_trees.common.Access.WRITE)
@@ -70,6 +72,8 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.register_key("Dog_indicate_target_times", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_catch_attention_seq", access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_catch_attention_times", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("Dog_thank_seq", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("Dog_thank_times", access=py_trees.common.Access.WRITE)
 
 
         self.blackboard.register_key("last_distance",access=py_trees.common.Access.WRITE)
@@ -124,6 +128,8 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.LED_indicate_target_times = raw_params["LED_indicate_target_times"]
         self.blackboard.LED_catch_attention_times = raw_params["LED_catch_attention_times"]
         self.blackboard.LED_indicate_close_target_times = raw_params["LED_indicate_target_times"]
+        self.blackboard.LED_thank_seq = [parse_led(e) for e in raw_params["LED_thank_seq"]]
+        self.blackboard.LED_thank_times = raw_params["LED_thank_times"]
 
         self.blackboard.Dog_following_max_threshold = float(raw_params["Dog_following_max_threshold"])
         self.blackboard.Dog_max_wander_allowed = raw_params["Dog_max_wander_allowed"]
@@ -132,6 +138,8 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.Dog_indicate_target_times = raw_params["Dog_indicate_target_times"]
         self.blackboard.Dog_catch_attention_seq = [parse_dog(e) for e in raw_params["Dog_catch_attention_seq"]]
         self.blackboard.Dog_catch_attention_times = raw_params["Dog_catch_attention_times"]
+        self.blackboard.Dog_thank_seq = [parse_dog(e) for e in raw_params["Dog_thank_seq"]]
+        self.blackboard.Dog_thank_times = raw_params["Dog_thank_times"]
 
         self.blackboard.Dog_checkpoints = [parse_ckpt(ckpt) for ckpt in raw_params["Dog_checkpoints"]]
         self.blackboard.start_position = self.blackboard.Dog_checkpoints[0] # Assuming the first checkpoint is the start position

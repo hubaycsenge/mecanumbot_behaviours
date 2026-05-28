@@ -6,7 +6,8 @@ from ament_index_python.packages import get_package_share_directory
 from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourSequence
 from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
 from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach,CheckRobotAtLastCheckpoint, \
-                                                                      TurnToward, CheckSubjectTargetSuccess
+                                                                      TurnToward, CheckSubjectTargetSuccess, \
+                                                                      CheckRobotHasBall
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard, \
                                                                         DistanceToBlackboard
 
@@ -50,6 +51,7 @@ def create_root(yaml_path=None):
     LED_catch_attention = LEDBehaviourSequence('LCatch', 'catch_attention')
     LED_catch_attention_outside = LEDBehaviourSequence('LCatchO', 'catch_attention')
     LED_indicate_near_target = LEDBehaviourSequence('LNear', 'indicate_close_target')
+    LED_thank = LEDBehaviourSequence('LThank', 'thank')
 
     approach_target = Approach(name="ApproachTarget", target_type="target")
     approach_ckpt = Approach(name="ApproachCheckpoint", target_type="checkpoint")
@@ -57,6 +59,14 @@ def create_root(yaml_path=None):
     approach_subject = Approach(name="ApproachSubject", target_type="subject")
     turn_toward_subject = TurnToward(name="TurnTowardSubject", target_type="subject")
     turn_toward_target = TurnToward(name="TurnTowardTarget", target_type="target")
+    check_if_has_ball = CheckRobotHasBall(name="CheckIfHasBall")
+
+    ball_reaction_seq = py_trees.composites.Sequence(name="BallReactionSeq",memory=True)
+    ball_reaction_seq.add_children([
+        check_if_has_ball,
+        LED_thank
+    ])
+    ball_reaction_repeat = py_trees.decorators.Repeat(name="BallReactionRepeat", child=ball_reaction_seq, num_success=-1)
 
     go_to_last_checkpoint_seq = py_trees.composites.Sequence(
         name="GoToLastCheckpoint",
@@ -103,9 +113,10 @@ def create_root(yaml_path=None):
         approach_subject,
         LED_catch_attention_outside,
         approach_target,
-        approach_target_loop,
+        #approach_target_loop,
         LED_show_target,
-        show_while_close_loop
+        show_while_close_loop,
+        ball_reaction_repeat
     ])
 
     return root

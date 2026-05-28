@@ -36,6 +36,14 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
             access=py_trees.common.Access.READ
         )
 
+        self.blackboard.register_key(
+            key="Dog_thank_seq", # list of motor commands
+            access=py_trees.common.Access.READ
+        )
+        self.blackboard.register_key(
+            key="Dog_thank_times", 
+            access=py_trees.common.Access.READ
+        )
         self.mode = mode
     
     def setup(self, **kwargs):
@@ -63,6 +71,10 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
             self.behaviour_seq = self.blackboard.Dog_catch_attention_seq
             self.delay = self.blackboard.Dog_catch_attention_times  # in senconds
             #self.node.get_logger().info("Dog Catch Attention behaviour publisher ready")
+        elif self.mode == "thank":
+            self.behaviour_seq = self.blackboard.Dog_thank_seq
+            self.delay = self.blackboard.Dog_thank_times  # in senconds
+            #self.node.get_logger().info("Dog Thank behaviour publisher ready")
     
     def update(self):
         # Safety checks

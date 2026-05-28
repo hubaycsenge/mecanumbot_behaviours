@@ -8,6 +8,7 @@ import numpy as np
 from transforms3d.euler import quat2euler, euler2quat
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from rclpy.time import Time
+from std_msgs.msg import Bool
 from action_msgs.msg import GoalStatusArray, GoalStatus
 
 
@@ -202,7 +203,6 @@ class TurnToward(py_trees.behaviour.Behaviour): # Tested, works
     def subject_callback(self, msg):
         self.subject_pose = msg
 
-
 class RelativeTurnPattern(py_trees.behaviour.Behaviour):
     """Perform a small turn pattern: left, right, right, back to start heading."""
 
@@ -345,7 +345,6 @@ class RelativeTurnPattern(py_trees.behaviour.Behaviour):
 
     def amcl_callback(self, msg):
         self.robot_pose = msg.pose.pose
-
 class Approach(py_trees.behaviour.Behaviour): # TODO
 
     def __init__(self, name="Approach", target_type="subject", mode ="exact"):
@@ -569,7 +568,7 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
         if self.subject_recovery_plan is None:
             nearest_idx = self.select_closest_checkpoint_to_direction()
             prev_idx = max(0, nearest_idx - 1)
-            next_idx = min(self.blackboard.Dog_max_checkpoint, nearest_idx + 1)
+            next_idx = min(self.blackboard.Dog_max_checkpoint, nearest_idx + 2)
 
             plan = [nearest_idx]
             if prev_idx not in plan:
@@ -666,6 +665,39 @@ class CheckSubjectTargetSuccess(py_trees.behaviour.Behaviour): #TODO
         dy = target_position.y - self.subject_pose.pose.position.y
         self.dist = math.sqrt(dx*dx + dy*dy)
 
+class CheckRobotHasBall(py_trees.behaviour.Behaviour):
+    def __init__(self, name="CheckRobotHasBall"):
+        super().__init__(name)
+
+        # Blackboard keys
+        self.blackboard = self.attach_blackboard_client(name=name)
+        self.blackboard.register_key(key="ball_seen_time_threshold",access=py_trees.common.Access.READ)
+    def setup(self, **kwargs):
+        node = kwargs["node"]
+        self.node = node
+        
+        self.ball_time_subscriber = node.create_subscription(
+            Bool,
+            "/mecanumbot/has_object",
+            self.has_ball_callback,
+            10
+        )
+        
+        self.logger.info(f"{self.name}: Setup complete")
+    def update(self):
+        if self.has_ball is None:
+            self.node.get_logger().info(f"{self.name}: No ball time received yet")
+            return py_trees.common.Status.RUNNING
+
+        if self.has_ball == True:
+            self.node.get_logger().info(f"{self.name}: Robot has ball")
+            return py_trees.common.Status.SUCCESS
+        else:
+            self.node.get_logger().info(f"{self.name}: Robot does NOT have ball")
+            return py_trees.common.Status.FAILURE
+        
+    def has_ball_callback(self, msg):
+        self.has_ball = msg.data
 
 class CheckRobotAtLastCheckpoint(py_trees.behaviour.Behaviour):
     """Return SUCCESS when the robot reached the last checkpoint index."""
@@ -709,10 +741,10 @@ def calculate_facing_orientation(robot_pose, target_position):
     q = euler2quat(0, 0, desired_yaw)
 
     orientation = PoseStamped().pose.orientation
-    orientation.x = q[0]
-    orientation.y = q[1]
-    orientation.z = q[2]
-    orientation.w = q[3]
+    orientation.w = q[0]
+    orientation.x = q[1]
+    orientation.y = q[2]
+    orientation.z = q[3]
     
     return orientation
 
@@ -775,3 +807,4 @@ def yaw_from_quaternion(q):
 
 def normalize_angle(angle):
     return math.atan2(math.sin(angle), math.cos(angle))
+

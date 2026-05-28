@@ -3,9 +3,9 @@ import rclpy
 import py_trees 
 import py_trees_ros 
 from ament_index_python.packages import get_package_share_directory 
-from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourSequence, DogCheckFollowing, DogSelectTarget
+from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourSequence, DogCheckFollowing
 from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach, \
-                                                                      TurnToward, CheckSubjectTargetSuccess, RelativeTurnPattern
+                                                                      TurnToward, CheckSubjectTargetSuccess, RelativeTurnPattern, CheckRobotHasBall
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard
 
 leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour')
@@ -43,10 +43,13 @@ def create_root(yaml_path=None):
 
 
     delay_timer = py_trees.timers.Timer(name="DelayTimer", duration=1)
+    turn_delay_timer = py_trees.timers.Timer(name="TurnDelayTimer", duration=10)
 
     Dog_show_target = DogBehaviourSequence('DShow', 'indicate_target')
     Dog_catch_attention_init = DogBehaviourSequence('DCatchInit', 'catch_attention')
     Dog_catch_attention_show_tgt = DogBehaviourSequence('DCatchShow', 'catch_attention')
+    Dog_thank = DogBehaviourSequence('DThank', 'thank')
+
     Dog_check_following = DogCheckFollowing(name="DogCheckFollowing")
 
     approach_target_step = Approach(name="ApproachTarget", target_type="checkpoint")
@@ -59,10 +62,18 @@ def create_root(yaml_path=None):
     turn_toward_checkpoint_step = TurnToward(name="TurnTowardCheckpointStep", target_type="checkpoint")
     attention_turn_pattern_init = RelativeTurnPattern(name="AttentionTurnPatternInit", step_angle_deg=15.0)
     attention_turn_pattern_show = RelativeTurnPattern(name="AttentionTurnPatternShow", step_angle_deg=15.0)
+    check_if_ball_given = CheckRobotHasBall(name="CheckIfBallGiven")
+
+
 
     check_subject_near_target = CheckSubjectTargetSuccess(name="CheckSubjectNearTarget")
     
-    
+    ball_reaction_seq = py_trees.composites.Sequence(name="BallReactionSeq",memory=True)
+    ball_reaction_seq.add_children([
+        check_if_ball_given,
+        Dog_thank
+    ])
+    ball_reaction_repeat = py_trees.decorators.Repeat(name="BallReactionRepeat", child=ball_reaction_seq, num_success=-1)
 
     # Approach subject and catch attention
     seek_attention_init = py_trees.composites.Sequence( # seems OK 
@@ -85,7 +96,7 @@ def create_root(yaml_path=None):
     show_while_close_seq.add_children([
         check_subject_near_target,
         turn_toward_subject_show_tgt,
-        attention_turn_pattern_show,
+        turn_delay_timer,
         Dog_catch_attention_show_tgt,
         turn_toward_target_show,
         Dog_show_target
@@ -107,6 +118,7 @@ def create_root(yaml_path=None):
     behaviour_selector = py_trees.composites.Selector("ShowOrLeadSelector",memory=True)
     behaviour_selector.add_children(
         [
+            ball_reaction_repeat,
             show_while_close_seq,
             lead_step_sequence
         ]

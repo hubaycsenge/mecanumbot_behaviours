@@ -47,13 +47,13 @@ bottom_up_tree_node:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
      
     LED_indicate_target_times:
-      - 1 #black
-      - 3 #white
-      - 1 #black
-      - 3 #white
-      - 1 #black
-      - 3 #white
-      - 1 #black
+      - 0.5 #black
+      - 1.5 #white
+      - 0.5 #black
+      - 1.5 #white
+      - 0.5 #black
+      - 1.5 #white
+      - 0.5 #black
 
     LED_indicate_close_target_seq:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
@@ -61,26 +61,36 @@ bottom_up_tree_node:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
       - "{'fl':{'mode':5, 'color':2},'fr':{'mode':5, 'color':2},'bl':{'mode':5, 'color':2},'br':{'mode':5, 'color':2}}" # yellow fast blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':5, 'color':2},'fr':{'mode':5, 'color':2},'bl':{'mode':5, 'color':2},'br':{'mode':5, 'color':2}}" # yellow fast blink
-      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':2, 'color':1},'bl':{'mode':1, 'color':1},'br':{'mode':2, 'color':1}}" #black fix
       
 
     LED_indicate_close_target_times:
-      - 1 #black
-      - 3 #yellow
-      - 1 #black
-      - 3 #yellow
-      - 1 #black
-      - 3 #yellow
-      - 1 #black
+      - 0.5 #black
+      - 1.5 #yellow
+      - 0.5 #black
+      - 1.5 #yellow
+      - 0.5 #black
+      - 1.5 #yellow
+      - 0.5 #black
 
     LED_catch_attention_seq:
       - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}" #white slow blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
       - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}" #white slow blink
-      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':2, 'color':1},'bl':{'mode':2, 'color':1},'br':{'mode':1, 'color':1}}" #black fix
+      - "{'fl':{'mode':1, 'color':0},'fr':{'mode':1, 'color':0},'bl':{'mode':1, 'color':0},'br':{'mode':1, 'color':0}}" #black fix
     
     LED_catch_attention_times:
+        - 1.5 #white
+        - 0.5 #black
+        - 1.5 #white
+        - 0.5 #black
+
+    LED_thank_seq:
+      - "{'fl':{'mode':6, 'color':6},'fr':{'mode':6, 'color':6},'bl':{'mode':6, 'color':6},'br':{'mode':6, 'color':6}}" #white slow blink
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
+      - "{'fl':{'mode':6, 'color':6},'fr':{'mode':6, 'color':6},'bl':{'mode':6, 'color':6},'br':{'mode':6, 'color':6}}" #white slow blink
+      - "{'fl':{'mode':1, 'color':0},'fr':{'mode':1, 'color':0},'bl':{'mode':1, 'color':0},'br':{'mode':1, 'color':0}}" #black fix
+    
+    LED_thank_times:
         - 1.5 #white
         - 0.5 #black
         - 1.5 #white
@@ -106,12 +116,12 @@ bottom_up_tree_node:
         - 0.5
 
     Dog_catch_attention_seq:
-       - "{'n_pos':8.90,'gl_pos':3.36,'gr_pos':6.83}" #gripper to default, look up
-       - "{'n_pos':8.50,'gl_pos':3.36,'gr_pos':6.83}" #gripper to default, look ahead
-       - "{'n_pos':8.90,'gl_pos':3.36,'gr_pos':6.83}" #gripper to default, look up
-       - "{'n_pos':8.50,'gl_pos':3.36,'gr_pos':6.83}" #gripper to default, look ahead
-       - "{'n_pos':8.90,'gl_pos':3.36,'gr_pos':6.83}" #gripper to default, look ahead
-       - "{'n_pos':8.50,'gl_pos':3.36,'gr_pos':6.83}" #gripper to default, look up
+       - "{'n_pos':8.90,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
+       - "{'n_pos':8.50,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
+       - "{'n_pos':8.90,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
+       - "{'n_pos':8.50,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
+       - "{'n_pos':8.90,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
+       - "{'n_pos':8.50,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
        
     
     Dog_catch_attention_times:
@@ -121,4 +131,21 @@ bottom_up_tree_node:
         - 0.25
         - 0.25
         - 0.25
-      
+    
+
+    Dog_thank_seq:
+       - "{'n_pos':8.90,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
+       - "{'n_pos':8.50,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
+       - "{'n_pos':8.90,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
+       - "{'n_pos':8.50,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
+       - "{'n_pos':8.90,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
+       - "{'n_pos':8.50,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
+       
+    
+    Dog_thank_times:
+        - 0.25
+        - 0.25
+        - 0.25
+        - 0.25
+        - 0.25
+        - 0.25
