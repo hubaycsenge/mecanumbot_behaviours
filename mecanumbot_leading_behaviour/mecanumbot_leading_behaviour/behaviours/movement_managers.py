@@ -2,7 +2,7 @@ import math
 import rclpy
 import py_trees
 import numpy as np
-from geometry_msgs.msg import PoseStamped,PoseWithCovarianceStamped,Pose
+from geometry_msgs.msg import Twist, PoseArray, PoseStamped,PoseWithCovarianceStamped,Pose
 import numpy as np
 #from tf_transformations import quaternion_from_euler, euler_from_quaternion
 from transforms3d.euler import quat2euler, euler2quat
@@ -345,7 +345,62 @@ class RelativeTurnPattern(py_trees.behaviour.Behaviour):
 
     def amcl_callback(self, msg):
         self.robot_pose = msg.pose.pose
-class Approach(py_trees.behaviour.Behaviour): # TODO
+
+class FindPeople(py_trees.behaviour.Behaviour):
+    """Spin in place until a fresh people_fusion message is received."""
+
+    def __init__(self, name="FindPeople", spin_speed=0.2, sight_timeout=1.0):
+        super().__init__(name)
+        self.spin_speed = float(spin_speed)
+        self.sight_timeout = float(sight_timeout)
+        self.publisher = None
+        self.people_poses = []
+        self.last_people_seen_time = None
+
+    def setup(self, **kwargs):
+        self.node = kwargs["node"]
+        self.publisher = self.node.create_publisher(Twist, "/cmd_vel", 10)
+        self.people_subscriber = self.node.create_subscription(
+            PoseArray,
+            "/mecanumbot/people_fusion",
+            self.people_callback,
+            10,
+        )
+        self.logger.info(f"{self.name}: Setup complete")
+
+    def has_fresh_people(self):
+        if self.last_people_seen_time is None or len(self.people_poses) == 0:
+            return False
+
+        now = self.node.get_clock().now()
+        age = (now - self.last_people_seen_time).nanoseconds / 1e9
+        return age <= self.sight_timeout
+
+    def publish_spin(self):
+        cmd = Twist()
+        cmd.angular.z = self.spin_speed
+        self.publisher.publish(cmd)
+
+    def stop_robot(self):
+        self.publisher.publish(Twist())
+
+    def update(self):
+        if self.has_fresh_people():
+            self.stop_robot()
+            self.node.get_logger().info(f"{self.name}: People detected, stopping spin")
+            return py_trees.common.Status.SUCCESS
+
+        self.publish_spin()
+        return py_trees.common.Status.RUNNING
+
+    def people_callback(self, msg):
+        self.people_poses = list(msg.poses)
+        if msg.header.stamp.sec != 0 or msg.header.stamp.nanosec != 0:
+            self.last_people_seen_time = Time.from_msg(msg.header.stamp)
+        else:
+            self.last_people_seen_time = self.node.get_clock().now()
+            
+class Approach(py_trees.behaviour.Behaviour):
 
     def __init__(self, name="Approach", target_type="subject", mode ="exact"):
         super().__init__(name)
@@ -389,11 +444,11 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
 
         if self.target_type == "subject":
             self.subject_subscriber = node.create_subscription(
-                PoseStamped,
-                "/mecanumbot/subject_pose",
-                self.subject_callback,
-                10
-            )
+                                        PoseArray,
+                                        "/mecanumbot/people_fusion",
+                                        self.subject_callback,
+                                        10,
+        )
 
         self.robot_subscriber = node.create_subscription(
             PoseWithCovarianceStamped,
@@ -428,18 +483,8 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
             if self.target_type == "subject":
                 if self.subject_pose is None:
                     return py_trees.common.Status.RUNNING
-                now_ns = self.node.get_clock().now().nanoseconds
-                seen_ns = Time.from_msg(self.subj_last_seen).nanoseconds
-                dt = (now_ns - seen_ns) / 1e9
-                if float(dt) > self.blackboard.visibility_time_threshold:
-                    self.blackboard.Dog_current_checkpoint = self.select_recovery_checkpoint_for_lost_subject()
-                    self.node.get_logger().info(f'Sending robot to checkpoint {self.blackboard.Dog_current_checkpoint}')
-                    self.compare_position = self.blackboard.Dog_checkpoints[self.blackboard.Dog_current_checkpoint]
-                    self.send_goal_command()
-                    
-                    return py_trees.common.Status.FAILURE
-                self.reset_subject_recovery_plan()
                 self.compare_position = self.subject_pose.position
+
             elif self.target_type == "checkpoint":
                     self.compare_position = self.blackboard.Dog_checkpoints[self.blackboard.Dog_current_checkpoint]
                     self.node.get_logger().info(f'Robot sent to point {self.compare_position}, which is checkpoint NO. {self.blackboard.Dog_current_checkpoint}')
@@ -557,35 +602,7 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
 
     def subject_callback(self, msg):
         self.subj_last_seen = msg.header.stamp
-        self.subject_pose = msg.pose
-        self.reset_subject_recovery_plan()
-
-    def reset_subject_recovery_plan(self):
-        self.subject_recovery_plan = None
-        self.subject_recovery_index = 0
-
-    def select_recovery_checkpoint_for_lost_subject(self):
-        if self.subject_recovery_plan is None:
-            nearest_idx = self.select_closest_checkpoint_to_direction()
-            prev_idx = max(0, nearest_idx - 1)
-            next_idx = min(self.blackboard.Dog_max_checkpoint, nearest_idx + 2)
-
-            plan = [nearest_idx]
-            if prev_idx not in plan:
-                plan.append(prev_idx)
-            if next_idx not in plan:
-                plan.append(next_idx)
-
-            self.subject_recovery_plan = plan
-            self.subject_recovery_index = 0
-
-        active_idx = self.subject_recovery_plan[self.subject_recovery_index]
-        if self.is_robot_near_checkpoint(active_idx):
-            if self.subject_recovery_index < len(self.subject_recovery_plan) - 1:
-                self.subject_recovery_index += 1
-                active_idx = self.subject_recovery_plan[self.subject_recovery_index]
-
-        return active_idx
+        self.subject_pose = msg.poses[0]
 
     def is_robot_near_checkpoint(self, checkpoint_idx):
         if self.robot_pose is None:
@@ -597,28 +614,6 @@ class Approach(py_trees.behaviour.Behaviour): # TODO
         dist = math.sqrt(dx * dx + dy * dy)
         return dist <= float(self.blackboard.robot_closeness_threshold)
     
-    def select_closest_checkpoint_to_direction(self):
-        best_checkpoint_idx = None
-        best_score = float("inf")
-
-        for idx,cp in enumerate(self.blackboard.Dog_checkpoints):
-
-            cp_vec = np.array([
-                cp.x - self.robot_pose.position.x,
-                cp.y - self.robot_pose.position.y
-            ])
-
-            cp_dir = cp_vec / np.linalg.norm(cp_vec)
-
-            dist =  (self.subject_pose.position.x - cp.x)**2 + (self.subject_pose.position.y - cp.y)**2 
-
-            if dist < best_score:
-                best_score = dist
-                best_checkpoint_idx = idx
-
-        if best_checkpoint_idx is None:
-            return 0
-        return best_checkpoint_idx
 class CheckSubjectTargetSuccess(py_trees.behaviour.Behaviour): #TODO
     """
     Checks if the subject has successfully reached the target
@@ -803,7 +798,6 @@ def yaw_from_quaternion(q):
     siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
     cosy_cosp = 1.0 - 2.0 * (q.y*q.y + q.z*q.z)
     return math.atan2(siny_cosp, cosy_cosp)
-
 
 def normalize_angle(angle):
     return math.atan2(math.sin(angle), math.cos(angle))

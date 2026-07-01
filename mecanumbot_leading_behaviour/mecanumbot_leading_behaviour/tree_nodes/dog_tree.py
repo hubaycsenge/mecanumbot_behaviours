@@ -4,8 +4,8 @@ import py_trees
 import py_trees_ros 
 from ament_index_python.packages import get_package_share_directory 
 from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourSequence, DogCheckFollowing
-from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach, \
-                                                                      TurnToward, CheckSubjectTargetSuccess, RelativeTurnPattern, CheckRobotHasBall
+from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach, FindPeople, TurnToward,\
+                                                                     CheckSubjectTargetSuccess, RelativeTurnPattern, CheckRobotHasBall
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard
 
 leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour')
@@ -56,10 +56,12 @@ def create_root(yaml_path=None):
     approach_subject_init = Approach(name="ApproachSubjectInit", target_type="subject",mode ="fixed_distance")
 
     turn_toward_subject_init_seek = TurnToward(name="TurnTowardSubjectInitSeek", target_type="subject")
-    turn_toward_subject_check_follow = TurnToward(name="TurnTowardSubjectCheckFollow", target_type="subject")
-    turn_toward_subject_show_tgt = TurnToward(name="TurnTowardSubjectShowTgt", target_type="subject")
     turn_toward_target_show = TurnToward(name="TurnTowardTargetShow", target_type="target")
     turn_toward_checkpoint_step = TurnToward(name="TurnTowardCheckpointStep", target_type="checkpoint")
+    find_person_init = FindPeople(name="FindPersonInit")
+    find_person_ball_reaction = FindPeople(name="FindPersonBallReaction")
+    find_person_while_show = FindPeople(name="FindPersonWhileShow")
+    find_person_while_lead = FindPeople(name="FindPersonWhileLead")
     attention_turn_pattern_init = RelativeTurnPattern(name="AttentionTurnPatternInit", step_angle_deg=15.0)
     attention_turn_pattern_show = RelativeTurnPattern(name="AttentionTurnPatternShow", step_angle_deg=15.0)
     check_if_ball_given = CheckRobotHasBall(name="CheckIfBallGiven")
@@ -71,6 +73,7 @@ def create_root(yaml_path=None):
     ball_reaction_seq = py_trees.composites.Sequence(name="BallReactionSeq",memory=True)
     ball_reaction_seq.add_children([
         check_if_ball_given,
+        find_person_ball_reaction,
         Dog_thank
     ])
     ball_reaction_repeat = py_trees.decorators.Repeat(name="BallReactionRepeat", child=ball_reaction_seq, num_success=-1)
@@ -81,8 +84,9 @@ def create_root(yaml_path=None):
         memory=True
     )
     seek_attention_init.add_children([
+        find_person_init,
         approach_subject_init,
-        turn_toward_subject_init_seek,
+        turn_toward_subject_init_seek, # TODO: kell?
         attention_turn_pattern_init,
         Dog_catch_attention_init
     ])
@@ -94,8 +98,8 @@ def create_root(yaml_path=None):
     )
 
     show_while_close_seq.add_children([
+        find_person_while_show,
         check_subject_near_target,
-        turn_toward_subject_show_tgt,
         turn_delay_timer,
         Dog_catch_attention_show_tgt,
         turn_toward_target_show,
@@ -107,15 +111,18 @@ def create_root(yaml_path=None):
         name="LeadStepSequence",
         memory=True
     )
+
     lead_step_sequence.add_children([ 
+        find_person_while_lead,
+        check_subject_near_target,
         Dog_check_following,
         turn_toward_checkpoint_step,
         approach_target_step, 
-        turn_toward_subject_check_follow,
         delay_timer
     ])
 
     behaviour_selector = py_trees.composites.Selector("ShowOrLeadSelector",memory=True)
+
     behaviour_selector.add_children(
         [
             ball_reaction_repeat,

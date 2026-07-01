@@ -7,7 +7,7 @@ from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourS
 from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
 from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach,CheckRobotAtLastCheckpoint, \
                                                                       TurnToward, CheckSubjectTargetSuccess, \
-                                                                      CheckRobotHasBall
+                                                                      CheckRobotHasBall, FindPeople
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard, \
                                                                         DistanceToBlackboard
 
@@ -57,13 +57,17 @@ def create_root(yaml_path=None):
     approach_ckpt = Approach(name="ApproachCheckpoint", target_type="checkpoint")
     check_if_at_last_checkpoint = CheckRobotAtLastCheckpoint(name="CheckAtLastCheckpoint")
     approach_subject = Approach(name="ApproachSubject", target_type="subject")
-    turn_toward_subject = TurnToward(name="TurnTowardSubject", target_type="subject")
+    #turn_toward_subject = TurnToward(name="TurnTowardSubject", target_type="subject")
+    find_person_close = FindPeople(name="FindPersonClose")
+    find_person_start = FindPeople(name="FindPersonStart")
     turn_toward_target = TurnToward(name="TurnTowardTarget", target_type="target")
     check_if_has_ball = CheckRobotHasBall(name="CheckIfHasBall")
+    find_person_ball_reaction = FindPeople(name="FindPersonBallReaction")
 
     ball_reaction_seq = py_trees.composites.Sequence(name="BallReactionSeq",memory=True)
     ball_reaction_seq.add_children([
         check_if_has_ball,
+        find_person_ball_reaction,
         LED_thank
     ])
     ball_reaction_repeat = py_trees.decorators.Repeat(name="BallReactionRepeat", child=ball_reaction_seq, num_success=-1)
@@ -94,8 +98,8 @@ def create_root(yaml_path=None):
     )
 
     show_while_close_seq.add_children([
+        find_person_close,
         check_subject_near_target,
-        turn_toward_subject,
         LED_catch_attention,
         turn_toward_target,
         LED_indicate_near_target
@@ -110,6 +114,7 @@ def create_root(yaml_path=None):
     root.add_children([
         params_loader,
         delay_timer,
+        find_person_start,
         approach_subject,
         LED_catch_attention_outside,
         approach_target,
