@@ -1,12 +1,12 @@
 bottom_up_tree_node:
   ros__parameters:
     init_delay: 1.5
-    robot_closeness_threshold: 0.25 #minimum approach distance of the robot, we do not want to hit subject TODO: test optimum
+    robot_closeness_threshold: 0.45 #minimum approach distance of the robot, we do not want to hit subject TODO: test optimum
     target_reached_threshold: 0.75  # the critical distance of target and subject to tell if reached TODO: test optimum
 
     visibility_time_threshold: 5 # time threshold of last incoming 'subject' data
     robot_approach_distance : 1.0 #how much the robot should go at once in dog condition TODO: test optimum
-    Dog_following_max_threshold: 0.20 # maximum distance difference allowed to still consider following 
+    Dog_following_max_threshold: 1.5 # maximum distance difference allowed to still consider following 
     Dog_max_wander_allowed: 1 # maximum allowed wander count before considering the subject lost
 
     Dog_checkpoints:
@@ -16,9 +16,8 @@ bottom_up_tree_node:
       - "{'X':-2.59768, 'Y':-3.46202, 'Z':0.0 }"
       - "{'X':-3.51496, 'Y':-4.63466, 'Z':0.0 }"
       - "{'X':-2.76527, 'Y':-6.12262, 'Z':0.0 }"
+      - "{'X':-2.07791,'Y': -6.67112,'Z':0.0 }"
       - "{'X':0.189707, 'Y':-6.30414, 'Z':0.0 }"
-      - "{'X':0.367931, 'Y':-0.206951, 'Z':0.0 }"
-
     LED_start_setting: 
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"
 
@@ -83,30 +82,32 @@ bottom_up_tree_node:
 
 
     Dog_indicate_target_seq:
-       - "{'n_pos':8.5,'gl_pos':3.19,'gr_pos':7.05}" #gripper open, look ahead
-       - "{'n_pos':8.5,'gl_pos':7.05,'gr_pos':3.19}" #gripper close, look ahead
-       - "{'n_pos':8.5,'gl_pos':3.19,'gr_pos':7.05}" #gripper open, look ahead
-       - "{'n_pos':8.5,'gl_pos':7.05,'gr_pos':3.19}" #gripper close, look ahead
-       - "{'n_pos':8.5,'gl_pos':3.19,'gr_pos':7.05}" #gripper open, look ahead
-       - "{'n_pos':8.5,'gl_pos':7.05,'gr_pos':3.19}" #gripper close, look ahead
-       - "{'n_pos':8.5,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look ahead
+       - "{'n_pos':6.0,'gl_pos':3.19,'gr_pos':7.05}" #gripper open, look ahead
+       - "{'n_pos':6.0,'gl_pos':7.05,'gr_pos':3.19}" #gripper close, look ahead
+       - "{'n_pos':6.0,'gl_pos':3.19,'gr_pos':7.05}" #gripper open, look ahead
+       - "{'n_pos':6.0,'gl_pos':7.05,'gr_pos':3.19}" #gripper close, look ahead
+       - "{'n_pos':6.0,'gl_pos':3.19,'gr_pos':7.05}" #gripper open, look ahead
+       - "{'n_pos':6.0,'gl_pos':7.05,'gr_pos':3.19}" #gripper close, look ahead
+       - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
   
     Dog_indicate_target_times:
-        - 0.25
-        - 0.25
-        - 0.25
-        - 0.25
-        - 0.25
-        - 0.25
-        - 0.25
+        - 0.5
+        - 0.5
+        - 0.5
+        - 0.5
+        - 0.5
+        - 0.5
+        - 0.5
+        - 0.5
 
     Dog_catch_attention_seq:
-       - "{'n_pos':8.90,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look up
-       - "{'n_pos':8.5,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look ahead
-       - "{'n_pos':8.90,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look up
-       - "{'n_pos':8.90,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look ahead
-       - "{'n_pos':8.80,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look up
-       - "{'n_pos':8.90,'gl_pos':5.12,'gr_pos':5.12}" #gripper to default, look ahead
+       - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
+       - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
+       - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
+       - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
+       - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
+       - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
+       
     
     Dog_catch_attention_times:
         - 0.25
@@ -116,13 +117,14 @@ bottom_up_tree_node:
         - 0.25
         - 0.25
     
+
     Dog_thank_seq:
-       - "{'n_pos':8.90,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
-       - "{'n_pos':8.50,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
-       - "{'n_pos':8.90,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
-       - "{'n_pos':8.50,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
-       - "{'n_pos':8.90,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
-       - "{'n_pos':8.50,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
+       - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
+       - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
+       - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
+       - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
+       - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
+       - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
        
     
     Dog_thank_times:

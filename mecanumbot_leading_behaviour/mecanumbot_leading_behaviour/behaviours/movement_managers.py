@@ -4,6 +4,7 @@ import py_trees
 import numpy as np
 from geometry_msgs.msg import Twist, PoseArray, PoseStamped,PoseWithCovarianceStamped,Pose
 import numpy as np
+from mecanumbot_msgs.msg import AccessMotorCmd
 #from tf_transformations import quaternion_from_euler, euler_from_quaternion
 from transforms3d.euler import quat2euler, euler2quat
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
@@ -59,8 +60,8 @@ class TurnToward(py_trees.behaviour.Behaviour): # Tested, works
 
         if self.target_type == "subject":
             self.subject_subscriber = node.create_subscription(
-                PoseStamped,
-                "/mecanumbot/subject_pose",
+                PoseArray,
+                "/mecanumbot/people_fusion",
                 self.subject_callback,
                 10
             )
@@ -98,7 +99,7 @@ class TurnToward(py_trees.behaviour.Behaviour): # Tested, works
             if self.target_type == "subject":
                 if self.subject_pose is None:
                     return py_trees.common.Status.RUNNING
-                self.compare_position = self.subject_pose.pose.position
+                self.compare_position = self.subject_pose.position
             elif self.target_type == "start":
                 self.compare_position = self.blackboard.start_position
             elif self.target_type == "checkpoint":
@@ -125,6 +126,9 @@ class TurnToward(py_trees.behaviour.Behaviour): # Tested, works
                 self.assign_goal_uuid()
             if self.goal_uuid is None:
                 self.node.get_logger().info(f"{self.name}: No goal UUID assigned yet")
+                if self.node.get_clock().now() - self.cmd_send_time > rclpy.duration.Duration(seconds=3.0):
+                    self.node.get_logger().info(f"{self.name}: Timeout waiting for goal UUID")
+                    return py_trees.common.Status.FAILURE
                 return py_trees.common.Status.RUNNING
             for goal in self.goals_in_sys:
                 #self.node.get_logger().info(f"{self.name}: Checking goal UUID {goal.goal_info.goal_id.uuid} against {self.goal_uuid}")
@@ -201,7 +205,7 @@ class TurnToward(py_trees.behaviour.Behaviour): # Tested, works
         self.robot_pose = msg.pose.pose
 
     def subject_callback(self, msg):
-        self.subject_pose = msg
+        self.subject_pose = msg.poses[0]
 
 class RelativeTurnPattern(py_trees.behaviour.Behaviour):
     """Perform a small turn pattern: left, right, right, back to start heading."""
@@ -349,7 +353,7 @@ class RelativeTurnPattern(py_trees.behaviour.Behaviour):
 class FindPeople(py_trees.behaviour.Behaviour):
     """Spin in place until a fresh people_fusion message is received."""
 
-    def __init__(self, name="FindPeople", spin_speed=0.2, sight_timeout=1.0):
+    def __init__(self, name="FindPeople", spin_speed=0.5, sight_timeout=1.0):
         super().__init__(name)
         self.spin_speed = float(spin_speed)
         self.sight_timeout = float(sight_timeout)
@@ -367,6 +371,9 @@ class FindPeople(py_trees.behaviour.Behaviour):
             10,
         )
         self.logger.info(f"{self.name}: Setup complete")
+        self.first_update = True
+        self.first_update_time = None
+        self.spin_time_threshold = 10.0
 
     def has_fresh_people(self):
         if self.last_people_seen_time is None or len(self.people_poses) == 0:
@@ -385,12 +392,26 @@ class FindPeople(py_trees.behaviour.Behaviour):
         self.publisher.publish(Twist())
 
     def update(self):
+        
+        now = self.node.get_clock().now()
+        #self.node.get_logger().info(f"{self.name}: updating, dt = {(now - self.first_update_time).nanoseconds*10**-9 if self.first_update_time else 'N/A'} seconds")
         if self.has_fresh_people():
             self.stop_robot()
+            self.first_update = True
             self.node.get_logger().info(f"{self.name}: People detected, stopping spin")
             return py_trees.common.Status.SUCCESS
 
         self.publish_spin()
+        
+        if self.first_update == True:
+            self.node.get_logger().info(f"{self.name}: first update")
+            self.first_update_time = now
+            self.first_update = False
+        else:
+            if (now - self.first_update_time).nanoseconds*10**-9 > self.spin_time_threshold:
+                self.node.get_logger().info(f"{self.name}: time threshold over, no person found")
+                self.first_update = True
+                return py_trees.common.Status.FAILURE
         return py_trees.common.Status.RUNNING
 
     def people_callback(self, msg):
@@ -399,7 +420,315 @@ class FindPeople(py_trees.behaviour.Behaviour):
             self.last_people_seen_time = Time.from_msg(msg.header.stamp)
         else:
             self.last_people_seen_time = self.node.get_clock().now()
+###### NEW CLASSES TO TEST ########################################x
+class WaitForPerson(py_trees.behaviour.Behaviour):
+    """Passively returns SUCCESS if a person is recently visible, otherwise RUNNING.
+       Dynamically updates search_direction based on the person's position relative to path checkpoints."""
+    def __init__(self, name="WaitForPerson", sight_timeout=1.0):
+        super().__init__(name)
+        self.sight_timeout = sight_timeout
+        self.last_seen_time = None
+        self.last_seen_person_pose = None
+        self.robot_pose = None
+        self.accessory_publisher = None
+        self.begin_wait_sent = False
+        
+        self.blackboard = self.attach_blackboard_client(name=name)
+        # CHANGED: search_direction must be WRITE access to update it dynamically
+        self.blackboard.register_key("search_direction", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("Dog_current_checkpoint", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("patrol_current_checkpoint", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("Dog_max_checkpoint", access=py_trees.common.Access.READ)
+        # NEW: Read checkpoints to compare distances
+        self.blackboard.register_key("Dog_checkpoints", access=py_trees.common.Access.READ)
+
+    def setup(self, **kwargs):
+        self.node = kwargs["node"]
+        self.accessory_publisher = self.node.create_publisher(AccessMotorCmd, "/cmd_accessory_pos", 10)
+        self.vel_publisher = self.node.create_publisher(Twist, "/cmd_vel", 10)
+        
+        self.sub_people = self.node.create_subscription(
+            PoseArray, 
+            "/mecanumbot/people_fusion", 
+            self.people_callback, 
+            10
+        )
+        # NEW: Subscribe to AMCL to know where the robot is when looking at the person
+        self.sub_amcl = self.node.create_subscription(
+            PoseWithCovarianceStamped,
+            "/amcl_pose",
+            self.amcl_callback,
+            10
+        )
+
+    def amcl_callback(self, msg):
+        self.robot_pose = msg.pose.pose
+
+    def _send_accessory_command(self, n_pos, gl_pos, gr_pos):
+        cmd = AccessMotorCmd()
+        cmd.n_pos = float(n_pos)
+        cmd.gl_pos = float(gl_pos)
+        cmd.gr_pos = float(gr_pos)
+        self.node.get_logger().info(f"{self.name}: Sending accessory command: n_pos={n_pos}, gl_pos={gl_pos}, gr_pos={gr_pos}")
+        self.accessory_publisher.publish(cmd)
+
+    def people_callback(self, msg):
+        if len(msg.poses) > 0:
+            self.last_seen_time = self.node.get_clock().now()
+            # Store the closest/first detected person's pose
+            self.last_seen_person_pose = msg.poses[0]
+
+    def get_closest_checkpoint_index(self, x, y):
+        """Helper to find the closest checkpoint index to any given (x, y) coordinate."""
+        checkpoints = self.blackboard.Dog_checkpoints
+        min_dist = float('inf')
+        closest_idx = 0
+        for i, cp in enumerate(checkpoints):
+            dx = cp.x - x
+            dy = cp.y - y
+            dist = math.sqrt(dx * dx + dy * dy)
+            if dist < min_dist:
+                min_dist = dist
+                closest_idx = i
+        return closest_idx
+
+    def update_search_direction(self):
+        """Calculates whether the person is ahead (+) or behind (-) along the checkpoint path."""
+        if self.robot_pose is None or self.last_seen_person_pose is None or not hasattr(self.blackboard, "Dog_checkpoints"):
+            self.node.get_logger().warn(f"{self.name}: Missing pose or checkpoint data, defaulting search_direction to -1")
+            self.blackboard.search_direction = -1
+            return
+
+        rx = self.robot_pose.position.x
+        ry = self.robot_pose.position.y
+        px = self.last_seen_person_pose.position.x
+        py = self.last_seen_person_pose.position.y
+
+        robot_idx = self.get_closest_checkpoint_index(rx, ry)
+        person_idx = self.get_closest_checkpoint_index(px, py)
+
+        if person_idx > robot_idx:
+            self.blackboard.search_direction = 1
+        elif person_idx < robot_idx:
+            self.blackboard.search_direction = -1
+        else:
+            # EDGE CASE: Both are closest to the exact same checkpoint.
+            # Use vector dot product to see if person is further along the path direction than the robot.
+            checkpoints = self.blackboard.Dog_checkpoints
+            if robot_idx < len(checkpoints) - 1:
+                next_cp = checkpoints[robot_idx + 1]
+                path_vx = next_cp.x - rx
+                path_vy = next_cp.y - ry
+            elif robot_idx > 0:
+                prev_cp = checkpoints[robot_idx - 1]
+                path_vx = rx - prev_cp.x
+                path_vy = ry - prev_cp.y
+            else:
+                self.blackboard.search_direction = -1
+                return
+
+            # Vector from robot to person
+            person_vx = px - rx
+            person_vy = py - ry
+
+            # Dot product: positive means pointing in the same general direction as the path
+            dot_product = (path_vx * person_vx) + (path_vy * person_vy)
+            self.blackboard.search_direction = 1 if dot_product >= 0 else -1
+
+        self.node.get_logger().info(
+            f"{self.name}: Robot at CP {robot_idx}, Person at CP {person_idx}. Set search_direction = {self.blackboard.search_direction}"
+        )
+
+    def update(self):
+        if self.begin_wait_sent is False:
+            self.node.get_logger().info(f"{self.name}: Starting WaitForPerson behaviour")
+            self._send_accessory_command(7.0, 6.83, 3.36)  # Look ahead
+            self.begin_wait_sent = True
             
+        if self.last_seen_time is None:
+            return py_trees.common.Status.RUNNING
+            
+        age = (self.node.get_clock().now() - self.last_seen_time).nanoseconds / 1e9
+        if age <= self.sight_timeout:
+            self.node.get_logger().info(f"{self.name}: Person detected! Interrupting search.")
+            self._send_accessory_command(6.0, 6.83, 3.36)
+            cmd = Twist()
+            self.vel_publisher.publish(cmd)  # Stop the robot
+            self.begin_wait_sent = False
+            self.blackboard.patrol_current_checkpoint = None  # Reset patrol checkpoint to None
+            
+            # Dynamically set direction based on relative position before returning SUCCESS
+            self.update_search_direction()
+            
+            return py_trees.common.Status.SUCCESS
+            
+        return py_trees.common.Status.RUNNING
+    
+class Spin360(py_trees.behaviour.Behaviour):
+    """Spins the robot in a full circle using AMCL yaw tracking."""
+    def __init__(self, name="Spin360", spin_speed=0.3):
+        super().__init__(name)
+        self.spin_speed = float(spin_speed)
+
+
+    def setup(self, **kwargs):
+        self.node = kwargs["node"]
+        self.publisher = self.node.create_publisher(Twist, "/cmd_vel", 10)
+        self.sub = self.node.create_subscription(
+            PoseWithCovarianceStamped, 
+            "/amcl_pose", 
+            self.amcl_callback, 
+            10
+        )
+        self.current_yaw = None
+
+    def initialise(self):
+        self.accumulated_yaw = 0.0
+        self.last_yaw = self.current_yaw
+
+    def amcl_callback(self, msg):
+        # Uses your existing yaw_from_quaternion function
+        q = msg.pose.pose.orientation
+        self.current_yaw = yaw_from_quaternion(q)
+
+    def update(self):
+        if self.current_yaw is None or self.last_yaw is None:
+            self.node.get_logger().info(f"{self.name}: Waiting for AMCL pose data...")
+            self.last_yaw = self.current_yaw
+            # FIX: Command the spin to force AMCL to update
+            cmd = Twist()
+            cmd.angular.z = self.spin_speed
+            self.publisher.publish(cmd)
+            return py_trees.common.Status.RUNNING
+        
+        #self.node.get_logger().info(f"{self.name}: Current Yaw: {self.current_yaw:.4f}, Last Yaw: {self.last_yaw:.4f}, Accumulated Yaw: {self.accumulated_yaw:.4f}")
+        # Calculate shortest angular distance
+        delta_yaw = self.current_yaw - self.last_yaw
+        delta_yaw = math.atan2(math.sin(delta_yaw), math.cos(delta_yaw))
+        
+        self.accumulated_yaw += abs(delta_yaw)
+        self.last_yaw = self.current_yaw
+
+        # Check if we hit a full circle (allow 5% margin for drift)
+        if self.accumulated_yaw >= 2 * math.pi * 0.95:
+            self.publisher.publish(Twist()) # Stop the robot
+            self.node.get_logger().info(f"{self.name}: Full 360 scan completed.")
+            return py_trees.common.Status.SUCCESS
+
+        cmd = Twist()
+        cmd.angular.z = self.spin_speed
+        self.publisher.publish(cmd)
+        return py_trees.common.Status.RUNNING
+    
+class ManageSearchCheckpoint(py_trees.behaviour.Behaviour):
+    """Decrements checkpoints, switching to increments if it hits the start.
+       On the first run, snaps to the closest checkpoint based on robot pose."""
+       
+    def __init__(self, name="ManageSearchCheckpoint"):
+        super().__init__(name)
+        self.blackboard = self.attach_blackboard_client(name=name)
+        self.blackboard.register_key("patrol_current_checkpoint", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("search_direction", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("Dog_max_checkpoint", access=py_trees.common.Access.READ)
+        self.blackboard.register_key("Dog_checkpoints", access=py_trees.common.Access.READ)
+        
+        # New key to track if we have done our initial "snap to closest"
+        self.blackboard.register_key("patrol_initialized", access=py_trees.common.Access.WRITE)
+
+    def setup(self, **kwargs):
+        node = kwargs["node"]
+        self.node = node
+        
+        # We need the robot's pose to calculate the closest checkpoint
+        qos_profile = QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST
+        )
+
+        self.robot_subscriber = node.create_subscription(
+            PoseWithCovarianceStamped,
+            "/amcl_pose",
+            self.amcl_callback,
+            qos_profile
+        )
+        self.robot_pose = None
+        self.publisher = node.create_publisher(PoseStamped, "/goal_pose", 10)
+        # Defaults
+        self.blackboard.search_direction = -1
+        self.blackboard.patrol_current_checkpoint = 0
+        self.blackboard.patrol_initialized = False
+
+    def amcl_callback(self, msg):
+        self.robot_pose = msg.pose.pose
+
+    def initialise(self):
+        # Initialize search direction to negative (backwards) if not set
+        if not hasattr(self.blackboard, "search_direction"):
+            self.blackboard.search_direction = -1 
+
+    def update(self):
+        # Safety check: We can't find the closest point if we don't know where we are
+        if self.robot_pose is None:
+            self.node.get_logger().info(f"{self.name}: Waiting for robot pose to find closest checkpoint...")
+            cmd = Twist()
+            cmd.angular.z = self.spin_speed
+            #self.publisher.publish(cmd)
+            return py_trees.common.Status.RUNNING
+
+        # --- ONE-TIME INITIALIZATION: SNAP TO CLOSEST ---
+        if not getattr(self.blackboard, "patrol_initialized", False):
+            self.node.get_logger().info(f"{self.name}: First run, snapping to closest checkpoint...")
+            closest_idx = self.get_closest_checkpoint_index()
+            self.blackboard.patrol_current_checkpoint = closest_idx
+            self.blackboard.patrol_initialized = True
+            
+            self.node.get_logger().info(f"{self.name}: Initialized! Snapped to closest checkpoint: {closest_idx}")
+            return py_trees.common.Status.SUCCESS
+
+        # --- NORMAL BEHAVIOR: INCREMENT/DECREMENT ---
+        if self.blackboard.patrol_current_checkpoint is None:
+            self.blackboard.patrol_current_checkpoint = self.get_closest_checkpoint_index(self.robot_pose.position.x, self.robot_pose.position.y)
+        self.node.get_logger().info(f"{self.name}: Current checkpoint: {self.blackboard.patrol_current_checkpoint}, Direction: {self.blackboard.search_direction}")    
+        self.blackboard.patrol_current_checkpoint += self.blackboard.search_direction
+
+        # Bound checks and direction flips
+        if self.blackboard.patrol_current_checkpoint <= 0:
+            self.blackboard.patrol_current_checkpoint = 0
+            self.blackboard.search_direction = 1 # Reached start, go forward now
+            self.node.get_logger().info(f"{self.name}: Hit start of maze. Searching forward.")
+            
+        elif self.blackboard.patrol_current_checkpoint >= self.blackboard.Dog_max_checkpoint-1:
+            self.blackboard.patrol_current_checkpoint = self.blackboard.Dog_max_checkpoint
+            self.blackboard.search_direction = -1 # Reached end, go backward now
+            self.node.get_logger().info(f"{self.name}: Hit end of maze. Searching backward.")
+            
+        self.node.get_logger().info(f"{self.name}: Next search target is checkpoint {self.blackboard.patrol_current_checkpoint}")
+        return py_trees.common.Status.SUCCESS
+
+    def get_closest_checkpoint_index(self):
+        """Helper function to calculate Euclidean distance to all checkpoints."""
+        checkpoints = self.blackboard.Dog_checkpoints
+        min_dist = float('inf')
+        closest_idx = 0
+        
+        rx = self.robot_pose.position.x
+        ry = self.robot_pose.position.y
+
+        for i, cp in enumerate(checkpoints):
+            # Using cp.x and cp.y based on your is_robot_near_checkpoint implementation
+            dx = cp.x - rx
+            dy = cp.y - ry
+            dist = math.sqrt(dx * dx + dy * dy)
+            
+            if dist < min_dist:
+                min_dist = dist
+                closest_idx = i
+                
+        return closest_idx
+    
+############################################# end of new stuff ################################################################    
 class Approach(py_trees.behaviour.Behaviour):
 
     def __init__(self, name="Approach", target_type="subject", mode ="exact"):
@@ -419,9 +748,11 @@ class Approach(py_trees.behaviour.Behaviour):
         self.blackboard.register_key(key="robot_approach_distance", access=py_trees.common.Access.READ) #go_threshold
 
         self.blackboard.register_key("Dog_checkpoints",access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("patrol_checkpoints",access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_current_checkpoint",access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("patrol_current_checkpoint",access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_max_checkpoint",access=py_trees.common.Access.WRITE)
-        
+
         self.turning = False
         self.target_type = target_type
         self.subject_recovery_plan = None
@@ -449,7 +780,7 @@ class Approach(py_trees.behaviour.Behaviour):
                                         self.subject_callback,
                                         10,
         )
-
+        
         self.robot_subscriber = node.create_subscription(
             PoseWithCovarianceStamped,
             "/amcl_pose",
@@ -472,29 +803,43 @@ class Approach(py_trees.behaviour.Behaviour):
         self.goal_uuid = None
         self.goals_in_sys = None
         self.compare_position = None
+        self.approach_started = False
+        self.timeout_threshold = 3.0
         return super().initialise()
 
     def update(self):
         #self.node.get_logger().info(f'{self.name}: called')
+        now = self.node.get_clock().now()
         # Safety Checks
         if self.robot_pose is None:
             return py_trees.common.Status.RUNNING
+        
+        if not self.approach_started:
+            self.approach_started = True
+            self.approach_started_time = now
+            self.node.get_logger().info(f"{self.name}: Starting approach to {self.target_type}")
+            
         if self.compare_position is None:
             if self.target_type == "subject":
                 if self.subject_pose is None:
+                    if now - self.approach_started_time > rclpy.duration.Duration(seconds=self.timeout_threshold):
+                        self.node.get_logger().info(f"{self.name}: No subject detected for {self.timeout_threshold} seconds, aborting approach")
+                        self.approach_started = False
+                        return py_trees.common.Status.FAILURE
                     return py_trees.common.Status.RUNNING
                 self.compare_position = self.subject_pose.position
 
             elif self.target_type == "checkpoint":
+                    self.node.get_logger().info(f"current checkpoint: {self.blackboard.Dog_current_checkpoint}")
                     self.compare_position = self.blackboard.Dog_checkpoints[self.blackboard.Dog_current_checkpoint]
-                    self.node.get_logger().info(f'Robot sent to point {self.compare_position}, which is checkpoint NO. {self.blackboard.Dog_current_checkpoint}')
-                    if self.blackboard.Dog_current_checkpoint != self.blackboard.Dog_max_checkpoint:
-                        self.blackboard.Dog_current_checkpoint += 1
+            elif self.target_type == "patrol":
+                    self.compare_position = self.blackboard.patrol_checkpoints[self.blackboard.patrol_current_checkpoint]       
             elif self.target_type == "start":
                 self.compare_position = self.blackboard.start_position
             else:
                 self.compare_position = self.blackboard.Dog_checkpoints[-1]
         if self.compare_position is None:
+            self.node.get_logger().info(f"{self.name}: No compare position available, aborting approach")
             return py_trees.common.Status.FAILURE
 
         if not self.goal_sent:
@@ -517,13 +862,23 @@ class Approach(py_trees.behaviour.Behaviour):
                 self.assign_goal_uuid()
             if self.goal_uuid is None:
                 self.node.get_logger().info(f"{self.name}: No goal UUID assigned yet")
+                dt = self.node.get_clock().now() - self.cmd_send_time
+                if  dt >  rclpy.duration.Duration(seconds=10.0):
+                    self.approach_started = False
+                    self.node.get_logger().info(f'{self.name}:Timeout, node failed, dt = {dt}, thresh: {rclpy.duration.Duration(seconds=10.0)}')
+                    return py_trees.common.Status.FAILURE
                 return py_trees.common.Status.RUNNING
             for goal in self.goals_in_sys:
                 #self.node.get_logger().info(f"{self.name}: Checking goal UUID {goal.goal_info.goal_id.uuid} against {self.goal_uuid}")
                 if np.array_equal(goal.goal_info.goal_id.uuid, self.goal_uuid):
                     self.goal_status = goal.status
             if self.goal_status == STATUS_SUCCEEDED:
-                self.node.get_logger().info(f"{self.name}: Approach completed successfully")
+                self.node.get_logger().info(f"{self.name}: Approach completed successfully") 
+                if self.target_type == "checkpoint":
+                    if self.blackboard.Dog_current_checkpoint < self.blackboard.Dog_max_checkpoint:
+                            self.blackboard.Dog_current_checkpoint += 1
+                self.approach_started = False
+                self.node.get_logger().info(f"{self.name}: Approach to {self.target_type} completed successfully")
                 return py_trees.common.Status.SUCCESS
             elif self.goal_status in [STATUS_EXECUTING, STATUS_ACCEPTED]:
                 #self.node.get_logger().info(f"{self.name}: Approach in progress")
@@ -537,6 +892,7 @@ class Approach(py_trees.behaviour.Behaviour):
         
     def assign_goal_uuid(self):
         if self.goals_in_sys is None:
+            self.node.get_logger().info('No goals in sys')
             return
 
         # Iterate in reverse (newest first)
@@ -545,6 +901,7 @@ class Approach(py_trees.behaviour.Behaviour):
             cmd_time = Time.from_msg(self.cmd_send_time.to_msg())
             
             # Check if this goal was created AFTER or AT the same time we sent the command
+            self.node.get_logger().info(f'Goal_time: {goal_time}, cmd_time: {cmd_time}')
             if goal_time >= cmd_time:
                 self.goal_uuid = goal_status.goal_info.goal_id.uuid
                 self.node.get_logger().info(f"{self.name}: Locked onto Goal UUID {self.goal_uuid}")
@@ -581,8 +938,10 @@ class Approach(py_trees.behaviour.Behaviour):
         
         self.goal_sent = True
         #self.node.get_logger().info(f"Robot pose is: {self.robot_pose}")
-        self.node.get_logger().info(f"{self.name}: Published goal command \n Directions: X: {desired_pose.position.x} Y: {desired_pose.position.y} Z: {desired_pose.orientation.z} W: {desired_pose.orientation.w}")
-
+        self.node.get_logger().info(f"{self.name}: Published goal command type: {self.target_type} \n Directions: X: {desired_pose.position.x} Y: {desired_pose.position.y} Z: {desired_pose.orientation.z} W: {desired_pose.orientation.w}")
+        if self.target_type == "checkpoint":
+            self.node.get_logger().info(f"{self.name}: Current checkpoint: {self.blackboard.Dog_current_checkpoint + 1} / {self.blackboard.Dog_max_checkpoint + 1}")
+    
     def goal_status_callback(self, msg):
         """
         Callback to monitor nav2goal status updates.
@@ -634,12 +993,12 @@ class CheckSubjectTargetSuccess(py_trees.behaviour.Behaviour): #TODO
         self.node = node
         
         self.subject_subscriber = node.create_subscription(
-            PoseStamped,
-            "/mecanumbot/subject_pose",
+            PoseArray,
+            "/mecanumbot/people_fusion",
             self.subject_callback,
             10
         )
-        
+        self.subject_pose = None
         self.logger.info(f"{self.name}: Setup complete")
 
     def update(self):
@@ -654,10 +1013,11 @@ class CheckSubjectTargetSuccess(py_trees.behaviour.Behaviour): #TODO
             return py_trees.common.Status.FAILURE
 
     def subject_callback(self, msg):
-        self.subject_pose = msg
+        self.subject_pose = msg.poses[0]
+        #self.node.get_logger(f'subject pose set to {self.subject_pose}')
         target_position = self.blackboard.target_position
-        dx = target_position.x - self.subject_pose.pose.position.x
-        dy = target_position.y - self.subject_pose.pose.position.y
+        dx = target_position.x - self.subject_pose.position.x
+        dy = target_position.y - self.subject_pose.position.y
         self.dist = math.sqrt(dx*dx + dy*dy)
 
 class CheckRobotHasBall(py_trees.behaviour.Behaviour):
@@ -677,8 +1037,9 @@ class CheckRobotHasBall(py_trees.behaviour.Behaviour):
             self.has_ball_callback,
             10
         )
-        
+        self.has_ball = None
         self.logger.info(f"{self.name}: Setup complete")
+
     def update(self):
         if self.has_ball is None:
             self.node.get_logger().info(f"{self.name}: No ball time received yet")

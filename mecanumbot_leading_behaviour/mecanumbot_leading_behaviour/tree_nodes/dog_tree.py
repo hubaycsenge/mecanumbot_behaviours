@@ -5,7 +5,9 @@ import py_trees_ros
 from ament_index_python.packages import get_package_share_directory 
 from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourSequence, DogCheckFollowing
 from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach, FindPeople, TurnToward,\
-                                                                     CheckSubjectTargetSuccess, RelativeTurnPattern, CheckRobotHasBall
+                                                                     CheckSubjectTargetSuccess, RelativeTurnPattern, CheckRobotHasBall,\
+                                                                     Spin360, ManageSearchCheckpoint, WaitForPerson
+
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard
 
 leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour')
@@ -32,6 +34,38 @@ def get_yaml_path():
     print(f"[dog_tree] YAML_PATH unset, fallback to: {fallback}")
     return fallback
 
+def create_recover_lost_sequence(ID= ""):
+    ####### New behaviours for lost recovery sequence #####
+    lost_recovery = py_trees.composites.Parallel(
+        name="HandleLostParallel",
+        policy=py_trees.common.ParallelPolicy.SuccessOnOne()
+    )
+    
+    # 1. The Interrupt Condition
+    wait_for_person = WaitForPerson(name=ID + "InterruptOnPersonFound", sight_timeout=1.0)
+    
+    # 2. The Search Patrol Loop
+    search_patrol_sequence = py_trees.composites.Sequence(
+        name="SearchPatrolSequence",
+        memory=True
+    )
+
+    search_patrol_sequence.add_children([
+        Spin360(name=ID + "FullCircleScan"),
+        ManageSearchCheckpoint(name=ID + "UpdateSearchIndex"),
+        Approach(name=ID + "GoToSearchCheckpoint", target_type="checkpoint")
+    ])
+    
+    # Repeat the patrol sequence endlessly (until Parallel kills it)
+    search_patrol_loop = py_trees.decorators.Repeat(
+        name=ID + "SearchPatrolLoop",
+        child=search_patrol_sequence,
+        num_success=-1 
+    )
+    
+    lost_recovery.add_children([wait_for_person, search_patrol_loop])
+    return lost_recovery
+    ####### lost recovery sequence end #######
 
 def create_root(yaml_path=None):
     if yaml_path is None:
@@ -43,10 +77,11 @@ def create_root(yaml_path=None):
 
 
     delay_timer = py_trees.timers.Timer(name="DelayTimer", duration=1)
-    turn_delay_timer = py_trees.timers.Timer(name="TurnDelayTimer", duration=10)
+    turn_delay_timer = py_trees.timers.Timer(name="TurnDelayTimer", duration=2)
 
     Dog_show_target = DogBehaviourSequence('DShow', 'indicate_target')
     Dog_catch_attention_init = DogBehaviourSequence('DCatchInit', 'catch_attention')
+    Dog_catch_attention_init_recov = DogBehaviourSequence('DCatchInit', 'catch_attention')
     Dog_catch_attention_show_tgt = DogBehaviourSequence('DCatchShow', 'catch_attention')
     Dog_thank = DogBehaviourSequence('DThank', 'thank')
 
@@ -54,8 +89,11 @@ def create_root(yaml_path=None):
 
     approach_target_step = Approach(name="ApproachTarget", target_type="checkpoint")
     approach_subject_init = Approach(name="ApproachSubjectInit", target_type="subject",mode ="fixed_distance")
+    approach_subject_init_recov = Approach(name="ApproachSubjectInitRecov", target_type="subject",mode ="fixed_distance")
+    approach_subject_ball = Approach(name="ApproachSubjectBall", target_type="subject",mode ="fixed_distance")
 
     turn_toward_subject_init_seek = TurnToward(name="TurnTowardSubjectInitSeek", target_type="subject")
+    turn_toward_subject_show = TurnToward(name="TurnTowardSubjectShow", target_type="subject")
     turn_toward_target_show = TurnToward(name="TurnTowardTargetShow", target_type="target")
     turn_toward_checkpoint_step = TurnToward(name="TurnTowardCheckpointStep", target_type="checkpoint")
     find_person_init = FindPeople(name="FindPersonInit")
@@ -63,30 +101,45 @@ def create_root(yaml_path=None):
     find_person_while_show = FindPeople(name="FindPersonWhileShow")
     find_person_while_lead = FindPeople(name="FindPersonWhileLead")
     attention_turn_pattern_init = RelativeTurnPattern(name="AttentionTurnPatternInit", step_angle_deg=15.0)
-    attention_turn_pattern_show = RelativeTurnPattern(name="AttentionTurnPatternShow", step_angle_deg=15.0)
+    attention_turn_pattern__init_recov = RelativeTurnPattern(name="AttentionTurnPatternInitRecov", step_angle_deg=15.0)
     check_if_ball_given = CheckRobotHasBall(name="CheckIfBallGiven")
 
-
-
     check_subject_near_target = CheckSubjectTargetSuccess(name="CheckSubjectNearTarget")
-    
+
+    lost_recovery_init = create_recover_lost_sequence(ID="Init")
+    lost_recovery_ball = create_recover_lost_sequence(ID="Ball")
+    lost_recovery_lead = create_recover_lost_sequence(ID="Lead")
+    lost_recovery_near_target = create_recover_lost_sequence(ID="NearTarget")
+
+    recov_and_go = py_trees.composites.Sequence(name= "Recov_with_approach", memory= True)
+    recov_and_go.add_children(
+        [
+            lost_recovery_init,
+            approach_subject_init_recov,
+            turn_toward_subject_show,
+            attention_turn_pattern__init_recov,
+            Dog_catch_attention_init_recov
+        ]
+    )
+
     ball_reaction_seq = py_trees.composites.Sequence(name="BallReactionSeq",memory=True)
     ball_reaction_seq.add_children([
         check_if_ball_given,
-        find_person_ball_reaction,
-        Dog_thank
+        lost_recovery_ball,
+        approach_subject_ball,
+        Dog_thank,
+        delay_timer
     ])
     ball_reaction_repeat = py_trees.decorators.Repeat(name="BallReactionRepeat", child=ball_reaction_seq, num_success=-1)
 
     # Approach subject and catch attention
-    seek_attention_init = py_trees.composites.Sequence( # seems OK 
+    seek_attention_init = py_trees.composites.Sequence( 
         name="SeekAttentionInit",
         memory=True
     )
     seek_attention_init.add_children([
-        find_person_init,
         approach_subject_init,
-        turn_toward_subject_init_seek, # TODO: kell?
+        turn_toward_subject_init_seek, # TODO turn by default
         attention_turn_pattern_init,
         Dog_catch_attention_init
     ])
@@ -100,8 +153,8 @@ def create_root(yaml_path=None):
     show_while_close_seq.add_children([
         find_person_while_show,
         check_subject_near_target,
-        turn_delay_timer,
         Dog_catch_attention_show_tgt,
+        turn_delay_timer,
         turn_toward_target_show,
         Dog_show_target
     ]) 
@@ -114,11 +167,9 @@ def create_root(yaml_path=None):
 
     lead_step_sequence.add_children([ 
         find_person_while_lead,
-        check_subject_near_target,
         Dog_check_following,
         turn_toward_checkpoint_step,
-        approach_target_step, 
-        delay_timer
+        approach_target_step
     ])
 
     behaviour_selector = py_trees.composites.Selector("ShowOrLeadSelector",memory=True)
@@ -127,17 +178,28 @@ def create_root(yaml_path=None):
         [
             ball_reaction_repeat,
             show_while_close_seq,
-            lead_step_sequence
+            lead_step_sequence,
         ]
     )
 
+    
     behaviour_loop = py_trees.decorators.Repeat("ShowOrLeadLoop",
                                                 behaviour_selector,
                                                 num_success=-1)
+    
+    recovery_selector = py_trees.composites.Selector("SeekOrFind",memory = True)
+    recovery_selector.add_children(
+        [
+        seek_attention_init,
+        recov_and_go
+        ]
+        #lost_recovery_init]
+    )
     root.add_children(
             [params_loader,
-            seek_attention_init,
-            behaviour_loop]
+            recovery_selector,
+            behaviour_loop
+            ]
     )
 
 

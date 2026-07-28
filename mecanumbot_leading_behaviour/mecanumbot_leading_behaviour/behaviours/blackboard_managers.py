@@ -64,7 +64,9 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.register_key("Dog_max_wander_allowed", access=py_trees.common.Access.WRITE)
 
         self.blackboard.register_key("Dog_checkpoints",access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("patrol_checkpoints",access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_current_checkpoint",access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("patrol_current_checkpoint",access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_max_checkpoint",access=py_trees.common.Access.WRITE)
 
 
@@ -78,12 +80,13 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
 
         self.blackboard.register_key("last_distance",access=py_trees.common.Access.WRITE)
         
+        self.accessory_publisher = None
     def setup(self, **kwargs):
         with open(self.yaml_path, 'r') as f:
             raw_params = yaml.safe_load(f)
         node = kwargs["node"]
         self.node = node
-
+        self.accessory_publisher = self.node.create_publisher(AccessMotorCmd, "/cmd_accessory_pos", 10)
          # LED helper function
         def parse_led(d):
             d = ast.literal_eval(d)
@@ -140,19 +143,22 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.Dog_catch_attention_times = raw_params["Dog_catch_attention_times"]
         self.blackboard.Dog_thank_seq = [parse_dog(e) for e in raw_params["Dog_thank_seq"]]
         self.blackboard.Dog_thank_times = raw_params["Dog_thank_times"]
-
+        
         self.blackboard.Dog_checkpoints = [parse_ckpt(ckpt) for ckpt in raw_params["Dog_checkpoints"]]
         self.blackboard.start_position = self.blackboard.Dog_checkpoints[0] # Assuming the first checkpoint is the start position
         self.blackboard.target_position = self.blackboard.Dog_checkpoints[-1] # Assuming the last checkpoint is the target position
-        self.blackboard.Dog_checkpoints = self.blackboard.Dog_checkpoints[:-1] 
+        self.blackboard.Dog_checkpoints = self.blackboard.Dog_checkpoints[:-1]
+        self.blackboard.patrol_checkpoints = self.blackboard.Dog_checkpoints.copy()  # Exclude start and target for patrol        
+        self.node.get_logger().info(f"Dog checkpoints ({len(self.blackboard.Dog_checkpoints)} total): {[ (ckpt.x, ckpt.y, ckpt.z) for ckpt in self.blackboard.Dog_checkpoints ]}")
+
         self.blackboard.Dog_current_checkpoint = 0
         self.blackboard.Dog_max_checkpoint = len(self.blackboard.Dog_checkpoints) - 1
 
-        self.blackboard.last_distance = 15.0
+        self.blackboard.last_distance = 200.0
 
         self.srv_client = self.node.create_client(SetLedStatus,'/mecanumbot/set_led_status')
         self.feedback_message = "ConstantParamsToBlackboard setup complete"
-        self.logger.info(self.feedback_message)
+        self.node.get_logger().info(self.feedback_message)
 
         return True
     def initialise(self):
@@ -160,10 +166,11 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         # Call the service asynchronously
         future = self.srv_client.call_async(cmd)
         self.node.get_logger().info(f"INIT LED Command sent: {cmd}")
+        self.accessory_publisher.publish(cmd)
         return super().initialise()
     
     def update(self):
-        
+        self.node.get_logger().info("ConstantParamsToBlackboard update done.")
         return py_trees.common.Status.SUCCESS      
 
 class DistanceToBlackboard(py_trees.behaviour.Behaviour): # Checks done - works
@@ -231,7 +238,7 @@ class DistanceToBlackboard(py_trees.behaviour.Behaviour): # Checks done - works
             qos_profile=10
         )
         self.feedback_message = "DistanceToBlackboard setup complete"
-        self.logger.info(self.feedback_message)
+        self.node.get_logger().info(self.feedback_message)
         return True
 
     def amcl_callback(self, msg: PoseWithCovarianceStamped):

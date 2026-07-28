@@ -1,13 +1,16 @@
 import ast
 import math
+import os
 import py_trees
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 import py_trees
 import yaml
 from geometry_msgs.msg import Point
+from ament_index_python.packages import get_package_share_directory
 from mecanumbot_msgs.msg import AccessMotorCmd
 from mecanumbot_msgs.srv import SetLedStatus
+from mecanumbot_demo_behaviours.utils.map_generate import generate_waypoints
 
 
 class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - works
@@ -146,6 +149,7 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         self.blackboard.target_position = self.blackboard.Dog_checkpoints[-1] # Assuming the last checkpoint is the target position
         self.blackboard.Dog_checkpoints = self.blackboard.Dog_checkpoints[:-1] 
         self.blackboard.Dog_current_checkpoint = 0
+        self.blackboard.patrol_current_checkpoint = 0
         self.blackboard.Dog_max_checkpoint = len(self.blackboard.Dog_checkpoints) - 1
 
         self.blackboard.last_distance = 15.0
@@ -159,6 +163,7 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - 
         cmd = self.blackboard.LED_start_setting
         # Call the service asynchronously
         future = self.srv_client.call_async(cmd)
+        self.accessory_publisher.publish(self.blackboard.Dog_catch_attention_seq[0])
         self.node.get_logger().info(f"INIT LED Command sent: {cmd}")
         return super().initialise()
     
@@ -310,4 +315,103 @@ class DistanceToBlackboard(py_trees.behaviour.Behaviour): # Checks done - works
 
         self.feedback_message = f"""d(R, S) = {d_subject:.2f} | d(R, T) = {d_target:.2f} | d(S, T) = {d_subject_target:.2f}"""
         self.node.get_logger().info(self.feedback_message)
+        return py_trees.common.Status.SUCCESS
+
+
+class MapWaypointsToBlackboard(py_trees.behaviour.Behaviour):
+    """
+    Loads a map-specific waypoint YAML into the blackboard.
+
+    If the waypoint file does not exist yet, it generates the waypoints from the
+    corresponding map using generate_waypoints and then loads the generated file.
+    """
+
+    def __init__(self, name="MapWaypointsToBlackboard", base_name=None ):
+        super().__init__(name)
+
+        self.base_name = base_name
+        self.map_name = base_name + '.pgm'
+        self.map_yaml_path = base_name + '.yaml'
+        self.waypoints_yaml_path = base_name + '_waypoints.yaml'
+
+        self.blackboard = self.attach_blackboard_client(name=name)
+        self.blackboard.register_key("patrol_start_waypoint", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("patrol_end_waypoint", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key("waypoints", access=py_trees.common.Access.WRITE)
+
+    def setup(self, **kwargs):
+        try:
+            self.node = kwargs["node"]
+        except KeyError as exc:
+            raise KeyError("The 'node' argument was not passed to setup()") from exc
+
+        self.feedback_message = "MapWaypointsToBlackboard setup complete"
+        self.logger.info(self.feedback_message)
+        return True
+
+
+
+    def _resolve_waypoints_yaml_path(self, map_name):
+        if self.waypoints_yaml_path:
+            return self.waypoints_yaml_path
+
+        if self.map_yaml_path:
+            map_dir = os.path.dirname(self.map_yaml_path)
+            return os.path.join(map_dir, f"{map_name}_waypoints.yaml")
+
+        description_base_path = get_package_share_directory("mecanumbot_description")
+        return os.path.join(description_base_path, "maps", map_name, f"{map_name}_waypoints.yaml")
+
+    def _load_waypoints(self, waypoints_yaml_path):
+        with open(waypoints_yaml_path, "r", encoding="utf-8") as stream:
+            payload = yaml.safe_load(stream) or {}
+
+        waypoints = payload.get("waypoints", payload)
+        if not isinstance(waypoints, list):
+            raise ValueError(f"Waypoint file {waypoints_yaml_path} does not contain a waypoint list")
+
+        parsed_waypoints = []
+        for waypoint in waypoints:
+            point = Point()
+            if isinstance(waypoint, dict):
+                point.x = float(waypoint["x"])
+                point.y = float(waypoint["y"])
+                point.z = float(waypoint.get("z", 0.0))
+            else:
+                point.x = float(waypoint[0])
+                point.y = float(waypoint[1])
+                point.z = float(waypoint[2]) if len(waypoint) > 2 else 0.0
+            parsed_waypoints.append(point)
+
+        if not parsed_waypoints:
+            raise ValueError(f"Waypoint file {waypoints_yaml_path} did not contain any waypoints")
+
+        return parsed_waypoints
+
+    def initialise(self):
+        waypoints_yaml_path = os.path.join(get_package_share_directory("mecanumbot_description"), "maps", self.base_name, f"{self.base_name}_waypoints.yaml")
+
+        if not os.path.exists(waypoints_yaml_path):
+            self.node.get_logger().info(
+                f"Waypoint file {waypoints_yaml_path} not found, generating waypoints for map {self.base_name}"
+            )
+            generate_waypoints(self.base_name)
+
+        if not os.path.exists(waypoints_yaml_path):
+            raise FileNotFoundError(
+                f"Unable to load or generate waypoint file for map {self.base_name}: {waypoints_yaml_path}"
+            )
+
+        patrol_waypoints = self._load_waypoints(waypoints_yaml_path)
+
+        self.blackboard.patrol_start_waypoint = patrol_waypoints[0]
+        self.blackboard.target_end_waypoint = patrol_waypoints[-1]
+        self.blackboard.waypoints = patrol_waypoints
+
+        self.node.get_logger().info(
+            f"Loaded {len(patrol_waypoints)} waypoints for map {self.base_name} from {waypoints_yaml_path}"
+        )
+        return super().initialise()
+
+    def update(self):
         return py_trees.common.Status.SUCCESS

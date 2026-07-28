@@ -56,12 +56,13 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
             10
         )
         self.index = 0
+        self.behaviour_seq = None
         self.next_send_time = None       
 
     def initialise(self):
         self.index = 0
         self.next_send_time = None
-        if self.mode not in ["indicate_target", "catch_attention"]:
+        if self.mode not in ["indicate_target", "catch_attention", 'thank']:
             self.node.get_logger().error(f"Unknown Dog behaviour mode: {self.mode}")
         elif self.mode == "indicate_target":
             self.behaviour_seq = self.blackboard.Dog_indicate_target_seq
@@ -96,7 +97,7 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
         
         elif self.index < len(self.behaviour_seq): # the commands are being sent out
             self._send_command(now)
-            #self.node.get_logger().info(f"Dog behaviour {self.mode} command {self.index} sent")
+            #self.node.get_logger().info(f"Dog behaviour {self.mode} command {self.index+1}/{len(self.behaviour_seq)} sent")
             return py_trees.common.Status.RUNNING
         
         elif self.index >= len(self.behaviour_seq):
@@ -106,6 +107,7 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour): # Checks done - works
         
     def _send_command(self, now):
         cmd = self.behaviour_seq[self.index]
+        self.node.get_logger().info(f'Publishing accessory command {self.index}/{len(self.behaviour_seq)}')
         self.publisher.publish(cmd)
 
         # Compute next time
@@ -184,11 +186,11 @@ class DogCheckFollowing(py_trees.behaviour.Behaviour): # TODO
             self.wanders = 0
             return py_trees.common.Status.FAILURE
         elif self.current_distance > self.blackboard.Dog_following_max_threshold:
-            self.node.get_logger().info(f"{self.name}: Subject too far, distance increased by {self.current_distance:.2f} m")
+            self.node.get_logger().info(f"{self.name}: Subject too far, distance from robot:{self.current_distance} m, maximum allowed: {self.blackboard.Dog_following_max_threshold} m")
             self.blackboard.last_distance = distance
             return py_trees.common.Status.FAILURE
         elif self.current_distance <= self.blackboard.Dog_following_max_threshold:
-            self.node.get_logger().info(f"{self.name}: Following OK, distance change {self.current_distance:.2f} m")
+            self.node.get_logger().info(f"{self.name}: Following OK, distance currently at {self.current_distance} opposed to max {self.blackboard.Dog_following_max_threshold:.2f} m")
             self.blackboard.last_distance = distance
             return py_trees.common.Status.SUCCESS
     
@@ -215,6 +217,7 @@ class DogSelectTarget(py_trees.behaviour.Behaviour): #TODO
         self.blackboard.register_key("Dog_checkpoints",access=py_trees.common.Access.READ)
         self.blackboard.register_key("Dog_current_checkpoint",access=py_trees.common.Access.WRITE)
         self.blackboard.register_key("Dog_max_checkpoint",access=py_trees.common.Access.READ)
+
     def setup(self, **kwargs):
         node = kwargs["node"]
         self.node = node

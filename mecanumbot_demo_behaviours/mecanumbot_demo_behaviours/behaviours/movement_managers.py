@@ -27,7 +27,83 @@ from mecanumbot_leading_behaviour.behaviours.movement_managers import (
     STATUS_UNKNOWN,
 )
 
+# ---------------------------------------------------------
+# 1. Custom Node: Check Detections & Update Target
+# ---------------------------------------------------------
+class ProcessDetections(py_trees.behaviour.Behaviour):
+    def __init__(self, name="Process Detections"):
+        super().__init__(name)
+        # Create a blackboard client to read detections and write targets
+        self.blackboard = self.attach_blackboard_client(name=self.name)
+        self.blackboard.register_key("pose_array", access=py_trees.common.Access.READ)
+        self.blackboard.register_key("intercept_goal", access=py_trees.common.Access.WRITE)
 
+    def update(self):
+        # Read the latest PoseArray from the blackboard
+        pose_array_msg = self.blackboard.pose_array
+
+        if pose_array_msg is None or len(pose_array_msg.poses) == 0:
+            return py_trees.common.Status.FAILURE  # No detections, tree will fall back to patrolling
+
+        # We have a detection! Extract the first one and format it for Nav2
+        target_pose = PoseStamped()
+        target_pose.header = pose_array_msg.header
+        target_pose.pose = pose_array_msg.poses[0]
+        
+        # Write to blackboard for the Action Client to use
+        self.blackboard.intercept_goal = target_pose
+        
+        return py_trees.common.Status.SUCCESS
+
+# ---------------------------------------------------------
+# 2. Custom Node: Cycle Waypoints
+# ---------------------------------------------------------
+class GetNextWaypoint(py_trees.behaviour.Behaviour):
+    def __init__(self, name="Get Waypoint"):
+        super().__init__(name)
+        self.current_idx = 0
+        self.blackboard = self.attach_blackboard_client(name=self.name)
+        self.blackboard.register_key("waypoints", access=py_trees.common.Access.READ)
+        self.blackboard.register_key("patrol_goal", access=py_trees.common.Access.WRITE)
+
+    def setup(self, **kwargs):
+        try:
+            self.node = kwargs["node"]
+        except KeyError:
+            self.node = None
+        return True
+
+    def _waypoint_to_pose(self, waypoint):
+        pose = waypoint
+        if hasattr(waypoint, "position"):
+            pose = waypoint.position
+
+        goal_pose = PoseStamped()
+        goal_pose.header.frame_id = "map"
+        goal_pose.pose.position.x = float(pose.x)
+        goal_pose.pose.position.y = float(pose.y)
+        goal_pose.pose.position.z = float(getattr(pose, "z", 0.0))
+        goal_pose.pose.orientation.w = 1.0
+        return goal_pose
+
+    def update(self):
+        waypoints = self.blackboard.waypoints
+        if not waypoints:
+            if self.node is not None:
+                self.node.get_logger().info(f"{self.name}: waiting for waypoints on blackboard")
+            return py_trees.common.Status.RUNNING
+
+        if self.current_idx >= len(waypoints):
+            self.current_idx = 0
+
+        goal_msg = self._waypoint_to_pose(waypoints[self.current_idx])
+        
+        self.blackboard.patrol_goal = goal_msg
+        
+        # Increment for the next time this succeeds
+        self.current_idx = (self.current_idx + 1) % len(waypoints)
+        return py_trees.common.Status.SUCCESS
+    
 class FindPeople(py_trees.behaviour.Behaviour):
     """Spin in place until a fresh people_fusion message is received."""
 

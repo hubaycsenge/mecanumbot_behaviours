@@ -36,6 +36,8 @@ def choose_default_param_file(ssid, pkg_dir):
     if ssid == "MecanumetoNet":
         return os.path.join(pkg_dir, "config", "Eto_behaviour_setting_constants.yaml")
     # Fallback
+    if ssid == "APOLLO2028":
+        return os.path.join(pkg_dir, "config", "behaviour_setting_constants.yaml")
     return os.path.join(pkg_dir, "config", "behaviour_setting_constants.yaml")
 
 

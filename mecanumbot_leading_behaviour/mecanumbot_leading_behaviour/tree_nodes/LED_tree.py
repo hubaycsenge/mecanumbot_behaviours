@@ -7,7 +7,8 @@ from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourS
 from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
 from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach,CheckRobotAtLastCheckpoint, \
                                                                       TurnToward, CheckSubjectTargetSuccess, \
-                                                                      CheckRobotHasBall, FindPeople
+                                                                      CheckRobotHasBall, FindPeople, \
+                                                                      Spin360, ManageSearchCheckpoint, WaitForPerson
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard, \
                                                                         DistanceToBlackboard
 
@@ -36,6 +37,40 @@ def get_yaml_path():
     return fallback
 
 
+def create_recover_lost_sequence(ID= ""):
+    ####### New behaviours for lost recovery sequence #####
+    lost_recovery = py_trees.composites.Parallel(
+        name="HandleLostParallel",
+        policy=py_trees.common.ParallelPolicy.SuccessOnOne()
+    )
+    
+    # 1. The Interrupt Condition
+    wait_for_person = WaitForPerson(name=ID + "InterruptOnPersonFound", sight_timeout=1.0)
+    
+    # 2. The Search Patrol Loop
+    search_patrol_sequence = py_trees.composites.Sequence(
+        name="SearchPatrolSequence",
+        memory=True
+    )
+
+    search_patrol_sequence.add_children([
+        Spin360(name=ID + "FullCircleScan"),
+        ManageSearchCheckpoint(name=ID + "UpdateSearchIndex"),
+        Approach(name=ID + "GoToSearchCheckpoint", target_type="checkpoint")
+    ])
+    
+    # Repeat the patrol sequence endlessly (until Parallel kills it)
+    search_patrol_loop = py_trees.decorators.Repeat(
+        name=ID + "SearchPatrolLoop",
+        child=search_patrol_sequence,
+        num_success=-1 
+    )
+    
+    lost_recovery.add_children([wait_for_person, search_patrol_loop])
+    return lost_recovery
+    ####### lost recovery sequence end #######
+
+
 def create_root(yaml_path=None):
     if yaml_path is None:
         yaml_path = get_yaml_path()
@@ -57,7 +92,8 @@ def create_root(yaml_path=None):
     approach_ckpt = Approach(name="ApproachCheckpoint", target_type="checkpoint")
     check_if_at_last_checkpoint = CheckRobotAtLastCheckpoint(name="CheckAtLastCheckpoint")
     approach_subject = Approach(name="ApproachSubject", target_type="subject")
-    #turn_toward_subject = TurnToward(name="TurnTowardSubject", target_type="subject")
+    approach_subject_recov = Approach(name="ApproachSubjectRecov", target_type="subject",mode ="fixed_distance")
+    turn_toward_subject = TurnToward(name="TurnTowardSubject", target_type="subject")
     find_person_close = FindPeople(name="FindPersonClose")
     find_person_start = FindPeople(name="FindPersonStart")
     turn_toward_target = TurnToward(name="TurnTowardTarget", target_type="target")
@@ -70,12 +106,24 @@ def create_root(yaml_path=None):
         find_person_ball_reaction,
         LED_thank
     ])
+
+    
     ball_reaction_repeat = py_trees.decorators.Repeat(name="BallReactionRepeat", child=ball_reaction_seq, num_success=-1)
 
     go_to_last_checkpoint_seq = py_trees.composites.Sequence(
         name="GoToLastCheckpoint",
         memory=True
     )
+    lost_recovery_init = create_recover_lost_sequence(ID="Init")
+
+    recov_and_go = py_trees.composites.Sequence(name= "Recov_with_approach", memory= True)
+    recov_and_go.add_children(
+            [
+                lost_recovery_init,
+                approach_subject_recov,
+            ]
+        )
+    lost_recovery_ball = create_recover_lost_sequence(ID="Ball")
     go_to_last_checkpoint_seq.add_children([
         approach_ckpt,
         check_if_at_last_checkpoint
@@ -110,15 +158,19 @@ def create_root(yaml_path=None):
         child=show_while_close_seq,
         num_success=-1 
     )
-
+    recovery_selector = py_trees.composites.Selector("SeekOrFind",memory = True)
+    recovery_selector.add_children(
+        [
+        approach_subject,
+        recov_and_go
+        ]
+    )
     root.add_children([
         params_loader,
-        delay_timer,
-        find_person_start,
-        approach_subject,
+        recovery_selector,
+        turn_toward_subject,
         LED_catch_attention_outside,
         approach_target,
-        #approach_target_loop,
         LED_show_target,
         show_while_close_loop,
         ball_reaction_repeat

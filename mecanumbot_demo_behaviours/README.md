@@ -1,128 +1,161 @@
 # mecanumbot_demo_behaviours
 
-`py_trees_ros` behaviour-tree package for Mecanumbot leading experiments.
+`py_trees_ros` behaviour-tree package for Mecanumbot demos.
 
-It coordinates navigation goals, accessory gestures, and LED service calls to guide a human subject toward checkpoints.
+Unlike `mecanumbot_leading_behaviour` — which runs the scripted leading experiment
+conditions — this package holds open-ended demo trees: the robot looks for people and
+visits them, or patrols a map and intercepts detections. It reuses the leading
+package's behaviour library and adds its own movement, blackboard and map-waypoint
+helpers.
 
 ## Executable nodes
 
-| Executable | Source file | Main behavior |
-| --- | --- | --- |
-| `control_leading_bt_node` | `tree_nodes/ctrl_tree.py` | Start/target turn and approach sequence. |
-| `doglike_leading_bt_node` | `tree_nodes/dog_tree.py` | Dog-style lead loop (catch attention, point, move checkpoint-by-checkpoint). |
-| `LED_leading_bt_node` | `tree_nodes/LED_tree.py` | LED-driven guidance sequence with approach + near-target signaling. |
-| `bottom_up_tree_node` | `tree_nodes/bottom_up_tree.py` | Baseline sequence combining approach and LED indication. |
+| Executable                   | Source file                           | Main behavior                                                                                                         |
+| ---------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `wander_between_people_node` | `tree_nodes/wander_between_people.py` | Spin until people are detected, then repeatedly drive to a randomly chosen person and greet them with an LED pattern. |
+
+`tree_nodes/hide_and_seek.py` implements a patrol-and-intercept tree but has **no
+entry point in `setup.py`**, so it is not installed as an executable. Run it as a
+module or add an entry point before using it.
 
 ## Node interfaces
 
-The ROS interfaces are created inside BT behaviour classes and used by the executable tree nodes.
+The ROS interfaces are created inside the BT behaviour classes and used by the
+executable tree nodes.
 
 ### Publishers
 
-| Topic | Data type | Function |
-| --- | --- | --- |
-| `/goal_pose` | `geometry_msgs/msg/PoseStamped` | Sends Nav2 navigation goals for turn/approach actions. |
-| `cmd_accessory_pos` | `mecanumbot_msgs/msg/AccessMotorCmd` | Sends neck/gripper command sequences (gestures for dog inspired behaviour). |
+| Topic        | Data type                       | Function                                    |
+| ------------ | ------------------------------- | ------------------------------------------- |
+| `/goal_pose` | `geometry_msgs/msg/PoseStamped` | Navigation goal toward the selected person. |
+| `/cmd_vel`   | `geometry_msgs/msg/Twist`       | In-place spin while searching for people.   |
+
+`hide_and_seek.py` instead sends goals through a `py_trees_ros` `ActionClient` on the
+`/navigate_to_pose` action, reading the goal from the `intercept_goal` /
+`patrol_goal` blackboard keys.
 
 ### Subscribers
 
-| Topic | Data type | Processing |
-| --- | --- | --- |
-| `/amcl_pose` | `geometry_msgs/msg/PoseWithCovarianceStamped` | Tracks robot pose for goal generation and checkpoint selection. |
-| `/mecanumbot/subject_pose` | `geometry_msgs/msg/PoseStamped` | Tracks detected subject pose for following and success checks. |
-| `/navigate_to_pose/_action/status` | `action_msgs/msg/GoalStatusArray` | Monitors Nav2 goal execution states and retries/failure handling. |
+| Topic                              | Data type                                     | Processing                                                                       |
+| ---------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------- |
+| `/mecanumbot/people_fusion`        | `geometry_msgs/msg/PoseArray`                 | Fused people detections; freshness is checked against a sight timeout.           |
+| `/amcl_pose`                       | `geometry_msgs/msg/PoseWithCovarianceStamped` | Robot pose used to build the approach goal (`RELIABLE` + `TRANSIENT_LOCAL` QoS). |
+| `/navigate_to_pose/_action/status` | `action_msgs/msg/GoalStatusArray`             | Tracks the sent goal by UUID and retries on abort/cancel.                        |
+| `/detections`                      | `geometry_msgs/msg/PoseArray`                 | `hide_and_seek.py` only — pushed onto the blackboard by a pre-tick handler.      |
 
 ### Services handled
 
-| Service | Type | Behavior |
-| --- | --- | --- |
-| None | - | Nodes do not provide ROS services. |
+| Service | Type | Behavior                           |
+| ------- | ---- | ---------------------------------- |
+| None    | -    | Nodes do not provide ROS services. |
 
 ### Service clients used
 
-| Service | Type | Function |
-| --- | --- | --- |
-| `/set_led_status` | `mecanumbot_msgs/srv/SetLedStatus` | Sends LED patterns during init, attention cues, and target indication. |
+| Service                      | Type                               | Function                                                                |
+| ---------------------------- | ---------------------------------- | ----------------------------------------------------------------------- |
+| `/mecanumbot/set_led_status` | `mecanumbot_msgs/srv/SetLedStatus` | Greeting LED pattern, via the leading package's `LEDBehaviourSequence`. |
+
+## Behaviour library
+
+### `behaviours/movement_managers.py`
+
+| Behaviour           | Role                                                                                                                                                                             |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FindPeople`        | Spins in place (0.2 rad/s) until a `people_fusion` message newer than the sight timeout arrives, then stops the robot.                                                           |
+| `GoToRandomPerson`  | Picks a random fresh detection, builds a goal with the leading package's `pose_to_goal` (stop threshold 0.5 m), publishes it and follows the Nav2 goal status until it succeeds. |
+| `ProcessDetections` | `hide_and_seek` — turns the first pose of the blackboard `pose_array` into `intercept_goal`; FAILURE when there is nothing to intercept, so the tree falls back to patrolling.   |
+| `GetNextWaypoint`   | `hide_and_seek` — cycles through the blackboard `waypoints` list, writing each in turn to `patrol_goal`.                                                                         |
+
+The module re-exports `Approach`, `TurnToward`, `RelativeTurnPattern`,
+`CheckRobotAtLastCheckpoint`, `CheckRobotHasBall`, `CheckSubjectTargetSuccess`, the
+`pose_to_goal` / `calculate_facing_orientation` helpers and the `STATUS_*` constants
+from `mecanumbot_leading_behaviour`.
+
+### `behaviours/blackboard_managers.py`
+
+| Behaviour                    | Role                                                                                                                                                                                         |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ConstantParamsToBlackboard` | Local copy of the leading package's YAML constants loader.                                                                                                                                   |
+| `DistanceToBlackboard`       | Local copy of the robot/subject/target distance calculator.                                                                                                                                  |
+| `MapWaypointsToBlackboard`   | Loads `<map>_waypoints.yaml` from `mecanumbot_description/maps/<map>/`, generating it with `utils/map_generate.py` if it does not exist yet, and writes the waypoint list to the blackboard. |
+
+Note that `wander_between_people.py` imports `ConstantParamsToBlackboard` from
+`mecanumbot_leading_behaviour`, not from this local copy.
+
+### `utils/map_generate.py`
+
+Standalone waypoint generator: reads a map `.pgm` plus its `.yaml`, ray-casts a
+visibility score for every free cell, extracts the highest-visibility points with a
+minimum separation, converts them to Nav2 world coordinates and writes
+`<map>_waypoints.yaml`. Waypoint count, minimum separation and maximum ray range are
+auto-derived from the map resolution and free area when not given explicitly. Requires
+OpenCV (`cv2`).
 
 ## Launch files
 
-### `launch/launch_wifi_condition_sequence.launch.py`
-
-Functions:
-
-1. Detects active Wi-Fi SSID (`nmcli` fallback `iwgetid`).
-2. Chooses default constants YAML based on SSID.
-3. Declares launch args: `params`, `yaml_path`, `namespace`, `condition`.
-4. Exports `YAML_PATH` and `BEHAVIOUR_YAML_PATH` env vars for BT scripts.
-5. Starts exactly one node by `condition`: `Doglike` -> `doglike_leading_bt_node`, `Control` -> `control_leading_bt_node`, `LED` -> `LED_leading_bt_node`.
+`launch/launch_wifi_condition_sequence.launch.py` is a copy of the leading package's
+launcher (SSID-based YAML selection, `params` / `yaml_path` / `namespace` /
+`condition` arguments, `YAML_PATH` and `BEHAVIOUR_YAML_PATH` env vars). It still
+starts `doglike_demo_bt_node`, `control_demo_bt_node` or `LED_demo_bt_node` — none of
+which exist in this package's `setup.py`, so the launch file fails as written. Use
+`ros2 run` until it is repointed at `wander_between_people_node`.
 
 ## Folder structure
 
-| Path | Role |
-| --- | --- |
-| `mecanumbot_demo_behaviours/tree_nodes/` | Top-level BT compositions and executable entry points. |
-| `mecanumbot_demo_behaviours/behaviours/` | Reusable BT leaf behaviours (movement, LED, dog gestures, blackboard loaders). |
-| `mecanumbot_demo_behaviours/utils/` | Subtree construction helpers (legacy/experimental composition utilities). |
-| `launch/` | Runtime launcher with condition-based node selection. |
-| `config/` | Behaviour constants and sequences in YAML (`behaviour_setting_constants.yaml`, `Eto_behaviour_setting_constants.yaml`). |
-| `resource/` | ROS package resource marker. |
-| `test/` | Package lint tests. |
+| Path                                     | Role                                                                                                      |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `mecanumbot_demo_behaviours/tree_nodes/` | Top-level BT compositions and executable entry points.                                                    |
+| `mecanumbot_demo_behaviours/behaviours/` | Demo-specific BT leaf behaviours plus local copies of the blackboard managers.                            |
+| `mecanumbot_demo_behaviours/utils/`      | Map waypoint generation and subtree construction helpers.                                                 |
+| `launch/`                                | Copy of the condition-based launcher (see the caveat above).                                              |
+| `config/`                                | Behaviour constants in YAML (`behaviour_setting_constants.yaml`, `Eto_behaviour_setting_constants.yaml`). |
+| `resource/`                              | ROS package resource marker.                                                                              |
+| `test/`                                  | Package lint tests.                                                                                       |
 
 ## BT logic
 
-### Common pattern
+### `wander_between_people.py`
 
-1. Load YAML constants into blackboard (`ConstantParamsToBlackboard`).
-2. Build a sequence/selector/retry structure from movement and signalling behaviours.
-3. Tick tree periodically (`tick_tock`) and keep node alive with `rclpy.spin`.
+Root is a memory sequence:
 
-### `ctrl_tree.py` logic
+1. `ConstantParamsToBlackboard` — load the YAML constants (falls back to
+   `Eto_behaviour_setting_constants.yaml` from the **leading** package's share
+   directory when `YAML_PATH` / `BEHAVIOUR_YAML_PATH` are unset).
+2. `FindPeople` — spin until somebody is detected.
+3. `GoingToRandomPerson` sequence — `GoToRandomPerson`, then a `catch_attention` LED
+   sequence as a greeting.
 
-1. Load constants.
-2. Turn toward start.
-3. Approach start.
-4. Turn toward target.
-5. Approach target.
+Ticked at 10 ms.
 
-### `dog_tree.py` logic
+### `hide_and_seek.py`
 
-1. Load constants.
-2. Initial seek-attention stage (turn to subject + catch attention gesture).
-3. Repeat loop with selector.
-   - Branch A: if subject near target, run show/point sequence;
-   - Branch B: lead one step to checkpoint and verify following behavior.
-4. Continue until externally stopped.
+Root is a memory-less priority selector:
 
-### `LED_tree.py` logic
+1. `MapWaypointsToBlackboard` — load or generate the waypoints for the `AI_dept` map.
+2. Intercept branch — `ProcessDetections` then a Nav2 `ActionClient` on
+   `intercept_goal`. Runs whenever `/detections` is non-empty; `py_trees_ros` cancels
+   the in-flight patrol goal automatically.
+3. Patrol branch — `GetNextWaypoint` then a Nav2 `ActionClient` on `patrol_goal`.
 
-1. Load constants and wait delay.
-2. Retry subject-approach until successful.
-3. Catch attention with LED.
-4. Approach target and indicate target.
-5. Loop near-target indication while success condition remains active.
-
-### `bottom_up_tree.py` logic
-
-1. Load constants and wait delay.
-2. Approach subject.
-3. Approach target.
-4. Indicate target with LED.
-5. Selector repeatedly alternates check/show behavior until close condition is satisfied.
+Ticked at 100 ms, with a `ToBlackboard` pre-tick handler pushing `/detections` onto
+the blackboard.
 
 ## Configuration model
 
-`config/*.yaml` keys define:
-
-- Thresholds: `robot_closeness_threshold`, `target_reached_threshold`, `visibility_time_threshold`.
-- Navigation guidance: `robot_approach_distance`, `Dog_checkpoints`.
-- LED scripts: `LED_*_seq`, `LED_*_times`.
-- Accessory scripts: `Dog_*_seq`, `Dog_*_times`.
+`config/*.yaml` uses the same schema as `mecanumbot_leading_behaviour` — see that
+package's README for the full key list. Only the LED sequence keys and the general
+thresholds matter for the demo trees.
 
 ## Run examples
 
 ```bash
-ros2 launch mecanumbot_demo_behaviours launch_wifi_condition_sequence.launch.py condition:=Doglike
-ros2 launch mecanumbot_demo_behaviours launch_wifi_condition_sequence.launch.py condition:=Control
-ros2 launch mecanumbot_demo_behaviours launch_wifi_condition_sequence.launch.py condition:=LED
-ros2 run mecanumbot_demo_behaviours bottom_up_demo_tree_node
+ros2 run mecanumbot_demo_behaviours wander_between_people_node
+
+# with an explicit constants file
+YAML_PATH=/absolute/path/to/behaviour_setting_constants.yaml \
+  ros2 run mecanumbot_demo_behaviours wander_between_people_node
 ```
+
+Both trees expect Nav2 with AMCL localized on a map. `wander_between_people_node`
+additionally needs the people-detection pipeline publishing
+`/mecanumbot/people_fusion` and the `mecanumbot_led` service node for the greeting.
