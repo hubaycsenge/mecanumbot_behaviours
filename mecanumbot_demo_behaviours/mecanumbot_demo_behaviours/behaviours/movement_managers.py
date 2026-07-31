@@ -27,6 +27,7 @@ from mecanumbot_leading_behaviour.behaviours.movement_managers import (
     STATUS_UNKNOWN,
 )
 
+
 # ---------------------------------------------------------
 # 1. Custom Node: Check Detections & Update Target
 # ---------------------------------------------------------
@@ -36,24 +37,29 @@ class ProcessDetections(py_trees.behaviour.Behaviour):
         # Create a blackboard client to read detections and write targets
         self.blackboard = self.attach_blackboard_client(name=self.name)
         self.blackboard.register_key("pose_array", access=py_trees.common.Access.READ)
-        self.blackboard.register_key("intercept_goal", access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key(
+            "intercept_goal", access=py_trees.common.Access.WRITE
+        )
 
     def update(self):
         # Read the latest PoseArray from the blackboard
         pose_array_msg = self.blackboard.pose_array
 
         if pose_array_msg is None or len(pose_array_msg.poses) == 0:
-            return py_trees.common.Status.FAILURE  # No detections, tree will fall back to patrolling
+            return (
+                py_trees.common.Status.FAILURE
+            )  # No detections, tree will fall back to patrolling
 
         # We have a detection! Extract the first one and format it for Nav2
         target_pose = PoseStamped()
         target_pose.header = pose_array_msg.header
         target_pose.pose = pose_array_msg.poses[0]
-        
+
         # Write to blackboard for the Action Client to use
         self.blackboard.intercept_goal = target_pose
-        
+
         return py_trees.common.Status.SUCCESS
+
 
 # ---------------------------------------------------------
 # 2. Custom Node: Cycle Waypoints
@@ -90,20 +96,23 @@ class GetNextWaypoint(py_trees.behaviour.Behaviour):
         waypoints = self.blackboard.waypoints
         if not waypoints:
             if self.node is not None:
-                self.node.get_logger().info(f"{self.name}: waiting for waypoints on blackboard")
+                self.node.get_logger().info(
+                    f"{self.name}: waiting for waypoints on blackboard"
+                )
             return py_trees.common.Status.RUNNING
 
         if self.current_idx >= len(waypoints):
             self.current_idx = 0
 
         goal_msg = self._waypoint_to_pose(waypoints[self.current_idx])
-        
+
         self.blackboard.patrol_goal = goal_msg
-        
+
         # Increment for the next time this succeeds
         self.current_idx = (self.current_idx + 1) % len(waypoints)
         return py_trees.common.Status.SUCCESS
-    
+
+
 class FindPeople(py_trees.behaviour.Behaviour):
     """Spin in place until a fresh people_fusion message is received."""
 
@@ -239,17 +248,20 @@ class GoToRandomPerson(py_trees.behaviour.Behaviour):
         if self.robot_pose is None:
             return py_trees.common.Status.RUNNING
 
-
         if self.compare_position is None:
-            self.node.get_logger().info(f"{self.name}: Selecting a random person to approach")
+            self.node.get_logger().info(
+                f"{self.name}: Selecting a random person to approach"
+            )
             if not self.has_fresh_people():
-                self.node.get_logger().info(f"{self.name}: No fresh people detected, cannot select a target")
+                self.node.get_logger().info(
+                    f"{self.name}: No fresh people detected, cannot select a target"
+                )
                 self.goal_sent = False
                 self.goal_uuid = None
                 self.compare_position = None
                 self.selected_person = None
                 return py_trees.common.Status.FAILURE
-            
+
             self.select_random_person()
 
         if self.compare_position is None:
@@ -260,7 +272,9 @@ class GoToRandomPerson(py_trees.behaviour.Behaviour):
                 if not self.check_if_running():
                     self.send_goal_command()
                     return py_trees.common.Status.RUNNING
-                self.node.get_logger().info(f"{self.name}: Waiting for previous goal to finish")
+                self.node.get_logger().info(
+                    f"{self.name}: Waiting for previous goal to finish"
+                )
                 return py_trees.common.Status.RUNNING
 
             self.send_goal_command()
@@ -274,28 +288,42 @@ class GoToRandomPerson(py_trees.behaviour.Behaviour):
 
         self.goal_status = STATUS_UNKNOWN
         for goal in self.goals_in_sys:
-            #self.node.get_logger().info(f"{self.name}: Checking goal UUID {goal.goal_info.goal_id.uuid} against {self.goal_uuid}")
+            # self.node.get_logger().info(f"{self.name}: Checking goal UUID {goal.goal_info.goal_id.uuid} against {self.goal_uuid}")
             if np.array_equal(goal.goal_info.goal_id.uuid, self.goal_uuid):
                 self.goal_status = goal.status
         if self.goal_status == STATUS_SUCCEEDED:
             self.node.get_logger().info(f"{self.name}: Turn completed successfully")
             return py_trees.common.Status.SUCCESS
         elif self.goal_status in [STATUS_EXECUTING, STATUS_ACCEPTED]:
-            #self.node.get_logger().info(f"{self.name}: Turn in progress")
+            # self.node.get_logger().info(f"{self.name}: Turn in progress")
             return py_trees.common.Status.RUNNING
-        elif self.goal_status in [STATUS_ABORTED, STATUS_CANCELED, STATUS_CANCELING, STATUS_UNKNOWN]:
+        elif self.goal_status in [
+            STATUS_ABORTED,
+            STATUS_CANCELED,
+            STATUS_CANCELING,
+            STATUS_UNKNOWN,
+        ]:
             self.node.get_logger().info(f"{self.name}: Turn failed, retrying")
             self.goal_sent = False
             self.goal_uuid = None
             return py_trees.common.Status.RUNNING
-        
+
         if self.goal_status == STATUS_SUCCEEDED:
-            self.node.get_logger().info(f"{self.name}: Random-person navigation completed successfully")
+            self.node.get_logger().info(
+                f"{self.name}: Random-person navigation completed successfully"
+            )
             return py_trees.common.Status.SUCCESS
         if self.goal_status in [STATUS_EXECUTING, STATUS_ACCEPTED]:
             return py_trees.common.Status.RUNNING
-        if self.goal_status in [STATUS_ABORTED, STATUS_CANCELED, STATUS_CANCELING, STATUS_UNKNOWN]:
-            self.node.get_logger().info(f"{self.name}: Navigation failed, selecting another person")
+        if self.goal_status in [
+            STATUS_ABORTED,
+            STATUS_CANCELED,
+            STATUS_CANCELING,
+            STATUS_UNKNOWN,
+        ]:
+            self.node.get_logger().info(
+                f"{self.name}: Navigation failed, selecting another person"
+            )
             self.goal_sent = False
             self.goal_uuid = None
             self.compare_position = None
@@ -306,7 +334,9 @@ class GoToRandomPerson(py_trees.behaviour.Behaviour):
 
     def assign_goal_uuid(self):
         if self.goals_in_sys is None or self.cmd_send_time is None:
-            self.node.get_logger().info(f"{self.name}: Cannot assign goal UUID, goals_in_sys or cmd_send_time is None") 
+            self.node.get_logger().info(
+                f"{self.name}: Cannot assign goal UUID, goals_in_sys or cmd_send_time is None"
+            )
             return
 
         cmd_time = Time.from_msg(self.cmd_send_time.to_msg())
@@ -314,7 +344,9 @@ class GoToRandomPerson(py_trees.behaviour.Behaviour):
             goal_time = Time.from_msg(goal_status.goal_info.stamp)
             if goal_time >= cmd_time:
                 self.goal_uuid = goal_status.goal_info.goal_id.uuid
-                self.node.get_logger().info(f"{self.name}: Locked onto Goal UUID {self.goal_uuid}")
+                self.node.get_logger().info(
+                    f"{self.name}: Locked onto Goal UUID {self.goal_uuid}"
+                )
                 return
 
     def check_if_running(self):
@@ -327,7 +359,9 @@ class GoToRandomPerson(py_trees.behaviour.Behaviour):
         return False
 
     def send_goal_command(self):
-        desired_pose = pose_to_goal(self.compare_position, self.robot_pose,stop_threshold=0.5,go_threshold=10)
+        desired_pose = pose_to_goal(
+            self.compare_position, self.robot_pose, stop_threshold=0.5, go_threshold=10
+        )
 
         self.goal_cmd = PoseStamped()
         self.goal_cmd.header.frame_id = "map"

@@ -1,198 +1,116 @@
-import os 
-import rclpy 
-import py_trees 
-import py_trees_ros 
-from ament_index_python.packages import get_package_share_directory 
-from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourSequence
-from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
-from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach,CheckRobotAtLastCheckpoint, \
-                                                                      TurnToward, CheckSubjectTargetSuccess, \
-                                                                      CheckRobotHasBall, FindPeople, \
-                                                                      Spin360, ManageSearchCheckpoint, WaitForPerson
-from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard, \
-                                                                        DistanceToBlackboard
+"""LED leading behaviour: same route, signalled with light patterns.
 
-leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour')
+This is the non-animal comparison condition, so the neck is left alone
+(`head=None` on every turn): the camera keeps the lifted tilt the parameter
+loader sets at startup, but the robot never gestures with its head.
+"""
+
+import py_trees
+
+from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
+from mecanumbot_leading_behaviour.behaviours.blackboard_managers import (
+    ConstantParamsToBlackboard,
+)
+from mecanumbot_leading_behaviour.behaviours.movement_managers import (
+    Approach,
+    CheckRobotHasBall,
+    CheckSubjectTargetSuccess,
+    FindPeople,
+    TurnToward,
+)
+from mecanumbot_leading_behaviour.behaviours.targets import (
+    LAST_CHECKPOINT,
+    SUBJECT,
+    TARGET,
+)
+from mecanumbot_leading_behaviour.tree_nodes.tree_common import (
+    create_recover_lost_sequence,
+    resolve_yaml_path,
+    run_tree,
+)
+
+TREE_NAME = "LED_tree"
 DEFAULT_YAML_FILENAME = "Eto_behaviour_setting_constants.yaml"
 
 
 def get_yaml_path():
-    import argparse
-    import os
-
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--yaml_path", type=str, default=None)
-    parsed, _ = parser.parse_known_args()
-
-    yaml_path = parsed.yaml_path
-    if not yaml_path:
-        yaml_path = os.getenv("YAML_PATH") or os.getenv("BEHAVIOUR_YAML_PATH")
-
-    if yaml_path:
-        print(f"[LED_tree] Using YAML_PATH: {yaml_path}")
-        return yaml_path
-
-    fallback = os.path.join(leading_pkg_share_dir, "config", DEFAULT_YAML_FILENAME)
-    print(f"[LED_tree] YAML_PATH unset, fallback to: {fallback}")
-    return fallback
-
-
-def create_recover_lost_sequence(ID= ""):
-    ####### New behaviours for lost recovery sequence #####
-    lost_recovery = py_trees.composites.Parallel(
-        name="HandleLostParallel",
-        policy=py_trees.common.ParallelPolicy.SuccessOnOne()
-    )
-    
-    # 1. The Interrupt Condition
-    wait_for_person = WaitForPerson(name=ID + "InterruptOnPersonFound", sight_timeout=1.0)
-    
-    # 2. The Search Patrol Loop
-    search_patrol_sequence = py_trees.composites.Sequence(
-        name="SearchPatrolSequence",
-        memory=True
-    )
-
-    search_patrol_sequence.add_children([
-        Spin360(name=ID + "FullCircleScan"),
-        ManageSearchCheckpoint(name=ID + "UpdateSearchIndex"),
-        Approach(name=ID + "GoToSearchCheckpoint", target_type="checkpoint")
-    ])
-    
-    # Repeat the patrol sequence endlessly (until Parallel kills it)
-    search_patrol_loop = py_trees.decorators.Repeat(
-        name=ID + "SearchPatrolLoop",
-        child=search_patrol_sequence,
-        num_success=-1 
-    )
-    
-    lost_recovery.add_children([wait_for_person, search_patrol_loop])
-    return lost_recovery
-    ####### lost recovery sequence end #######
+    return resolve_yaml_path(TREE_NAME, DEFAULT_YAML_FILENAME)
 
 
 def create_root(yaml_path=None):
     if yaml_path is None:
         yaml_path = get_yaml_path()
 
-    root = py_trees.composites.Sequence("ROOT", memory=True)
-
-    params_loader = ConstantParamsToBlackboard(name="LoadConstantParams", yaml_path=yaml_path)
-
-
-    delay_timer = py_trees.timers.Timer(name="DelayTimer", duration=2)
-
-    LED_show_target = LEDBehaviourSequence('LShow', 'indicate_target')
-    LED_catch_attention = LEDBehaviourSequence('LCatch', 'catch_attention')
-    LED_catch_attention_outside = LEDBehaviourSequence('LCatchO', 'catch_attention')
-    LED_indicate_near_target = LEDBehaviourSequence('LNear', 'indicate_close_target')
-    LED_thank = LEDBehaviourSequence('LThank', 'thank')
-
-    approach_target = Approach(name="ApproachTarget", target_type="target")
-    approach_ckpt = Approach(name="ApproachCheckpoint", target_type="checkpoint")
-    check_if_at_last_checkpoint = CheckRobotAtLastCheckpoint(name="CheckAtLastCheckpoint")
-    approach_subject = Approach(name="ApproachSubject", target_type="subject")
-    approach_subject_recov = Approach(name="ApproachSubjectRecov", target_type="subject",mode ="fixed_distance")
-    turn_toward_subject = TurnToward(name="TurnTowardSubject", target_type="subject")
-    find_person_close = FindPeople(name="FindPersonClose")
-    find_person_start = FindPeople(name="FindPersonStart")
-    turn_toward_target = TurnToward(name="TurnTowardTarget", target_type="target")
-    check_if_has_ball = CheckRobotHasBall(name="CheckIfHasBall")
-    find_person_ball_reaction = FindPeople(name="FindPersonBallReaction")
-
-    ball_reaction_seq = py_trees.composites.Sequence(name="BallReactionSeq",memory=True)
-    ball_reaction_seq.add_children([
-        check_if_has_ball,
-        find_person_ball_reaction,
-        LED_thank
-    ])
-
-    
-    ball_reaction_repeat = py_trees.decorators.Repeat(name="BallReactionRepeat", child=ball_reaction_seq, num_success=-1)
-
-    go_to_last_checkpoint_seq = py_trees.composites.Sequence(
-        name="GoToLastCheckpoint",
-        memory=True
+    # --- reach the human: directly, or search the route for them first ------
+    recover_then_approach = py_trees.composites.Sequence(
+        name="RecoverThenApproach", memory=True
     )
-    lost_recovery_init = create_recover_lost_sequence(ID="Init")
-
-    recov_and_go = py_trees.composites.Sequence(name= "Recov_with_approach", memory= True)
-    recov_and_go.add_children(
-            [
-                lost_recovery_init,
-                approach_subject_recov,
-            ]
-        )
-    lost_recovery_ball = create_recover_lost_sequence(ID="Ball")
-    go_to_last_checkpoint_seq.add_children([
-        approach_ckpt,
-        check_if_at_last_checkpoint
-        
-    ])
-    approach_target_loop = py_trees.decorators.Retry(
-        name="ApproachTargetLoop",
-        child=go_to_last_checkpoint_seq,
-        num_failures=-1 
-    )
-
-    check_subject_near_target = CheckSubjectTargetSuccess(
-        name="CheckSubjectNearTarget"
-    )
-
-    # Selector will keep showing target until condition succeeds
-    show_while_close_seq = py_trees.composites.Sequence(
-        name="ShowWhileSubjectClose",
-        memory=True
-    )
-
-    show_while_close_seq.add_children([
-        find_person_close,
-        check_subject_near_target,
-        LED_catch_attention,
-        turn_toward_target,
-        LED_indicate_near_target
-    ])
-    
-    show_while_close_loop = py_trees.decorators.Repeat(
-        name="ShowWhileCloseLoop",
-        child=show_while_close_seq,
-        num_success=-1 
-    )
-    recovery_selector = py_trees.composites.Selector("SeekOrFind",memory = True)
-    recovery_selector.add_children(
+    recover_then_approach.add_children(
         [
-        approach_subject,
-        recov_and_go
+            create_recover_lost_sequence(ID="Init"),
+            Approach(
+                name="ApproachSubjectRecov", target_type=SUBJECT, mode="fixed_distance"
+            ),
         ]
     )
-    root.add_children([
-        params_loader,
-        recovery_selector,
-        turn_toward_subject,
-        LED_catch_attention_outside,
-        approach_target,
-        LED_show_target,
-        show_while_close_loop,
-        ball_reaction_repeat
-    ])
 
+    seek_or_find = py_trees.composites.Selector("SeekOrFind", memory=True)
+    seek_or_find.add_children(
+        [
+            Approach(name="ApproachSubject", target_type=SUBJECT),
+            recover_then_approach,
+        ]
+    )
+
+    # --- keep signalling the target while the human stays near it ------------
+    show_while_close = py_trees.composites.Sequence(
+        name="ShowWhileSubjectClose", memory=True
+    )
+    show_while_close.add_children(
+        [
+            FindPeople(name="FindPersonClose", head=None),
+            CheckSubjectTargetSuccess(name="CheckSubjectNearTarget"),
+            LEDBehaviourSequence("LCatch", "catch_attention"),
+            TurnToward(name="TurnTowardTarget", target_type=TARGET, head=None),
+            LEDBehaviourSequence("LNear", "indicate_close_target"),
+        ]
+    )
+
+    # --- the human handed the ball over -------------------------------------
+    ball_reaction = py_trees.composites.Sequence(name="BallReactionSeq", memory=True)
+    ball_reaction.add_children(
+        [
+            CheckRobotHasBall(name="CheckIfHasBall"),
+            FindPeople(name="FindPersonBallReaction", head=None),
+            LEDBehaviourSequence("LThank", "thank"),
+        ]
+    )
+
+    root = py_trees.composites.Sequence("ROOT", memory=True)
+    root.add_children(
+        [
+            ConstantParamsToBlackboard(name="LoadConstantParams", yaml_path=yaml_path),
+            seek_or_find,
+            TurnToward(name="TurnTowardSubject", target_type=SUBJECT, head=None),
+            LEDBehaviourSequence("LCatchO", "catch_attention"),
+            # Drive to the last checkpoint of the route, then face the target itself
+            # to signal it -- the robot stops short of where the human should end up.
+            Approach(name="ApproachTarget", target_type=LAST_CHECKPOINT),
+            LEDBehaviourSequence("LShow", "indicate_target"),
+            py_trees.decorators.Repeat(
+                name="ShowWhileCloseLoop", child=show_while_close, num_success=-1
+            ),
+            py_trees.decorators.Repeat(
+                name="BallReactionRepeat", child=ball_reaction, num_success=-1
+            ),
+        ]
+    )
     return root
 
+
 def main(args=None):
-    rclpy.init(args=args)
-
-    yaml_path = get_yaml_path()
-    tree = create_root(yaml_path=yaml_path)
-
-    tree_node = py_trees_ros.trees.BehaviourTree(root=tree)
-    tree_node.setup(timeout=15.0, node_name="bottom_up_tree_node")
-    print(f"Starting LED behaviour tree using YAML: {yaml_path}")
-
-    tree_node.tick_tock(period_ms=100.0)
-    rclpy.spin(tree_node.node)     # <--- keeps node alive
+    run_tree(create_root, TREE_NAME, DEFAULT_YAML_FILENAME, args=args)
 
 
 if __name__ == "__main__":
     main()
-
-    

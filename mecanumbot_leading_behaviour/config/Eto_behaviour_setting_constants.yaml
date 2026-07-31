@@ -1,7 +1,7 @@
 bottom_up_tree_node:
   ros__parameters:
     init_delay: 1.5
-    robot_closeness_threshold: 0.35 #minimum approach distance of the robot, we do not want to hit subject TODO: test optimum
+    robot_closeness_threshold: 0.5 #minimum approach distance of the robot, we do not want to hit subject TODO: test optimum
     target_reached_threshold: 1.5  # the critical distance of target and subject to tell if reached TODO: test optimum
 
     visibility_time_threshold: 2 # time threshold of last incoming 'subject' data

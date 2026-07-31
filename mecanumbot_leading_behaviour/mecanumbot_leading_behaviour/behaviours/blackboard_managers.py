@@ -1,320 +1,278 @@
+"""Behaviours that put configuration and live measurements on the blackboard."""
+
 import ast
-import math
-import py_trees
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
-from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
+
 import py_trees
 import yaml
 from geometry_msgs.msg import Point
+
 from mecanumbot_msgs.msg import AccessMotorCmd
 from mecanumbot_msgs.srv import SetLedStatus
 
+from mecanumbot_leading_behaviour.behaviours.geometry import distance_xy
+from mecanumbot_leading_behaviour.behaviours.ros_interfaces import (
+    AccessoryCommander,
+    HEAD_SEEK,
+    RobotPoseTracker,
+    SubjectPoseTracker,
+)
+from mecanumbot_leading_behaviour.behaviours.searching import SEARCH_BACKWARDS
 
-class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour): # Checks done - works
+# The YAML files keep everything under this node name, whichever tree loads them.
+YAML_ROOT_KEYS = ("bottom_up_tree_node", "ros__parameters")
+
+LED_SERVICE = "/mecanumbot/set_led_status"
+
+
+def parse_led(entry):
+    """`"{'fl': {'color': .., 'mode': ..}, ...}"` -> SetLedStatus request."""
+    corners = ast.literal_eval(entry)
+    request = SetLedStatus.Request()
+    request.fl_color, request.fl_mode = corners["fl"]["color"], corners["fl"]["mode"]
+    request.fr_color, request.fr_mode = corners["fr"]["color"], corners["fr"]["mode"]
+    request.bl_color, request.bl_mode = corners["bl"]["color"], corners["bl"]["mode"]
+    request.br_color, request.br_mode = corners["br"]["color"], corners["br"]["mode"]
+    return request
+
+
+def parse_gesture(entry):
+    """`"{'n_pos': .., 'gl_pos': .., 'gr_pos': ..}"` -> AccessMotorCmd."""
+    positions = ast.literal_eval(entry)
+    cmd = AccessMotorCmd()
+    cmd.n_pos = float(positions["n_pos"])
+    cmd.gl_pos = float(positions["gl_pos"])
+    cmd.gr_pos = float(positions["gr_pos"])
+    return cmd
+
+
+def parse_checkpoint(entry):
+    """`"{'X': .., 'Y': .., 'Z': ..}"` -> Point."""
+    coordinates = ast.literal_eval(entry)
+    point = Point()
+    point.x = coordinates["X"]
+    point.y = coordinates["Y"]
+    point.z = coordinates["Z"]
+    return point
+
+
+class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
+    """Load the YAML constants onto the blackboard and set the robot's start state.
+
+    The checkpoint list is split up: the first entry is `start_position`, the last
+    is `target_position` (where the human should end up), and the entries in
+    between -- plus the first -- stay in `Dog_checkpoints` as the route the robot
+    drives. `patrol_checkpoints` is the same list, walked separately when the
+    robot has lost its human and is searching for them.
+
+    Keys written:
+
+    * thresholds: `robot_closeness_threshold`, `robot_approach_distance`,
+      `target_reached_threshold`, `visibility_time_threshold`,
+      `Dog_following_max_threshold`, `Dog_max_wander_allowed`, `init_delay`
+    * route: `Dog_checkpoints`, `Dog_current_checkpoint`, `Dog_max_checkpoint`,
+      `start_position`, `target_position`
+    * search state: `patrol_checkpoints`, `patrol_current_checkpoint`,
+      `patrol_direction`, `patrol_initialized`, `search_spin_sign`
+    * signalling scripts: `LED_*_seq` / `_times`, `Dog_*_seq` / `_times`
     """
-    Reads parameters from the ROS 2 node at startup and writes them
-    into the py_trees blackboard under well-defined keys.
 
-    universally needed:
-        init_delay: [s], float 
-        robot_closeness_threshold: [m], float robot is considered close to subject/target if within this distance
-        robot_approach_distance: [m], float, desired distance between robot and subject when robot going to subject
-        target_reached_threshold: [m], float subject reached the target
-        target_position: [m] stored in a dict, converted to geometry_msgs Point message 
+    SCALAR_PARAMS = (
+        "init_delay",
+        "robot_closeness_threshold",
+        "robot_approach_distance",
+        "target_reached_threshold",
+        "visibility_time_threshold",
+        "Dog_following_max_threshold",
+    )
 
-    LED condition parameters:
-        LED_indicate_target_seq: [color,mode]x4, mecanumbot_msgs, SetLedStatus srv request stored in a list of dicts 
-        LED_indicate_target_times: [s], stored in a list with the same number of elements as corresp. seq 
-        LED_catch_attention_seq: [color,mode]x4, mecanumbot_msgs, SetLedStatus srv request stored in a list of dicts 
-        LED_catch_attention_times: [s],float, stored in a list with the same number of elements as corresp. seq 
+    LED_SCRIPTS = (
+        "LED_indicate_target",
+        "LED_indicate_close_target",
+        "LED_catch_attention",
+        "LED_thank",
+    )
 
-    Dog condition parameters:
-        Dog following_min_threshold: [m], float, min distance to consider the subject is following the robot
-        Dog_indicate_target_seq: [rad]->[motor_state] x3, mecanumbot_msgs, AccessMotorCmd msg stored in a list of dicts 
-        Dog_indicate_target_times: [s], stored in a list with the same number of elements as corresp. seq 
-        Dog_catch_attention_seq: [rad]->[motor_state] x3, mecanumbot_msgs, AccessMotorCmd msg stored in a list of dicts 
-        Dog_catch_attention_times: [s], stored in a list with the same number of elements as corresp. seq
-        Dog_look_for_feedback_delay # [s], float
-    """
-    def __init__(self, name: str, yaml_path: str):
+    GESTURE_SCRIPTS = (
+        "Dog_indicate_target",
+        "Dog_catch_attention",
+        "Dog_thank",
+    )
+
+    ROUTE_KEYS = (
+        "Dog_checkpoints",
+        "Dog_current_checkpoint",
+        "Dog_max_checkpoint",
+        "start_position",
+        "target_position",
+    )
+
+    SEARCH_STATE_KEYS = (
+        "patrol_checkpoints",
+        "patrol_current_checkpoint",
+        "patrol_direction",
+        "patrol_initialized",
+        "search_spin_sign",
+    )
+
+    def __init__(self, name, yaml_path):
         super().__init__(name=name)
         self.yaml_path = yaml_path
         self.blackboard = self.attach_blackboard_client(name=name)
 
-        self.blackboard.register_key("init_delay", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("LED_start_setting", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("visibility_time_threshold",access=py_trees.common.Access.WRITE)
-        
-        self.blackboard.register_key("robot_approach_distance", access=py_trees.common.Access.WRITE) #how much a robot should go at once if it checks for following
-        self.blackboard.register_key("robot_closeness_threshold", access=py_trees.common.Access.WRITE) #how close the robot should approach
-        self.blackboard.register_key("target_reached_threshold", access=py_trees.common.Access.WRITE) #how close the subject should be to the target to consider it reached
-        self.blackboard.register_key("target_position", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("start_position", access=py_trees.common.Access.WRITE)
-        
-        self.blackboard.register_key("LED_indicate_target_seq", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("LED_catch_attention_seq", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("LED_indicate_close_target_seq", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("LED_indicate_target_times", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("LED_catch_attention_times", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("LED_indicate_close_target_times", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("LED_thank_seq", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("LED_thank_times", access=py_trees.common.Access.WRITE)
+        for key in (
+            self.SCALAR_PARAMS
+            + self.ROUTE_KEYS
+            + self.SEARCH_STATE_KEYS
+            + ("Dog_max_wander_allowed", "LED_start_setting", "last_distance")
+        ):
+            self.blackboard.register_key(key=key, access=py_trees.common.Access.WRITE)
 
-        self.blackboard.register_key("Dog_following_max_threshold", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("Dog_max_wander_allowed", access=py_trees.common.Access.WRITE)
+        for script in self.LED_SCRIPTS + self.GESTURE_SCRIPTS:
+            self.blackboard.register_key(
+                key=f"{script}_seq", access=py_trees.common.Access.WRITE
+            )
+            self.blackboard.register_key(
+                key=f"{script}_times", access=py_trees.common.Access.WRITE
+            )
 
-        self.blackboard.register_key("Dog_checkpoints",access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("patrol_checkpoints",access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("Dog_current_checkpoint",access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("patrol_current_checkpoint",access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("Dog_max_checkpoint",access=py_trees.common.Access.WRITE)
-
-
-        self.blackboard.register_key("Dog_indicate_target_seq", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("Dog_indicate_target_times", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("Dog_catch_attention_seq", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("Dog_catch_attention_times", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("Dog_thank_seq", access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key("Dog_thank_times", access=py_trees.common.Access.WRITE)
-
-
-        self.blackboard.register_key("last_distance",access=py_trees.common.Access.WRITE)
-        
-        self.accessory_publisher = None
     def setup(self, **kwargs):
-        with open(self.yaml_path, 'r') as f:
-            raw_params = yaml.safe_load(f)
-        node = kwargs["node"]
-        self.node = node
-        self.accessory_publisher = self.node.create_publisher(AccessMotorCmd, "/cmd_accessory_pos", 10)
-         # LED helper function
-        def parse_led(d):
-            d = ast.literal_eval(d)
-            req = SetLedStatus.Request()
-            req.fl_color, req.fl_mode = d["fl"]["color"], d["fl"]["mode"]
-            req.fr_color, req.fr_mode = d["fr"]["color"], d["fr"]["mode"]
-            req.bl_color, req.bl_mode = d["bl"]["color"], d["bl"]["mode"]
-            req.br_color, req.br_mode = d["br"]["color"], d["br"]["mode"]
-            return req
-        
-        def parse_ckpt(ckpt):
-            ckpt = ast.literal_eval(ckpt)
-            pos = Point()
-            pos.x = ckpt['X']
-            pos.y = ckpt['Y']
-            pos.z = ckpt['Z']
-            return pos
+        self.node = kwargs["node"]
+        self.accessories = AccessoryCommander(self.node)
+        self.led_client = self.node.create_client(SetLedStatus, LED_SERVICE)
 
-        # Dog helper function
-        def parse_dog(d):
-            d = ast.literal_eval(d)
-            cmd = AccessMotorCmd()
-            cmd.n_pos = float(d["n_pos"])
-            cmd.gl_pos = float(d["gl_pos"])
-            cmd.gr_pos = float(d["gr_pos"])
-            return cmd
-        
-        raw_params = raw_params['bottom_up_tree_node']['ros__parameters']
+        params = self._load_params()
+        self._write_thresholds(params)
+        self._write_scripts(params)
+        self._write_route(params)
+        self._write_search_state()
 
-        self.blackboard.init_delay = float(raw_params['init_delay'])
-        self.blackboard.LED_start_setting = parse_led(raw_params['LED_start_setting'][0])
+        self.feedback_message = "constants loaded"
+        self.node.get_logger().info(
+            f"{self.name}: constants loaded from {self.yaml_path}"
+        )
+        return True
 
-        self.blackboard.robot_closeness_threshold = float(raw_params['robot_closeness_threshold'])
-        self.blackboard.robot_approach_distance = float(raw_params['robot_approach_distance'])
-        self.blackboard.target_reached_threshold = float(raw_params['target_reached_threshold'])
-        self.blackboard.visibility_time_threshold =float(raw_params['visibility_time_threshold'])
+    def initialise(self):
+        self.led_client.call_async(self.blackboard.LED_start_setting)
+        # Start with the head lifted: ready to greet, and the pose detector sees
+        # whole people rather than just their knees.
+        self.accessories.look(HEAD_SEEK)
 
+    def update(self):
+        return py_trees.common.Status.SUCCESS
 
-        self.blackboard.LED_indicate_target_seq = [parse_led(e) for e in raw_params["LED_indicate_target_seq"]]
-        self.blackboard.LED_catch_attention_seq = [parse_led(e) for e in raw_params["LED_catch_attention_seq"]]
-        self.blackboard.LED_indicate_close_target_seq = [parse_led(e) for e in raw_params["LED_indicate_close_target_seq"]]
-        self.blackboard.LED_indicate_target_times = raw_params["LED_indicate_target_times"]
-        self.blackboard.LED_catch_attention_times = raw_params["LED_catch_attention_times"]
-        self.blackboard.LED_indicate_close_target_times = raw_params["LED_indicate_target_times"]
-        self.blackboard.LED_thank_seq = [parse_led(e) for e in raw_params["LED_thank_seq"]]
-        self.blackboard.LED_thank_times = raw_params["LED_thank_times"]
+    # --- internals ----------------------------------------------------------
 
-        self.blackboard.Dog_following_max_threshold = float(raw_params["Dog_following_max_threshold"])
-        self.blackboard.Dog_max_wander_allowed = raw_params["Dog_max_wander_allowed"]
+    def _load_params(self):
+        with open(self.yaml_path, "r") as handle:
+            params = yaml.safe_load(handle)
+        for key in YAML_ROOT_KEYS:
+            params = params[key]
+        return params
 
-        self.blackboard.Dog_indicate_target_seq = [parse_dog(e) for e in raw_params["Dog_indicate_target_seq"]]
-        self.blackboard.Dog_indicate_target_times = raw_params["Dog_indicate_target_times"]
-        self.blackboard.Dog_catch_attention_seq = [parse_dog(e) for e in raw_params["Dog_catch_attention_seq"]]
-        self.blackboard.Dog_catch_attention_times = raw_params["Dog_catch_attention_times"]
-        self.blackboard.Dog_thank_seq = [parse_dog(e) for e in raw_params["Dog_thank_seq"]]
-        self.blackboard.Dog_thank_times = raw_params["Dog_thank_times"]
-        
-        self.blackboard.Dog_checkpoints = [parse_ckpt(ckpt) for ckpt in raw_params["Dog_checkpoints"]]
-        self.blackboard.start_position = self.blackboard.Dog_checkpoints[0] # Assuming the first checkpoint is the start position
-        self.blackboard.target_position = self.blackboard.Dog_checkpoints[-1] # Assuming the last checkpoint is the target position
-        self.blackboard.Dog_checkpoints = self.blackboard.Dog_checkpoints[:-1]
-        self.blackboard.patrol_checkpoints = self.blackboard.Dog_checkpoints.copy()  # Exclude start and target for patrol        
-        self.node.get_logger().info(f"Dog checkpoints ({len(self.blackboard.Dog_checkpoints)} total): {[ (ckpt.x, ckpt.y, ckpt.z) for ckpt in self.blackboard.Dog_checkpoints ]}")
-
-        self.blackboard.Dog_current_checkpoint = 0
-        self.blackboard.Dog_max_checkpoint = len(self.blackboard.Dog_checkpoints) - 1
-
+    def _write_thresholds(self, params):
+        for key in self.SCALAR_PARAMS:
+            setattr(self.blackboard, key, float(params[key]))
+        self.blackboard.Dog_max_wander_allowed = params["Dog_max_wander_allowed"]
         self.blackboard.last_distance = 200.0
 
-        self.srv_client = self.node.create_client(SetLedStatus,'/mecanumbot/set_led_status')
-        self.feedback_message = "ConstantParamsToBlackboard setup complete"
-        self.node.get_logger().info(self.feedback_message)
+    def _write_scripts(self, params):
+        self.blackboard.LED_start_setting = parse_led(params["LED_start_setting"][0])
+        for script in self.LED_SCRIPTS:
+            setattr(
+                self.blackboard,
+                f"{script}_seq",
+                [parse_led(entry) for entry in params[f"{script}_seq"]],
+            )
+            setattr(self.blackboard, f"{script}_times", params[f"{script}_times"])
+        for script in self.GESTURE_SCRIPTS:
+            setattr(
+                self.blackboard,
+                f"{script}_seq",
+                [parse_gesture(entry) for entry in params[f"{script}_seq"]],
+            )
+            setattr(self.blackboard, f"{script}_times", params[f"{script}_times"])
 
-        return True
-    def initialise(self):
-        cmd = self.blackboard.LED_start_setting
-        # Call the service asynchronously
-        future = self.srv_client.call_async(cmd)
-        self.node.get_logger().info(f"INIT LED Command sent: {cmd}")
-        self.accessory_publisher.publish(cmd)
-        return super().initialise()
-    
-    def update(self):
-        self.node.get_logger().info("ConstantParamsToBlackboard update done.")
-        return py_trees.common.Status.SUCCESS      
+    def _write_route(self, params):
+        checkpoints = [parse_checkpoint(entry) for entry in params["Dog_checkpoints"]]
+        self.blackboard.start_position = checkpoints[0]
+        self.blackboard.target_position = checkpoints[-1]
+        self.blackboard.Dog_checkpoints = checkpoints[:-1]
+        self.blackboard.Dog_current_checkpoint = 0
+        self.blackboard.Dog_max_checkpoint = len(self.blackboard.Dog_checkpoints) - 1
+        self.node.get_logger().info(
+            f"{self.name}: {len(self.blackboard.Dog_checkpoints)} route checkpoints: "
+            f"{[(round(cp.x, 2), round(cp.y, 2)) for cp in self.blackboard.Dog_checkpoints]}"
+        )
 
-class DistanceToBlackboard(py_trees.behaviour.Behaviour): # Checks done - works
-    """
-    Reads blackboard.subject_pose and blackboard.target_position, 
-    subscribes to /amcl_pose, computes Euclidean distances, and writes results 
-    to the blackboard.
-    """
+    def _write_search_state(self):
+        self.blackboard.patrol_checkpoints = list(self.blackboard.Dog_checkpoints)
+        self.blackboard.patrol_current_checkpoint = 0
+        self.blackboard.patrol_direction = SEARCH_BACKWARDS
+        self.blackboard.patrol_initialized = False
+        # Handedness of the last turn made while looking for a person; the turns
+        # back to the route unwind it. 0 until the robot has turned at all.
+        self.blackboard.search_spin_sign = 0
+
+
+class DistanceToBlackboard(py_trees.behaviour.Behaviour):
+    """Publish robot-subject, robot-target and subject-target distances on the blackboard."""
+
     def __init__(self, name="ComputeDistance"):
         super().__init__(name)
 
-        # create a blackboard client
         self.blackboard = self.attach_blackboard_client(name=name)
+        self.blackboard.register_key(
+            "target_position", access=py_trees.common.Access.READ
+        )
+        self.blackboard.register_key(
+            "robot_closeness_threshold", access=py_trees.common.Access.READ
+        )
+        self.blackboard.register_key(
+            "target_reached_threshold", access=py_trees.common.Access.READ
+        )
 
-        # register the keys we READ (excluding robot_pose)
-        #self.blackboard.register_key("subject_position", py_trees.common.Access.READ)
-        self.blackboard.register_key("target_position", py_trees.common.Access.READ)
-        self.blackboard.register_key("robot_closeness_threshold", py_trees.common.Access.READ) 
-        self.blackboard.register_key("target_reached_threshold", py_trees.common.Access.READ)
+        for key in (
+            "robot_distance_from_subject",
+            "subject_within_robot_threshold",
+            "distance_from_target",
+            "target_within_robot_threshold",
+            "target_distance_from_subject",
+            "target_within_subject_threshold",
+        ):
+            self.blackboard.register_key(key=key, access=py_trees.common.Access.WRITE)
 
-        # register the keys we WRITE
-        self.blackboard.register_key("robot_distance_from_subject", py_trees.common.Access.WRITE)
-        self.blackboard.register_key("subject_within_robot_threshold", py_trees.common.Access.WRITE)
-        self.blackboard.register_key("distance_from_target", py_trees.common.Access.WRITE)
-        self.blackboard.register_key("target_within_robot_threshold", py_trees.common.Access.WRITE)
-        self.blackboard.register_key("target_distance_from_subject", py_trees.common.Access.WRITE)
-        self.blackboard.register_key("target_within_subject_threshold", py_trees.common.Access.WRITE)
-        
-        # Internal state for the subscriber
-        self.robot_pose = None
-        self.subject_position = None
-        self.subscriber = None
-    
     def setup(self, **kwargs):
-        """
-        Called once when the behaviour is added to the tree.
-        The main py_trees_ros Node must be passed via kwargs.
-        """
-        # Retrieve the ROS node handle from the setup kwargs
-        try:
-            node = kwargs['node']
-            self.node = node
-        except KeyError:
-            raise KeyError("The 'node' argument was not passed to setup()")
-
-        # Define QoS profile to match the amcl publisher (TRANSIENT_LOCAL)
-        qos_profile = QoSProfile(
-            depth=10,
-            reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            history=HistoryPolicy.KEEP_LAST
-        )
-
-        # Create the subscriber using the provided node context
-        self.robot_subscriber = node.create_subscription(
-            PoseWithCovarianceStamped,
-            '/amcl_pose',
-            self.amcl_callback,
-            qos_profile=qos_profile
-        )
-        self.subject_subscriber = node.create_subscription(
-            PoseStamped,
-            '/mecanumbot/subject_pose',
-            self.subject_callback,
-            qos_profile=10
-        )
-        self.feedback_message = "DistanceToBlackboard setup complete"
-        self.node.get_logger().info(self.feedback_message)
+        self.node = kwargs["node"]
+        self.pose = RobotPoseTracker(self.node)
+        self.subject = SubjectPoseTracker(self.node)
+        self.logger.info(f"{self.name}: Setup complete")
         return True
 
-    def amcl_callback(self, msg: PoseWithCovarianceStamped):
-        """
-        Callback to store the latest robot pose.
-        We only need the Pose component (which contains the position Point).
-        """
-        self.robot_pose = msg.pose.pose # geometry_msgs/Pose
-
-    def subject_callback(self, msg: PoseStamped):
-        """
-        Callback to store the latest subject position.
-        We only need the position Point.
-        """
-        self.subject_position = msg.pose.position # geometry_msgs/Point
-
-    def calculate_distance(self, position1: Point, position2: Point):
-        """
-        Compute Euclidean distance between two Points
-        """
-        x1, y1 = position1.x, position1.y
-        x2, y2 =  position2.x, position2.y
-
-        return math.hypot(x2 - x1, y2 - y1)
-
     def update(self):
-        """
-        Read poses, compute distances, update blackboard.
-        """
-        # The robot_pose is now stored internally and is a geometry_msgs/Pose
-        robot_pose = self.robot_pose 
-        subject_position = self.subject_position
-        
-        # The subject_pose is still read from the BB, and is a geometry_msgs/PoseStamped
-        try:
-            target_position = self.blackboard.target_position # geometry_msgs/Point
-        except AttributeError:
-            self.feedback_message = "waiting for target data on blackboard"
-            self.node.get_logger().info(self.feedback_message)
+        if self.pose.position is None or self.subject.position is None:
+            self.feedback_message = "waiting for robot and subject poses"
+            self.node.get_logger().info(f"{self.name}: {self.feedback_message}")
             return py_trees.common.Status.RUNNING
 
+        target = self.blackboard.target_position
+        robot_to_subject = distance_xy(self.pose.position, self.subject.position)
+        robot_to_target = distance_xy(self.pose.position, target)
+        subject_to_target = distance_xy(self.subject.position, target)
 
-        if robot_pose is None:
-            self.feedback_message = "waiting for initial robot pose"
-            self.node.get_logger().info(self.feedback_message)
-            return py_trees.common.Status.RUNNING
-        if subject_position is None:
-            self.feedback_message = "waiting for initial subject pose"
-            self.node.get_logger().info(self.feedback_message)
-            return py_trees.common.Status.RUNNING
-        
-        # Get the Point object from the internal robot_pose
-        robot_position = robot_pose.position 
+        closeness = self.blackboard.robot_closeness_threshold
+        reached = self.blackboard.target_reached_threshold
 
-        # --- Distance Calculations ---
-        
-        # 1. Robot to Subject
-        d_subject = self.calculate_distance(robot_position, subject_position)
-        
-        # 2. Robot to Target
-        d_target = self.calculate_distance(robot_position, target_position)
-        
-        # 3. Subject to Target
-        d_subject_target = self.calculate_distance(subject_position, target_position)
+        self.blackboard.robot_distance_from_subject = robot_to_subject
+        self.blackboard.subject_within_robot_threshold = robot_to_subject < closeness
+        self.blackboard.distance_from_target = robot_to_target
+        self.blackboard.target_within_robot_threshold = robot_to_target < closeness
+        self.blackboard.target_distance_from_subject = subject_to_target
+        self.blackboard.target_within_subject_threshold = subject_to_target < reached
 
-        # --- Write to Blackboard ---
-        
-        self.blackboard.robot_distance_from_subject = d_subject
-        self.blackboard.subject_within_robot_threshold = (d_subject < self.blackboard.robot_closeness_threshold)
-
-        self.blackboard.distance_from_target = d_target
-        self.blackboard.target_within_robot_threshold = (d_target < self.blackboard.robot_closeness_threshold)
-
-        self.blackboard.target_distance_from_subject = d_subject_target
-        self.blackboard.target_within_subject_threshold = (d_subject_target < self.blackboard.target_reached_threshold)
-
-        self.feedback_message = f"""d(R, S) = {d_subject:.2f} | d(R, T) = {d_target:.2f} | d(S, T) = {d_subject_target:.2f}"""
-        self.node.get_logger().info(self.feedback_message)
+        self.feedback_message = (
+            f"d(R, S) = {robot_to_subject:.2f} | d(R, T) = {robot_to_target:.2f} | "
+            f"d(S, T) = {subject_to_target:.2f}"
+        )
+        self.node.get_logger().info(f"{self.name}: {self.feedback_message}")
         return py_trees.common.Status.SUCCESS

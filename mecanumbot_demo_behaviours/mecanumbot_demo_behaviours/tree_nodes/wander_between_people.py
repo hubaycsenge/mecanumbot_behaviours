@@ -2,13 +2,19 @@ import rclpy
 import py_trees
 import py_trees_ros
 
-from mecanumbot_demo_behaviours.behaviours.movement_managers import FindPeople, GoToRandomPerson
+from mecanumbot_demo_behaviours.behaviours.movement_managers import (
+    FindPeople,
+    GoToRandomPerson,
+)
 from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
-from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard
-from ament_index_python.packages import get_package_share_directory 
+from mecanumbot_leading_behaviour.behaviours.blackboard_managers import (
+    ConstantParamsToBlackboard,
+)
+from ament_index_python.packages import get_package_share_directory
 
-leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour')
+leading_pkg_share_dir = get_package_share_directory("mecanumbot_leading_behaviour")
 DEFAULT_YAML_FILENAME = "Eto_behaviour_setting_constants.yaml"
+
 
 def get_yaml_path():
     import argparse
@@ -17,7 +23,6 @@ def get_yaml_path():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--yaml_path", type=str, default=None)
     parsed, _ = parser.parse_known_args()
-
 
     yaml_path = parsed.yaml_path
     if not yaml_path:
@@ -34,27 +39,23 @@ def get_yaml_path():
 
 def create_root():
     yaml_path = get_yaml_path()
-    params_loader = ConstantParamsToBlackboard(name="LoadConstantParams", yaml_path=yaml_path)
-    LED_catch_attention = LEDBehaviourSequence('LCatch', 'catch_attention')
+    params_loader = ConstantParamsToBlackboard(
+        name="LoadConstantParams", yaml_path=yaml_path
+    )
+    LED_catch_attention = LEDBehaviourSequence("LCatch", "catch_attention")
 
     going_to_random_person_seq = py_trees.composites.Sequence(
-        name="GoingToRandomPerson",
-        memory=True
+        name="GoingToRandomPerson", memory=True
     )
-    going_to_random_person_seq.add_children([
-        GoToRandomPerson(name="GoToRandomPerson"),
-        LED_catch_attention
-    ])
+    going_to_random_person_seq.add_children(
+        [GoToRandomPerson(name="GoToRandomPerson"), LED_catch_attention]
+    )
 
     root = py_trees.composites.Sequence("ROOT", memory=True)
-    root.add_children([
-        params_loader,
-        FindPeople(name="FindPeople"),
-        going_to_random_person_seq
-    ])
+    root.add_children(
+        [params_loader, FindPeople(name="FindPeople"), going_to_random_person_seq]
+    )
     return root
-
-
 
 
 def main(args=None):

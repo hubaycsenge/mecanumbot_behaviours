@@ -1,101 +1,69 @@
-import os 
-import rclpy 
-import py_trees 
-import py_trees_ros 
-from ament_index_python.packages import get_package_share_directory 
-from mecanumbot_leading_behaviour.behaviours.dog_behaviours import DogBehaviourSequence
-from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
-from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach, \
-                                                                      TurnToward, CheckSubjectTargetSuccess
-from mecanumbot_leading_behaviour.behaviours.blackboard_managers import ConstantParamsToBlackboard, \
-                                                                        DistanceToBlackboard
+"""Baseline sequence: approach the human, drive the route, indicate with LEDs."""
 
-leading_pkg_share_dir = get_package_share_directory('mecanumbot_leading_behaviour')
+import py_trees
+
+from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
+from mecanumbot_leading_behaviour.behaviours.blackboard_managers import (
+    ConstantParamsToBlackboard,
+)
+from mecanumbot_leading_behaviour.behaviours.movement_managers import (
+    Approach,
+    CheckSubjectTargetSuccess,
+    TurnToward,
+)
+from mecanumbot_leading_behaviour.behaviours.targets import (
+    LAST_CHECKPOINT,
+    SUBJECT,
+    TARGET,
+)
+from mecanumbot_leading_behaviour.tree_nodes.tree_common import (
+    resolve_yaml_path,
+    run_tree,
+)
+
+TREE_NAME = "bottom_up_tree"
 DEFAULT_YAML_FILENAME = "behaviour_setting_constants.yaml"
 
 
 def get_yaml_path():
-    import argparse
-    import os
-
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--yaml_path", type=str, default=None)
-    parsed, _ = parser.parse_known_args()
-
-    yaml_path = parsed.yaml_path
-    if not yaml_path:
-        yaml_path = os.getenv("YAML_PATH") or os.getenv("BEHAVIOUR_YAML_PATH")
-
-    if yaml_path:
-        print(f"[bottom_up_tree] Using YAML_PATH: {yaml_path}")
-        return yaml_path
-
-    fallback = os.path.join(leading_pkg_share_dir, "config", DEFAULT_YAML_FILENAME)
-    print(f"[bottom_up_tree] YAML_PATH unset, fallback to: {fallback}")
-    return fallback
+    return resolve_yaml_path(TREE_NAME, DEFAULT_YAML_FILENAME)
 
 
 def create_root(yaml_path=None):
     if yaml_path is None:
         yaml_path = get_yaml_path()
 
-    root = py_trees.composites.Sequence("ROOT", memory=True)
-
-    params_loader = ConstantParamsToBlackboard(name="LoadConstantParams", yaml_path=yaml_path)
-
-
-    delay_timer = py_trees.timers.Timer(name="DelayTimer", duration=2)
-
-    LED_show_target = LEDBehaviourSequence('LShow', 'indicate_target')
-    LED_catch_attention = LEDBehaviourSequence('LCatch', 'catch_attention')
-    LED_indicate_near_target = LEDBehaviourSequence('LNear', 'indicate_close_target')
-
-    approach_target = Approach(name="ApproachTarget", target_type="target")
-    approach_subject = Approach(name="ApproachSubject", target_type="subject")
-    turn_toward_subject = TurnToward(name="TurnTowardSubject", target_type="subject")
-    turn_toward_target = TurnToward(name="TurnTowardTarget", target_type="target")
-
-    check_subject_near_target = CheckSubjectTargetSuccess(
-        name="CheckSubjectNearTarget"
-    )
-
-    # Selector will keep showing target until condition succeeds
+    # Keeps signalling the target until the human is close enough to it.
     show_until_close = py_trees.composites.Selector(
-        name="ShowUntilSubjectClose",
-        memory=True
+        name="ShowUntilSubjectClose", memory=True
+    )
+    show_until_close.add_children(
+        [
+            CheckSubjectTargetSuccess(name="CheckSubjectNearTarget"),
+            TurnToward(name="TurnTowardSubject", target_type=SUBJECT, head=None),
+            LEDBehaviourSequence("LCatch", "catch_attention"),
+            TurnToward(name="TurnTowardTarget", target_type=TARGET, head=None),
+            LEDBehaviourSequence("LNear", "indicate_close_target"),
+        ]
     )
 
-    show_until_close.add_children([
-        check_subject_near_target,
-        turn_toward_subject,
-        LED_catch_attention,
-        turn_toward_target,
-        LED_indicate_near_target
-    ])
-
-    root.add_children([
-        params_loader,
-        delay_timer,
-        approach_subject,
-        approach_target,
-        LED_show_target,
-        show_until_close
-    ])
-
+    root = py_trees.composites.Sequence("ROOT", memory=True)
+    root.add_children(
+        [
+            ConstantParamsToBlackboard(name="LoadConstantParams", yaml_path=yaml_path),
+            py_trees.timers.Timer(name="DelayTimer", duration=2),
+            Approach(name="ApproachSubject", target_type=SUBJECT),
+            # Stops at the last checkpoint rather than on the target itself.
+            Approach(name="ApproachTarget", target_type=LAST_CHECKPOINT),
+            LEDBehaviourSequence("LShow", "indicate_target"),
+            show_until_close,
+        ]
+    )
     return root
 
+
 def main(args=None):
-    rclpy.init(args=args)
-
-    yaml_path = get_yaml_path()
-    tree = create_root(yaml_path=yaml_path)
-
-    tree_node = py_trees_ros.trees.BehaviourTree(root=tree)
-    tree_node.setup(timeout=15.0, node_name="bottom_up_tree_node")
-    print(f"Starting bottom-up behaviour tree using YAML: {yaml_path}")
-
-    tree_node.tick_tock(period_ms=10.0)
-    rclpy.spin(tree_node.node)     # <--- keeps node alive
+    run_tree(create_root, TREE_NAME, DEFAULT_YAML_FILENAME, args=args)
 
 
 if __name__ == "__main__":

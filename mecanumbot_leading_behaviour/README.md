@@ -25,11 +25,11 @@ executable tree nodes.
 
 ### Publishers
 
-| Topic               | Data type                            | Function                                                                                   |
-| ------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `/goal_pose`        | `geometry_msgs/msg/PoseStamped`      | Sends Nav2 navigation goals for turn/approach actions.                                     |
-| `/cmd_vel`          | `geometry_msgs/msg/Twist`            | Direct velocity only for in-place search spins (`FindPeople`, `Spin360`, `WaitForPerson`). |
-| `cmd_accessory_pos` | `mecanumbot_msgs/msg/AccessMotorCmd` | Sends neck/gripper command sequences (gestures for the dog-inspired behaviour).            |
+| Topic                | Data type                            | Function                                                                                                    |
+| -------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `/goal_pose`         | `geometry_msgs/msg/PoseStamped`      | Sends Nav2 navigation goals — only for `Approach`, i.e. whenever the robot actually drives somewhere.       |
+| `/cmd_vel`           | `geometry_msgs/msg/Twist`            | Every in-place rotation (`TurnToward`, `RelativeTurnPattern`, `ScanSpin`/`FindPeople`/`Spin360`), profiled. |
+| `/cmd_accessory_pos` | `mecanumbot_msgs/msg/AccessMotorCmd` | Neck (camera tilt) and gripper commands: gesture sequences plus the lifted/level head poses.                |
 
 ### Subscribers
 
@@ -55,24 +55,79 @@ executable tree nodes.
 
 ## Behaviour library
 
-### `behaviours/movement_managers.py`
+The library is split by concern; `behaviours/movement_managers.py` re-exports
+everything, so `from ...behaviours.movement_managers import X` keeps working
+(that is what `mecanumbot_demo_behaviours` imports).
 
-| Behaviour                    | Role                                                                                                                   |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `TurnToward`                 | Publishes a goal that only rotates the robot to face a `subject` / `target` / `start` / `checkpoint`.                  |
-| `Approach`                   | Navigates to a target; `mode="exact"` drives to the point, `mode="fixed_distance"` stops at `robot_approach_distance`. |
-| `RelativeTurnPattern`        | Small alternating turns in place, used as an attention-getting wiggle.                                                 |
-| `FindPeople`                 | Spins on `/cmd_vel` until a fresh `people_fusion` message arrives.                                                     |
-| `WaitForPerson`              | Blocks until a person is seen; used as the interrupt half of the lost-recovery parallel.                               |
-| `Spin360`                    | Full in-place rotation scan.                                                                                           |
-| `ManageSearchCheckpoint`     | Advances the search checkpoint index during recovery patrol.                                                           |
-| `CheckSubjectTargetSuccess`  | SUCCESS when the subject is within `target_reached_threshold` of the target.                                           |
-| `CheckRobotHasBall`          | SUCCESS while `/mecanumbot/has_object` is true.                                                                        |
-| `CheckRobotAtLastCheckpoint` | SUCCESS when `Dog_current_checkpoint >= Dog_max_checkpoint`.                                                           |
+| Module                 | Contents                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------- |
+| `geometry.py`          | Pure geometry: angles, bearings, `signed_rotation`, `pose_to_goal`, checkpoint lookups, `route_progress`. |
+| `ros_interfaces.py`    | Topic names, QoS, pose/people/ball trackers, the Nav2 goal monitor, velocity and neck commanders. |
+| `targets.py`           | What a `target_type` points at, and the head pose / turn direction that goes with it.             |
+| `turning.py`           | `SmoothTurner` plus the in-place turning behaviours.                                              |
+| `searching.py`         | `WaitForPerson`, `ManageSearchCheckpoint` — the lost-human patrol.                                |
+| `movement_managers.py` | `Approach`, the condition checks, and the re-exports above.                                       |
 
-Module-level helpers: `pose_to_goal`, `calculate_facing_orientation`,
-`yaw_from_quaternion`, `normalize_angle`, and the `STATUS_*` Nav2 goal-status
-constants (also imported by the demo package).
+| Behaviour                    | Role                                                                                                                                                |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Approach`                   | Navigates to a target through Nav2; `mode="exact"` drives to the point, `mode="fixed_distance"` steps `robot_approach_distance` closer.             |
+| `TurnToward`                 | Rotates in place to face a `subject` / `target` / `start` / `checkpoint` / `patrol` / `last_checkpoint`, in a chosen direction (see below).         |
+| `RelativeTurnPattern`        | Attention-getting wiggle: alternating turns that end on the starting heading, beginning in the direction of the last search turn.                   |
+| `ScanSpin`                   | Spins in place looking for people, head lifted; `FindPeople` (spin until somebody is seen) and `Spin360` (one full scan) are configured subclasses. |
+| `WaitForPerson`              | Interrupt half of the lost-recovery parallel: waits with a lifted head, and records whether the person turned up ahead of or behind the robot.      |
+| `ManageSearchCheckpoint`     | Walks the patrol index along the route, reversing at either end.                                                                                    |
+| `DogResumeLeading`           | After a search: leads on from the checkpoint nearest the robot, or the one after it when the human has already walked past it.                      |
+| `CheckSubjectTargetSuccess`  | SUCCESS when the subject is within `target_reached_threshold` of the target.                                                                        |
+| `CheckRobotHasBall`          | SUCCESS while `/mecanumbot/has_object` is true.                                                                                                     |
+| `CheckRobotAtLastCheckpoint` | SUCCESS when `Dog_current_checkpoint >= Dog_max_checkpoint`.                                                                                        |
+
+### Turning: smoothness and direction
+
+In-place rotations do **not** go through Nav2. `SmoothTurner` drives `/cmd_vel`
+with a profile that ramps up under an acceleration limit and eases out
+proportionally to the angle left, and it tracks progress on AMCL yaw,
+dead-reckoning from the commanded speed between pose updates. Tunables per
+behaviour: `max_speed`, `accel`, `decel_gain`, `min_speed`, `tolerance` (defaults
+stay inside the Nav2 controller's `max_vel_theta` / `max_angular_accel`).
+
+Owning the rotation is what makes the direction selectable. `TurnToward` takes
+`direction`:
+
+| `direction`  | Meaning                                                                                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"shortest"` | Short way round. Default for human targets, and asked for explicitly on the dog tree's turn to the next checkpoint.                                     |
+| `"unwind"`   | Opposite to the last search turn — back the way the robot came. Default for route targets.                                                              |
+| `"repeat"`   | Same handedness as the last search turn.                                                                                                                |
+
+Any turn or scan that looks for a human stores its handedness in the
+`search_spin_sign` blackboard key (`+1` counterclockwise, `-1` clockwise), so a
+glance back over the right shoulder can be answered over the left — retracing
+the rotation instead of carrying on around, taking the long way when it has to.
+
+That is a gesture, so it is applied where the robot is dealing with the human:
+`RelativeTurnPattern` starts its wiggle in the direction of the last glance, and
+`TurnToward(TARGET)` unwinds it when pointing the target out. The dog tree's turn
+to the next checkpoint overrides the route-target default with
+`direction="shortest"` — a checkpoint is somewhere to drive to, and unwinding
+there only made the robot swing the long way before setting off.
+
+Because rotation bypasses Nav2, the local costmap does not supervise it; that was
+already true of the old search spins, and only in-place rotation is affected.
+
+### Head (neck) poses
+
+`n_pos` is the neck-mounted camera tilt (`2.0 … 8.6`, larger looks further up).
+Two named poses in `ros_interfaces.py`:
+
+| Constant         | Value | Used when                                                                                                                                                    |
+| ---------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `NECK_SEEK_POS`  | `7.0` | The robot is looking for or at a human: reads as seeking contact, and gives YOLO26n-pose a full-body view instead of a pair of knees, which it often misses. |
+| `NECK_LEVEL_POS` | `6.0` | The robot is driving its route or pointing at the target.                                                                                                    |
+
+Behaviours pick the pose from their target type (`head="seek"` / `"level"`), so
+the head stays lifted for the whole seeking phase rather than flicking up for a
+moment. `head=None` leaves the neck untouched — the LED and control trees pass
+that so their comparison conditions carry no head gestures at all.
 
 ### `behaviours/blackboard_managers.py`
 
@@ -84,7 +139,17 @@ constants (also imported by the demo package).
 `ConstantParamsToBlackboard` reads the YAML under the fixed
 `bottom_up_tree_node: ros__parameters:` key, splits `Dog_checkpoints` so the first
 entry becomes `start_position` and the last becomes `target_position`, and leaves the
-remainder as the checkpoint list.
+remainder as the checkpoint list. It also seeds the runtime state the other
+behaviours expect, so nothing has to guess whether a key exists yet:
+
+| Key                                              | Meaning                                                                       |
+| ------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `Dog_current_checkpoint` / `Dog_max_checkpoint`   | Progress along the route the robot leads.                                     |
+| `patrol_checkpoints` / `patrol_current_checkpoint` | Separate index used while searching for a lost human.                        |
+| `patrol_direction`                               | `+1` search forwards along the route, `-1` backwards (set by `WaitForPerson`). |
+| `patrol_initialized`                             | `False` makes the next patrol snap to the nearest checkpoint.                  |
+| `search_spin_sign`                               | Handedness of the last turn made to look at a human; route turns unwind it.    |
+| `last_distance`                                  | Most recent robot–human distance from `DogCheckFollowing`.                     |
 
 ### `behaviours/LED_behaviours.py` and `behaviours/dog_behaviours.py`
 
@@ -99,7 +164,8 @@ a timed sequence taken from the blackboard. Supported modes:
 | `thank`                 | `LED_thank_seq` / `_times`, `Dog_thank_seq` / `_times`                     |
 
 `dog_behaviours.py` also provides `DogCheckFollowing` (verifies the subject stayed
-within `Dog_following_max_threshold` while leading) and `DogSelectTarget`.
+within `Dog_following_max_threshold` while leading) and `DogResumeLeading` (picks the
+checkpoint leading carries on from after a search).
 
 ## Launch files
 
@@ -123,7 +189,7 @@ started by the launch file — run it with `ros2 run`.
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
 | `mecanumbot_leading_behaviour/tree_nodes/` | Top-level BT compositions and executable entry points.                                                                  |
 | `mecanumbot_leading_behaviour/behaviours/` | Reusable BT leaf behaviours (movement, LED, dog gestures, blackboard loaders).                                          |
-| `mecanumbot_leading_behaviour/utils/`      | Subtree construction helpers (legacy/experimental composition utilities).                                               |
+| `mecanumbot_leading_behaviour/tree_nodes/tree_common.py` | YAML resolution, the shared recovery branch, and the tree runner used by all four executables. |
 | `launch/`                                  | Runtime launcher with condition-based node selection.                                                                   |
 | `config/`                                  | Behaviour constants and sequences in YAML (`behaviour_setting_constants.yaml`, `Eto_behaviour_setting_constants.yaml`). |
 | `resource/`                                | ROS package resource marker.                                                                                            |
@@ -135,14 +201,30 @@ started by the launch file — run it with `ros2 run`.
 
 1. Load YAML constants into blackboard (`ConstantParamsToBlackboard`).
 2. Build a sequence/selector/retry structure from movement and signalling behaviours.
-3. Tick tree periodically (`tick_tock`) and keep node alive with `rclpy.spin`.
+3. `tree_common.run_tree()` sets the tree up, ticks it every 100 ms and keeps the
+   node alive with `rclpy.spin`.
 
 ### Lost-subject recovery
 
-`dog_tree.py` and `LED_tree.py` share a `create_recover_lost_sequence()` helper: a
-parallel with `SuccessOnOne` policy running `WaitForPerson` against an endless patrol
-loop of `Spin360` → `ManageSearchCheckpoint` → `Approach(checkpoint)`. As soon as a
-person is seen the patrol is cancelled.
+`tree_common.create_recover_lost_sequence()` builds it for every tree: a parallel
+with `SuccessOnOne` policy running `WaitForPerson` against an endless patrol loop of
+`Spin360` → `ManageSearchCheckpoint` → `Approach(target_type="patrol")`. The robot
+therefore scans a full circle, walks to the next checkpoint, scans again, and so on
+along the route, reversing at either end. As soon as a person is seen the patrol is
+cancelled, and `WaitForPerson` sets `patrol_direction` from which side of the route
+the person appeared on.
+
+Because `WaitForPerson` succeeds on the very first tick when somebody is already
+visible, the same branch covers both cases: a human who merely lagged behind is
+fetched immediately, and only a real disappearance turns into a patrol.
+
+Which checkpoint the robot resumes from is a separate decision, made by
+`DogResumeLeading` and based on `geometry.route_progress()` — the human's position
+projected onto the checkpoint polyline as a float index, so `1.4` means "four tenths
+of the way from checkpoint 1 to checkpoint 2". The robot takes the checkpoint nearest
+itself and leads on to the one after it when the human is already past it (by more
+than `PASSED_MARGIN`, 0.15 of a stretch), otherwise to that checkpoint itself. The
+same helper backs `path_progress_sign()`, which decides the patrol direction.
 
 ### `ctrl_tree.py` logic
 
@@ -150,20 +232,39 @@ person is seen the patrol is cancelled.
 2. Turn toward start.
 3. Approach start.
 4. Turn toward target.
-5. Approach target.
+5. Approach the last checkpoint (`target_type="last_checkpoint"`), i.e. stop short of
+   the target itself — the target is where the human should end up. `LED_tree.py` and
+   `bottom_up_tree.py` do the same; only `TurnToward` faces `target_position` proper.
 
 ### `dog_tree.py` logic
 
 1. Load constants.
-2. `SeekOrFind` selector — normal seek-attention stage (approach subject, turn to them,
+2. `SeekOrFind` selector — the seek-attention sequence (approach the human, face them,
    attention wiggle, catch-attention gesture) or, on failure, lost recovery followed by
-   the same approach and attention sequence.
+   the same sequence. Both branches come from `create_seek_attention()`.
 3. Endless `ShowOrLeadSelector` loop:
-   - Ball reaction: if the robot has been handed the ball, recover the subject, approach
-     them and play the thank gesture;
-   - else if the subject is near the target, run the show/point sequence;
-   - else lead one step to the next checkpoint and verify the subject is following.
-4. Continue until externally stopped.
+   - Ball reaction: if the robot has been handed the ball, recover the human, approach
+     them and play the thank gesture. It needs no glance of its own, so it stays ahead
+     of the cycle below;
+   - else `LeadOrRecoverSelector`:
+     - `GlanceThenActSequence` — one glance back for the human (`FindPeople`, head
+       lifted) per cycle, then `ShowOrLeadStepSelector` acts on it:
+       - if the human is near the target (`CheckSubjectTargetSuccess`), run the
+         show/point sequence;
+       - else lead one step: check they kept up (`DogCheckFollowing`), turn to face the
+         next checkpoint by the smaller angle (`direction="shortest"`, head levelled)
+         and drive there.
+
+       Both used to open with their own `FindPeople`. That only scans when nobody is in
+       view, but on a cycle where the closeness check failed the robot could still sweep
+       twice over the same glance, which reads as dithering;
+     - if the glance finds nobody, or the lead step fails — the human is gone — recover
+       and resume: patrol the route until somebody is seen, walk up to them and ask for
+       their attention again (`create_seek_attention()`), then `DogResumeLeading` picks
+       the checkpoint to carry on from. Wrapped in `Retry(num_failures=3)`, because the
+       human is most likely to slip out of view again during that walk up to them.
+4. The root only fails when even the patrol turns up nobody; it is then ticked again
+   from the top, which runs `SeekOrFind` before leading resumes.
 
 ### `LED_tree.py` logic
 
