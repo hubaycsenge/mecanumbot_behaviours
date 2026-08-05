@@ -36,7 +36,6 @@ def resolve_yaml_path(tree_name, default_filename):
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--yaml_path", type=str, default=None)
     parsed, _ = parser.parse_known_args()
-
     yaml_path = (
         parsed.yaml_path or os.getenv("YAML_PATH") or os.getenv("BEHAVIOUR_YAML_PATH")
     )

@@ -9,9 +9,10 @@ navigation — they publish Nav2 goals on `/goal_pose` and watch
 
 | Package                        | Type                         | Purpose                                                                                                 |
 | ------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `mecanumbot_behaviours`        | Meta package (`ament_cmake`) | Groups the behaviour packages for build/release. No executable nodes.                                   |
-| `mecanumbot_leading_behaviour` | Python package               | Behaviour trees for the leading / attention-guidance experiments. Holds the reusable behaviour library. |
-| `mecanumbot_demo_behaviours`   | Python package               | Demo trees (wander between people, hide and seek) that reuse the leading package's behaviours.          |
+| `mecanumbot_behaviours`          | Meta package (`ament_cmake`) | Groups the behaviour packages for build/release. No executable nodes.                                   |
+| `mecanumbot_leading_behaviour`   | Python package               | Behaviour trees for the leading / attention-guidance experiments. Holds the reusable behaviour library. |
+| `mecanumbot_demo_behaviours`     | Python package               | Demo trees (wander between people, hide and seek) that reuse the leading package's behaviours.          |
+| `mecanumbot_ostensive_behaviour` | Python package               | The ostensive condition: a person bids for attention by gesture, the robot commits to them and follows their pointing cue. Also reuses the leading library. |
 
 ## Node overview
 
@@ -43,6 +44,23 @@ Provided executables:
 `tree_nodes/hide_and_seek.py` is present and complete but has no entry point in
 `setup.py`, so it is not installed as an executable.
 
+### `mecanumbot_ostensive_behaviour`
+
+Provided executables:
+
+- `ostensive_bt_node` — `tree_nodes/ostensive_tree.py`
+
+The only tree in this repository that registers under its own node name rather
+than `bottom_up_tree_node`, so it can run alongside a leading tree.
+
+It runs no detector: gestures are decoded from the COCO-17 keypoints on
+`/mecanumbot/cam_people_detections` and metric positions come from
+`/mecanumbot/people_fusion`, both from `mecanumbot_sensorprocess_smart`. The
+perception logic lives in three ROS-free modules (`keypoints.py`, `gestures.py`,
+`cue_geometry.py`) with 50 unit tests that run without a ROS graph — the fastest
+feedback loop in this repository. See the package README for the sign conventions
+and the gesture thresholds.
+
 ## Which experiment condition maps to which tree
 
 | Condition | Node                      | Signalling channel                             |
@@ -54,13 +72,18 @@ Provided executables:
 `bottom_up_tree_node` is a simpler baseline that combines approach with LED
 indication and is run directly with `ros2 run`.
 
+The ostensive condition is not part of that launcher's `condition` argument — it
+is a different experiment, with its own launch file and its own constants
+schema, and the robot is led by the human rather than leading them.
+
 ## Repository structure
 
 | Path                            | Function                                                                               |
 | ------------------------------- | -------------------------------------------------------------------------------------- |
-| `mecanumbot_behaviours/`        | Meta package (`CMakeLists.txt`, `package.xml`) with no runtime node logic.             |
-| `mecanumbot_leading_behaviour/` | Behaviour library, tree nodes, launch and config.                                      |
-| `mecanumbot_demo_behaviours/`   | Demo trees and their own movement/blackboard behaviours plus a map waypoint generator. |
+| `mecanumbot_behaviours/`          | Meta package (`CMakeLists.txt`, `package.xml`) with no runtime node logic.             |
+| `mecanumbot_leading_behaviour/`   | Behaviour library, tree nodes, launch and config.                                      |
+| `mecanumbot_demo_behaviours/`     | Demo trees and their own movement/blackboard behaviours plus a map waypoint generator. |
+| `mecanumbot_ostensive_behaviour/` | Ostensive tree, its gesture-decoding library and the unit tests for it.                |
 
 Each Python package additionally carries `resource/` (ROS 2 resource index marker)
 and `test/` (`flake8`, `pep257`, copyright lint scaffolding).
@@ -91,17 +114,22 @@ instead.
 
 ## Dependencies
 
-Both Python packages need `py_trees`, `py_trees_ros`, `rclpy`, `geometry_msgs`,
-`action_msgs`, `nav2_msgs` and `mecanumbot_msgs` at runtime, and
-`mecanumbot_demo_behaviours` imports directly from `mecanumbot_leading_behaviour`.
-Its `utils/map_generate.py` additionally needs `opencv-python` and
-`mecanumbot_description` (for the map files). None of these are declared in the
-`package.xml` files, which only list the lint test dependencies — the packages build
-regardless, but `rosdep` will not install the runtime requirements for you.
+All three Python packages need `py_trees`, `py_trees_ros`, `rclpy`,
+`geometry_msgs`, `action_msgs`, `nav2_msgs` and `mecanumbot_msgs` at runtime, and
+both `mecanumbot_demo_behaviours` and `mecanumbot_ostensive_behaviour` import
+directly from `mecanumbot_leading_behaviour`. `utils/map_generate.py` in the demo
+package additionally needs `opencv-python` and `mecanumbot_description` (for the
+map files).
+
+`mecanumbot_leading_behaviour` and `mecanumbot_demo_behaviours` declare only their
+lint test dependencies — the packages build regardless, but `rosdep` will not
+install the runtime requirements for them.
+`mecanumbot_ostensive_behaviour` declares its dependencies properly, so `rosdep`
+does cover that one.
 
 ## Build
 
 ```bash
-colcon build --symlink-install --packages-select mecanumbot_behaviours mecanumbot_leading_behaviour mecanumbot_demo_behaviours
+colcon build --symlink-install --packages-select mecanumbot_behaviours mecanumbot_leading_behaviour mecanumbot_demo_behaviours mecanumbot_ostensive_behaviour
 source install/setup.bash
 ```

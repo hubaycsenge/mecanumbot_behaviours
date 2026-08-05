@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mecanumbot_ostensive_behaviour</name>
+  <version>0.0.0</version>
+  <description>
+    Ostensive behaviour tree for Mecanumbot. A person signals for attention, the
+    robot commits to them, acknowledges, reads a pointing gesture off their pose
+    keypoints and drives where they indicated. Perception comes entirely from
+    mecanumbot_sensorprocess_smart; this package runs no detector of its own.
+  </description>
+  <maintainer email="csengehubay@gmail.com">Csenge Hubay</maintainer>
+  <license>Apache License 2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>mecanumbot_msgs</exec_depend>
+  <!-- The behaviour library this package builds on: SmoothTurner / InPlaceTurn,
+       the nav2 goal monitor, the pose and people trackers, the neck commander. -->
+  <exec_depend>mecanumbot_leading_behaviour</exec_depend>
+  <exec_depend>py_trees</exec_depend>
+  <exec_depend>py_trees_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

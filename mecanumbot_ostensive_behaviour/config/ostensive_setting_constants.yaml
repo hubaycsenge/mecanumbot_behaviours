@@ -1,0 +1,111 @@
+# Constants for the ostensive behaviour tree.
+#
+# The root key is the ROS node name every tree in this package registers under,
+# which is also how the leading package's YAML files are organised.
+#
+# Angles are given in degrees here and converted to radians when they are loaded
+# onto the blackboard; the blackboard key is the same name without `_deg`.
+#
+# Thresholds that describe a gesture are ratios against the person's own body
+# scale (shoulder width, or shoulder-to-hip height for somebody turned side-on),
+# never pixels -- so they hold at any distance from the camera.
+
+ostensive_bt_node:
+  ros__parameters:
+    # ----- Camera geometry ---------------------------------------------------
+    # Must match `camera_params.camera_fov` of whichever detector in
+    # mecanumbot_sensorprocess_smart is running (both default to 60 degrees).
+    # This is what converts an image column into a bearing, so getting it wrong
+    # scales every turn the robot makes towards a person.
+    camera_hfov_deg: 60.0
+
+    # How old the newest cam_people_detections frame may be and still be acted
+    # on. The Ultralytics detector runs around 15 Hz, DeepStream faster.
+    detection_timeout: 1.0
+
+    # ----- Being addressed ---------------------------------------------------
+    # raised_hand | wave | any. `wave` is the one that cannot fire by accident;
+    # `any` accepts it or a plain raised hand, which is easier for participants
+    # who have not been told exactly what to do.
+    attention_signal_mode: any
+
+    # How long the signal has to be held before the robot commits to a person.
+    attention_dwell: 1.0
+
+    # Give up watching after this and look somewhere else. This is not a failure
+    # of the experiment -- it is what stops the robot staring at an empty room.
+    attention_timeout: 30.0
+
+    # How far above their shoulder a wrist has to be to count as raised, in body
+    # scales. Roughly a sixth of a shoulder width.
+    wrist_above_shoulder_margin: 0.15
+
+    # A wave is a raised hand that reverses direction. Reversals are counted over
+    # `wave_window` seconds, and an excursion under `wave_min_amplitude` body
+    # scales is noise rather than a turning point.
+    wave_window: 1.5
+    wave_min_amplitude: 0.25
+    wave_min_reversals: 2
+
+    # ----- Holding on to the addressee ---------------------------------------
+    # How far a torso may move between camera frames and still be the same
+    # person, in normalized image units. Raise it for a fast-moving participant,
+    # lower it if two people standing close swap identities.
+    target_max_image_jump: 0.25
+
+    # How closely a people_fusion pose has to agree with the bearing read off the
+    # image before it is accepted as the addressee's metric position.
+    target_bearing_tolerance_deg: 20.0
+
+    # How long the addressee may be missing from the camera before the exchange
+    # is abandoned.
+    track_loss_timeout: 2.0
+
+    # ----- Keeping them in frame ---------------------------------------------
+    # Deadband: drift smaller than this is ignored, so the robot does not answer
+    # every shift of weight. Too small and it hunts; too large and a pointing arm
+    # leaves the frame.
+    focus_tolerance_deg: 8.0
+
+    # Rotation speed for the re-centring turns [rad/s]. Slower than the leading
+    # package's search spins on purpose: this is a turn made while facing
+    # somebody, at conversational distance.
+    focus_turn_speed: 0.4
+
+    # ----- Reading the direction cue -----------------------------------------
+    # Wrist-to-shoulder distance, in body scales, before the arm counts as held
+    # out rather than bent.
+    cue_min_extension: 1.1
+
+    # Sideways reach of a fully outstretched arm, in body scales. This sets the
+    # angle scale: a wrist reaching this far to the side reads as 90 degrees.
+    cue_full_extension: 1.5
+
+    # Minimum sideways reach for the cue to be believed at all. An arm pointing
+    # towards or away from the camera projects to less than this, and its
+    # azimuth cannot be recovered from a single image, so it is refused rather
+    # than guessed at.
+    cue_min_lateral: 0.45
+
+    # How long the arm has to stay on the same side and within `cue_stability_deg`
+    # of the same angle before the direction is believed.
+    cue_dwell: 1.0
+    cue_stability_deg: 20.0
+
+    # Give up on the exchange if no cue settles in this long.
+    cue_timeout: 20.0
+
+    # ----- Acting on the cue -------------------------------------------------
+    # How far along the indicated direction the goal is placed, measured from
+    # where the person stood, not from the robot.
+    cue_distance: 2.0
+
+    # How long nav2 gets to deliver the robot there.
+    cue_goal_timeout: 60.0
+
+    # ----- Acknowledgement nod -----------------------------------------------
+    # Neck tilt positions (2.0 .. 8.6, larger looks further up) and how long each
+    # is held. The last entry is where the head is left, so it should stay the
+    # lifted seeking pose (7.0) the rest of the exchange expects.
+    ack_neck_seq: [7.6, 6.2, 7.6, 7.0]
+    ack_neck_times: [0.35, 0.35, 0.35, 0.3]
