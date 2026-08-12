@@ -3,6 +3,7 @@ import py_trees
 import py_trees_ros
 
 from mecanumbot_demo_behaviours.behaviours.movement_managers import (
+    DEMO_DEFAULTS,
     FindPeople,
     GoToRandomPerson,
 )
@@ -10,6 +11,8 @@ from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourS
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import (
     ConstantParamsToBlackboard,
 )
+from mecanumbot_leading_behaviour.behaviours.constants import file_constant
+from mecanumbot_leading_behaviour.tree_nodes.tree_common import build_params
 from ament_index_python.packages import get_package_share_directory
 
 leading_pkg_share_dir = get_package_share_directory("mecanumbot_leading_behaviour")
@@ -37,8 +40,9 @@ def get_yaml_path():
     return fallback
 
 
-def create_root():
-    yaml_path = get_yaml_path()
+def create_root(yaml_path=None):
+    if yaml_path is None:
+        yaml_path = get_yaml_path()
     params_loader = ConstantParamsToBlackboard(
         name="LoadConstantParams", yaml_path=yaml_path
     )
@@ -61,16 +65,21 @@ def create_root():
 def main(args=None):
     rclpy.init(args=args)
 
-    tree = create_root()
-    tree_node = py_trees_ros.trees.BehaviourTree(root=tree)
+    yaml_path = get_yaml_path()
+    params = build_params(yaml_path)
 
-    tree_node.setup(timeout=15.0, node_name="wander_between_people_node")
-    find_people = FindPeople(name="FindPeople")
-    go_to_random_person = GoToRandomPerson(name="GoToRandomPerson")
-    greet = LEDBehaviourSequence(name="Greet")
+    tree_node = py_trees_ros.trees.BehaviourTree(root=create_root(yaml_path))
+    tree_node.setup(
+        timeout=float(file_constant(params, "setup_timeout")),
+        node_name="wander_between_people_node",
+    )
     print("Starting wander-between-people behaviour tree")
 
-    tree_node.tick_tock(period_ms=10.0)
+    # This tree ticks faster than the leading ones: it drives the spin on
+    # /cmd_vel itself, unprofiled, rather than handing a turn to SmoothTurner.
+    tree_node.tick_tock(
+        period_ms=float(file_constant(params, "demo_tick_period_ms", DEMO_DEFAULTS))
+    )
     rclpy.spin(tree_node.node)
 
 

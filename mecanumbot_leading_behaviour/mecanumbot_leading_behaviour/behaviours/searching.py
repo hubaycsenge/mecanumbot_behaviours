@@ -2,6 +2,10 @@
 
 import py_trees
 
+from mecanumbot_leading_behaviour.behaviours.constants import (
+    register_param_keys,
+    resolve,
+)
 from mecanumbot_leading_behaviour.behaviours.geometry import (
     closest_checkpoint_index,
     path_progress_sign,
@@ -30,11 +34,12 @@ class WaitForPerson(py_trees.behaviour.Behaviour):
     so a later patrol starts searching in that direction.
     """
 
-    def __init__(self, name="WaitForPerson", sight_timeout=1.0):
+    def __init__(self, name="WaitForPerson", sight_timeout=None):
         super().__init__(name)
-        self.sight_timeout = float(sight_timeout)
+        self.sight_timeout = sight_timeout
 
         self.blackboard = self.attach_blackboard_client(name=name)
+        register_param_keys(self.blackboard, "sight_timeout")
         self.blackboard.register_key(
             "Dog_checkpoints", access=py_trees.common.Access.READ
         )
@@ -47,6 +52,9 @@ class WaitForPerson(py_trees.behaviour.Behaviour):
 
     def setup(self, **kwargs):
         self.node = kwargs["node"]
+        self.sight_timeout = float(
+            resolve(self.sight_timeout, self.blackboard, "sight_timeout")
+        )
         self.pose = RobotPoseTracker(self.node)
         self.people = PeopleTracker(self.node, self.sight_timeout)
         self.velocity = VelocityCommander(self.node)

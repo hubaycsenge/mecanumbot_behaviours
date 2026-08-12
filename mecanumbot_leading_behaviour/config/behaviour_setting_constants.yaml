@@ -6,8 +6,100 @@ bottom_up_tree_node:
 
     visibility_time_threshold: 5 # time threshold of last incoming 'subject' data
     robot_approach_distance : 1.0 #how much the robot should go at once in dog condition TODO: test optimum
-    Dog_following_max_threshold: 1.5 # maximum distance difference allowed to still consider following 
+    Dog_following_max_threshold: 1.5 # maximum distance difference allowed to still consider following
     Dog_max_wander_allowed: 1 # maximum allowed wander count before considering the subject lost
+
+    # ======================================================================
+    # Tunables. Every key below used to be a constructor default or a module
+    # constant in the behaviour library; the values here are those numbers.
+    # They are optional -- a file that omits one keeps the packaged default in
+    # `behaviours/constants.py` -- but the shipped files declare all of them so
+    # that a run is described by one file.
+    #
+    # Angles are in degrees and reach the blackboard in radians, under the same
+    # name without the `_deg` suffix.
+    # ======================================================================
+
+    # ----- Tree runtime ---------------------------------------------------
+    # Read from this file before the first tick, so they cannot come off the
+    # blackboard like everything else does.
+    tick_period_ms: 100.0
+    setup_timeout: 15.0
+
+    # ----- Seeing people --------------------------------------------------
+    # How fresh a people_fusion detection has to be to count as "somebody is
+    # visible right now". Every behaviour that watches for people uses it.
+    sight_timeout: 1.0
+
+    # ----- Rotation profile -----------------------------------------------
+    # SmoothTurner drives every in-place turn on /cmd_vel: it ramps up under
+    # `turn_accel` and eases out proportionally to the angle left. Keep the
+    # speed and acceleration inside the Nav2 controller's max_vel_theta /
+    # max_angular_accel, or the two disagree about what the robot can do.
+    turn_max_speed: 0.6
+    turn_accel: 0.8
+    turn_decel_gain: 1.6
+    turn_min_speed: 0.12
+    turn_tolerance_deg: 3.0
+    # Under this the robot counts as already facing its target and does not
+    # turn at all, even when a turn direction was asked for.
+    facing_epsilon_deg: 1.5
+
+    # ----- Turning behaviours ---------------------------------------------
+    turn_timeout: 20.0
+    # How long a turn waits for nav2 to stop driving before it takes /cmd_vel
+    # anyway, so an unfinished goal cannot block the tree for ever.
+    turn_nav2_wait: 2.0
+    # How long TurnToward waits for a target to turn to before failing.
+    turn_target_timeout: 3.0
+    # Re-checks of a human target after the profiled turn, for somebody who
+    # stepped aside while the robot was turning.
+    turn_corrections: 1
+    # One step of the attention wiggle; it turns +1, -2, +2, -1 of this and so
+    # ends on the heading it started from.
+    attention_turn_step_deg: 15.0
+
+    # ----- Scanning for people --------------------------------------------
+    # The glance around: spin until somebody is seen, or give up.
+    scan_spin_speed: 0.5
+    scan_timeout: 10.0
+    # The recovery patrol's full revolution -- a search of the room rather than
+    # a glance, so it is slower and gets longer.
+    full_scan_spin_speed: 0.3
+    full_scan_timeout: 45.0
+    full_scan_revolutions: 1.0
+
+    # ----- Approaching with nav2 -------------------------------------------
+    approach_target_timeout: 3.0
+    # How long nav2 gets to report our goal at all before Approach gives up.
+    approach_goal_timeout: 10.0
+    # How far the robot drives towards a route target in one goal. The human
+    # equivalent is `robot_approach_distance` above, which is an experiment
+    # parameter rather than a tunable.
+    route_step_distance: 1.0
+
+    # ----- Getting the human back ------------------------------------------
+    # How far past a checkpoint the human has to be, as a fraction of the
+    # stretch to the next one, before that stretch counts as walked. Keeps
+    # somebody standing right on a checkpoint from flipping the decision.
+    resume_passed_margin: 0.15
+    # Attempts at "patrol, re-engage, resume" before the dog tree gives up and
+    # unwinds to the top.
+    recover_retries: 3
+
+    # ----- Pacing of the signalling ----------------------------------------
+    thank_delay: 1.0        # after thanking, before carrying on
+    show_turn_delay: 2.0    # after asking for attention, before turning to the target
+
+    # ----- Accessory poses --------------------------------------------------
+    # n_pos is the neck-mounted camera tilt (2.0 .. 8.6, larger looks further
+    # up). The seeking pose does double duty: it reads as the robot seeking
+    # contact, and it gives the pose detector whole bodies rather than knees.
+    # The gesture sequences below move between these same values.
+    neck_seek_pos: 7.0
+    neck_level_pos: 6.0
+    gripper_left_neutral: 6.83
+    gripper_right_neutral: 3.36
 
     Dog_checkpoints:
       - "{'X':0.452756, 'Y':-0.71344, 'Z':0.0 }"

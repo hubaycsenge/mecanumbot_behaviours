@@ -54,6 +54,10 @@ GOAL_FAILED_STATUSES = (
 # whole body instead of just the knees of nearby people, which it often misses.
 # So the head stays lifted for as long as the robot is looking for or at
 # someone, not just for a moment.
+#
+# These are the fallbacks. The constants YAML declares them as `neck_seek_pos`,
+# `neck_level_pos` and `gripper_{left,right}_neutral`, and the parameter loader
+# hands them to `AccessoryCommander.configure()` before any tree is ticked.
 NECK_SEEK_POS = 7.0
 NECK_LEVEL_POS = 6.0
 GRIPPER_LEFT_NEUTRAL = 6.83
@@ -270,22 +274,41 @@ class VelocityCommander:
 class AccessoryCommander:
     """Neck (camera tilt) and gripper commands.
 
-    The last commanded neck position is shared by every commander in the process
-    -- there is only one robot -- so a gesture sequence that moves the neck does
-    not leave another behaviour believing the head is still where it put it.
+    The poses are class state, like the last commanded neck position, because
+    there is only one robot: every behaviour that builds a commander means the
+    same head. `configure()` is called once by the parameter loader, so the
+    poses come from the same YAML as the gesture sequences that move between
+    them, and a commander built later in `setup()` still sees them.
     """
 
     _last_neck_pos = None
+
+    seek_pos = NECK_SEEK_POS
+    level_pos = NECK_LEVEL_POS
+    gripper_left = GRIPPER_LEFT_NEUTRAL
+    gripper_right = GRIPPER_RIGHT_NEUTRAL
+
+    @classmethod
+    def configure(cls, seek_pos=None, level_pos=None, gripper_left=None, gripper_right=None):
+        """Set the named poses from configuration; None leaves one as it is."""
+        if seek_pos is not None:
+            cls.seek_pos = float(seek_pos)
+        if level_pos is not None:
+            cls.level_pos = float(level_pos)
+        if gripper_left is not None:
+            cls.gripper_left = float(gripper_left)
+        if gripper_right is not None:
+            cls.gripper_right = float(gripper_right)
 
     def __init__(self, node):
         self.node = node
         self._publisher = node.create_publisher(AccessMotorCmd, ACCESSORY_TOPIC, 10)
 
-    def send(self, n_pos, gl_pos=GRIPPER_LEFT_NEUTRAL, gr_pos=GRIPPER_RIGHT_NEUTRAL):
+    def send(self, n_pos, gl_pos=None, gr_pos=None):
         cmd = AccessMotorCmd()
         cmd.n_pos = float(n_pos)
-        cmd.gl_pos = float(gl_pos)
-        cmd.gr_pos = float(gr_pos)
+        cmd.gl_pos = float(self.gripper_left if gl_pos is None else gl_pos)
+        cmd.gr_pos = float(self.gripper_right if gr_pos is None else gr_pos)
         self._publisher.publish(cmd)
         AccessoryCommander._last_neck_pos = cmd.n_pos
 
@@ -297,7 +320,7 @@ class AccessoryCommander:
         """
         if where is None:
             return
-        n_pos = NECK_SEEK_POS if where == HEAD_SEEK else NECK_LEVEL_POS
+        n_pos = self.seek_pos if where == HEAD_SEEK else self.level_pos
         if self._last_neck_pos is not None and abs(self._last_neck_pos - n_pos) < 1e-3:
             return
         self.send(n_pos)

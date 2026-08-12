@@ -76,6 +76,30 @@ The ostensive condition is not part of that launcher's `condition` argument — 
 is a different experiment, with its own launch file and its own constants
 schema, and the robot is led by the human rather than leading them.
 
+## Where the numbers live
+
+Every number a tree acts on comes from a constants YAML and reaches the
+behaviours through the py_trees blackboard. There is nothing to edit in Python
+to retune a run.
+
+`mecanumbot_leading_behaviour/behaviours/constants.py` is the single definition
+of what may be tuned, split into two kinds:
+
+* **experiment parameters** — the distances, the route, the LED and gesture
+  scripts. Required: a file that omits one fails to load rather than having a
+  value invented for it;
+* **tunables** — turn speeds and profiles, timeouts, scan lengths, retry counts,
+  pacing delays, head poses. Optional: omitting one keeps the packaged default,
+  which is what lets a constants file written before a key existed still load.
+
+Angles are declared in degrees with a `_deg` suffix and reach the blackboard in
+radians under the name without it. `mecanumbot_ostensive_behaviour` and
+`mecanumbot_demo_behaviours` build on the same mechanism — the ostensive files
+set the subset of the leading tunables their tree exercises, and the demo trees
+add a handful of `demo_*` keys of their own. Each package's README lists its
+keys; the mechanism itself is documented in
+`mecanumbot_leading_behaviour/README.md` under "Configuration model".
+
 ## Repository structure
 
 | Path                            | Function                                                                               |

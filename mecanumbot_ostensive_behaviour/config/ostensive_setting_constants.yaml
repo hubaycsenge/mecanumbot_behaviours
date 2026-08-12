@@ -72,6 +72,11 @@ ostensive_bt_node:
     # somebody, at conversational distance.
     focus_turn_speed: 0.4
 
+    # How long `FaceTarget` gets to bring the addressee into the deadband before
+    # the exchange is given up on. Only the one-shot turn is bounded; the
+    # version that runs beside the cue decoder ends with its parallel instead.
+    focus_timeout: 20.0
+
     # ----- Reading the direction cue -----------------------------------------
     # Wrist-to-shoulder distance, in body scales, before the arm counts as held
     # out rather than bent.
@@ -106,6 +111,52 @@ ostensive_bt_node:
     # ----- Acknowledgement nod -----------------------------------------------
     # Neck tilt positions (2.0 .. 8.6, larger looks further up) and how long each
     # is held. The last entry is where the head is left, so it should stay the
-    # lifted seeking pose (7.0) the rest of the exchange expects.
+    # lifted seeking pose -- `neck_seek_pos` below, which the loader checks it
+    # against and warns about if the two drift apart.
     ack_neck_seq: [7.6, 6.2, 7.6, 7.0]
     ack_neck_times: [0.35, 0.35, 0.35, 0.3]
+
+    # ==========================================================================
+    # Tunables of `mecanumbot_leading_behaviour`, whose scanning and turning
+    # behaviours this tree borrows. They are declared here under exactly the
+    # names that package reads, so the ostensive condition's turns are described
+    # in the ostensive file rather than inherited silently. Every one is
+    # optional: omit it and that package's own default applies.
+    # ==========================================================================
+
+    # ----- Tree runtime -------------------------------------------------------
+    # Read from this file before the first tick, so they cannot come off the
+    # blackboard like everything else does.
+    tick_period_ms: 100.0
+    setup_timeout: 15.0
+
+    # ----- Looking around when nobody is there to be addressed ----------------
+    # `FindPeople` spins until somebody is in view, then hands back to the watch
+    # for an attention signal. `sight_timeout` is how fresh a people_fusion
+    # detection has to be to count; `detection_timeout` above is the camera's.
+    sight_timeout: 1.0
+    scan_spin_speed: 0.5
+    scan_timeout: 10.0
+
+    # ----- Rotation profile ---------------------------------------------------
+    # SmoothTurner drives every in-place turn on /cmd_vel. `focus_turn_speed`
+    # above overrides `turn_max_speed` for the re-centring turns, so this one
+    # only applies to the look-around; the rest of the profile is shared.
+    turn_max_speed: 0.6
+    turn_accel: 0.8
+    turn_decel_gain: 1.6
+    turn_min_speed: 0.12
+    turn_tolerance_deg: 3.0
+    # Under this the robot counts as already facing where it was going to turn.
+    facing_epsilon_deg: 1.5
+    # How long the look-around waits for nav2 to stop driving before taking
+    # /cmd_vel anyway. `focus_timeout` bounds the re-centring turn instead.
+    turn_timeout: 20.0
+    turn_nav2_wait: 2.0
+
+    # ----- Neck and gripper poses ---------------------------------------------
+    # The nod moves between these; `neck_seek_pos` is where it must end up.
+    neck_seek_pos: 7.0
+    neck_level_pos: 6.0
+    gripper_left_neutral: 6.83
+    gripper_right_neutral: 3.36

@@ -278,7 +278,8 @@ name without the `_deg` suffix. No behaviour converts an angle twice.
 | | `target_bearing_tolerance_deg` | `20.0` | How closely a fused pose must agree with the image bearing. |
 | | `track_loss_timeout` | `2.0` | How long the addressee may be missing before the exchange is abandoned. |
 | Focus | `focus_tolerance_deg` | `8.0` | Deadband; smaller drift is ignored. |
-| | `focus_turn_speed` | `0.4` | Rotation speed [rad/s] for re-centring. |
+| | `focus_turn_speed` | `0.4` | Rotation speed [rad/s] for re-centring. Overrides `turn_max_speed` for these turns. |
+| | `focus_timeout` | `20.0` | How long `FaceTarget` gets to centre the addressee. Only the one-shot turn is bounded; the version beside the cue decoder ends with its parallel. |
 | Cue | `cue_min_extension` | `1.1` | Wrist-to-shoulder distance, in body scales, for the arm to count as held out. |
 | | `cue_full_extension` | `1.5` | Sideways reach of a fully outstretched arm; sets the angle scale. |
 | | `cue_min_lateral` | `0.45` | Minimum sideways reach for the cue to be believed. |
@@ -287,8 +288,29 @@ name without the `_deg` suffix. No behaviour converts an angle twice.
 | | `cue_timeout` | `20.0` | Give up on the exchange if no cue settles. |
 | Goal | `cue_distance` | `2.0` (`1.5` Eto) | How far along the cue the goal is placed, from the person. |
 | | `cue_goal_timeout` | `60.0` (`45.0` Eto) | How long nav2 gets to deliver the robot. |
-| Nod | `ack_neck_seq` | `[7.6, 6.2, 7.6, 7.0]` | Neck tilt positions (`2.0 … 8.6`, larger looks up). The last entry is where the head is left. |
+| Nod | `ack_neck_seq` | `[7.6, 6.2, 7.6, 7.0]` | Neck tilt positions (`2.0 … 8.6`, larger looks up). The last entry is where the head is left, and the loader warns when it is not `neck_seek_pos`. |
 | | `ack_neck_times` | `[0.35, 0.35, 0.35, 0.3]` | How long each is held. |
+
+### Borrowed tunables
+
+This tree uses `mecanumbot_leading_behaviour`'s `FindPeople` to look around and
+its `InPlaceTurn`/`SmoothTurner` to re-centre, and those read their constants off
+the blackboard under fixed names. The constants files declare that subset under
+exactly those names, so the ostensive condition's turns are described in the
+ostensive file rather than inherited silently. Every one is optional — omit it
+and the leading package's own default applies.
+
+| Group | Parameter | Default | Meaning |
+| --- | --- | --- | --- |
+| Tree runtime | `tick_period_ms`, `setup_timeout` | `100.0`, `15.0` | Read from the file before the first tick, so they cannot come off the blackboard. |
+| Look around | `sight_timeout` | `1.0` | How fresh a `people_fusion` detection has to be. (`detection_timeout` is the camera's equivalent.) |
+| | `scan_spin_speed`, `scan_timeout` | `0.5`, `10.0` | The `FindPeople` spin when nobody is there to be addressed. |
+| Rotation profile | `turn_max_speed`, `turn_accel`, `turn_decel_gain`, `turn_min_speed`, `turn_tolerance_deg`, `facing_epsilon_deg` | `0.6`, `0.8`, `1.6`, `0.12`, `3.0`, `1.5` | The `SmoothTurner` profile. `focus_turn_speed` replaces `turn_max_speed` for the re-centring turns. |
+| | `turn_timeout`, `turn_nav2_wait` | `20.0`, `2.0` | Bound the look-around and how long a turn waits for nav2 to release `/cmd_vel`. |
+| Accessories | `neck_seek_pos`, `neck_level_pos`, `gripper_left_neutral`, `gripper_right_neutral` | `7.0`, `6.0`, `6.83`, `3.36` | Handed to `AccessoryCommander` by the loader; the nod moves between them. |
+
+The full list, and how a tunable reaches the code, is in
+`mecanumbot_leading_behaviour/README.md` under "Configuration model".
 
 ## Build and run
 

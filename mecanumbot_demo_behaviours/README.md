@@ -61,8 +61,8 @@ executable tree nodes.
 
 | Behaviour           | Role                                                                                                                                                                             |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FindPeople`        | Spins in place (0.2 rad/s) until a `people_fusion` message newer than the sight timeout arrives, then stops the robot.                                                           |
-| `GoToRandomPerson`  | Picks a random fresh detection, builds a goal with the leading package's `pose_to_goal` (stop threshold 0.5 m), publishes it and follows the Nav2 goal status until it succeeds. |
+| `FindPeople`        | Spins in place (`demo_spin_speed`) until a `people_fusion` message newer than `sight_timeout` arrives, then stops the robot.                                                     |
+| `GoToRandomPerson`  | Picks a detection fresher than `demo_sight_timeout` at random, builds a goal with the leading package's `pose_to_goal` (stopping `demo_person_stop_distance` short), publishes it and follows the Nav2 goal status until it succeeds. |
 | `ProcessDetections` | `hide_and_seek` — turns the first pose of the blackboard `pose_array` into `intercept_goal`; FAILURE when there is nothing to intercept, so the tree falls back to patrolling.   |
 | `GetNextWaypoint`   | `hide_and_seek` — cycles through the blackboard `waypoints` list, writing each in turn to `patrol_goal`.                                                                         |
 
@@ -71,16 +71,42 @@ The module re-exports `Approach`, `TurnToward`, `RelativeTurnPattern`,
 `pose_to_goal` / `calculate_facing_orientation` helpers and the `STATUS_*` constants
 from `mecanumbot_leading_behaviour`.
 
+It also declares `DEMO_DEFAULTS`, the demo trees' own tunables. They are read off
+the blackboard exactly the way the leading package's are — from whichever
+constants YAML the tree loaded, falling back to the value in `DEMO_DEFAULTS` when
+that file does not mention them — so nothing has to be edited in Python to
+retune a demo. They are separate from the leading keys on purpose: wandering up
+to whoever is in the room is a different job from leading somebody along a
+route, so it spins more gently, gives a detection longer to count and stops
+further away.
+
+| Key                         | Default   | Meaning                                                                                          |
+| --------------------------- | --------- | -------------------------------------------------------------------------------------------------- |
+| `demo_spin_speed`           | `0.2`     | Spin speed [rad/s] of the demo's own `FindPeople`, which drives `/cmd_vel` with no velocity profile. |
+| `demo_sight_timeout`        | `3.0`     | How old a detection may be and still be walked up to — longer than the leading `sight_timeout`.  |
+| `demo_person_stop_distance` | `0.5`     | How far short of the person the Nav2 goal is placed [m].                                         |
+| `demo_tick_period_ms`       | `10.0`    | Tick period of the wander tree, faster than the leading `tick_period_ms` because the spin is commanded tick by tick. |
+| `demo_map_name`             | `AI_dept` | Map `hide_and_seek` patrols when `--map_name` is not given.                                      |
+
+This package's `config/*.yaml` declare all five, but note that the demo trees
+fall back to the **leading** package's constants file, so the values there apply
+only when `YAML_PATH` points at one of these. The leading package's own tunables
+(`sight_timeout`, `scan_spin_speed`, the turn profile, …) may be set in the same
+file; they are listed in `mecanumbot_leading_behaviour/README.md`.
+
 ### `behaviours/blackboard_managers.py`
 
 | Behaviour                    | Role                                                                                                                                                                                         |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ConstantParamsToBlackboard` | Local copy of the leading package's YAML constants loader.                                                                                                                                   |
+| `ConstantParamsToBlackboard` | Re-exported from `mecanumbot_leading_behaviour` — there is one loader, not a copy of one.                                                                                                    |
 | `DistanceToBlackboard`       | Local copy of the robot/subject/target distance calculator.                                                                                                                                  |
 | `MapWaypointsToBlackboard`   | Loads `<map>_waypoints.yaml` from `mecanumbot_description/maps/<map>/`, generating it with `utils/map_generate.py` if it does not exist yet, and writes the waypoint list to the blackboard. |
 
-Note that `wander_between_people.py` imports `ConstantParamsToBlackboard` from
-`mecanumbot_leading_behaviour`, not from this local copy.
+`ConstantParamsToBlackboard` used to be a fork of the leading package's loader
+here: it duplicated every key, defaulted `last_distance` to a different number
+and never learned about the tunables added to the YAML since. Nothing imported it
+— `wander_between_people.py` already used the real one — so it is now an import,
+and one constants file has one loader.
 
 ### `utils/map_generate.py`
 
@@ -125,13 +151,16 @@ Root is a memory sequence:
 3. `GoingToRandomPerson` sequence — `GoToRandomPerson`, then a `catch_attention` LED
    sequence as a greeting.
 
-Ticked at 10 ms.
+Ticked at `demo_tick_period_ms` (10 ms).
 
 ### `hide_and_seek.py`
 
 Root is a memory-less priority selector:
 
-1. `MapWaypointsToBlackboard` — load or generate the waypoints for the `AI_dept` map.
+1. `MapWaypointsToBlackboard` — load or generate the waypoints for the map named by
+   `--map_name`, defaulting to `demo_map_name` (`AI_dept`). This tree loads no
+   constants YAML — it has no route, gestures or thresholds to read — so the map
+   is named on the command line rather than on the blackboard.
 2. Intercept branch — `ProcessDetections` then a Nav2 `ActionClient` on
    `intercept_goal`. Runs whenever `/detections` is non-empty; `py_trees_ros` cancels
    the in-flight patrol goal automatically.

@@ -34,8 +34,10 @@ stretch the human already walked.
 import py_trees
 
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import (
+    ConfiguredTimer,
     ConstantParamsToBlackboard,
 )
+from mecanumbot_leading_behaviour.behaviours.constants import file_constant
 from mecanumbot_leading_behaviour.behaviours.dog_behaviours import (
     DogBehaviourSequence,
     DogCheckFollowing,
@@ -52,6 +54,7 @@ from mecanumbot_leading_behaviour.behaviours.movement_managers import (
 from mecanumbot_leading_behaviour.behaviours.targets import CHECKPOINT, SUBJECT, TARGET
 from mecanumbot_leading_behaviour.behaviours.turning import SHORTEST
 from mecanumbot_leading_behaviour.tree_nodes.tree_common import (
+    build_params,
     create_recover_lost_sequence,
     resolve_yaml_path,
     run_tree,
@@ -74,7 +77,7 @@ def create_seek_attention(ID):
                 name=ID + "ApproachSubject", target_type=SUBJECT, mode="fixed_distance"
             ),
             TurnToward(name=ID + "TurnTowardSubject", target_type=SUBJECT),
-            RelativeTurnPattern(name=ID + "AttentionTurnPattern", step_angle_deg=15.0),
+            RelativeTurnPattern(name=ID + "AttentionTurnPattern"),
             DogBehaviourSequence(ID + "CatchAttention", "catch_attention"),
         ]
     )
@@ -84,6 +87,9 @@ def create_seek_attention(ID):
 def create_root(yaml_path=None):
     if yaml_path is None:
         yaml_path = get_yaml_path()
+    # Decorator counts are fixed when the tree is built, so this one comes
+    # straight from the file; everything else reads the blackboard.
+    params = build_params(yaml_path)
 
     # --- getting the human's attention in the first place -------------------
     # Try it directly; if there is nobody to approach, search the route first
@@ -116,7 +122,7 @@ def create_root(yaml_path=None):
                 name="ApproachSubjectBall", target_type=SUBJECT, mode="fixed_distance"
             ),
             DogBehaviourSequence("DogThank", "thank"),
-            py_trees.timers.Timer(name="ThankDelayTimer", duration=1),
+            ConfiguredTimer(name="ThankDelayTimer", key="thank_delay"),
         ]
     )
 
@@ -128,7 +134,7 @@ def create_root(yaml_path=None):
         [
             CheckSubjectTargetSuccess(name="CheckSubjectNearTarget"),
             DogBehaviourSequence("DogCatchAttentionShow", "catch_attention"),
-            py_trees.timers.Timer(name="TurnDelayTimer", duration=2),
+            ConfiguredTimer(name="TurnDelayTimer", key="show_turn_delay"),
             TurnToward(name="TurnTowardTargetShow", target_type=TARGET),
             DogBehaviourSequence("DogShowTarget", "indicate_target"),
         ]
@@ -202,7 +208,9 @@ def create_root(yaml_path=None):
         [
             glance_then_act,
             py_trees.decorators.Retry(
-                name="RecoverAndResumeRetry", child=recover_and_resume, num_failures=3
+                name="RecoverAndResumeRetry",
+                child=recover_and_resume,
+                num_failures=int(file_constant(params, "recover_retries")),
             ),
         ]
     )

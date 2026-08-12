@@ -7,6 +7,11 @@ from geometry_msgs.msg import PoseArray, PoseStamped, PoseWithCovarianceStamped,
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from rclpy.time import Time
 
+from mecanumbot_leading_behaviour.behaviours.constants import (
+    TUNABLE_DEFAULTS as SHARED_DEFAULTS,
+    register_param_keys,
+    resolve,
+)
 from mecanumbot_leading_behaviour.behaviours.movement_managers import (
     Approach,
     CheckRobotAtLastCheckpoint,
@@ -26,6 +31,26 @@ from mecanumbot_leading_behaviour.behaviours.movement_managers import (
     STATUS_SUCCEEDED,
     STATUS_UNKNOWN,
 )
+
+
+# The demo trees' own tunables, on top of the ones the leading behaviour library
+# declares. They are read off the blackboard through the same helper, so a value
+# is taken from whichever constants YAML the tree loaded and falls back to the
+# number here when that file does not mention it. The demo package's own
+# `config/*.yaml` files declare all of them.
+#
+# They are demo-specific on purpose: wandering up to whoever happens to be in the
+# room is a different job from leading somebody along a route, so it spins more
+# gently, gives a detection longer to count and stops further away.
+DEMO_DEFAULTS = {
+    "demo_spin_speed": 0.2,
+    "demo_sight_timeout": 3.0,
+    "demo_person_stop_distance": 0.5,
+    "demo_tick_period_ms": 10.0,
+    "demo_map_name": "AI_dept",
+}
+
+DEMO_KEYS = tuple(DEMO_DEFAULTS)
 
 
 # ---------------------------------------------------------
@@ -114,18 +139,33 @@ class GetNextWaypoint(py_trees.behaviour.Behaviour):
 
 
 class FindPeople(py_trees.behaviour.Behaviour):
-    """Spin in place until a fresh people_fusion message is received."""
+    """Spin in place until a fresh people_fusion message is received.
 
-    def __init__(self, name="FindPeople", spin_speed=0.2, sight_timeout=1.0):
+    The spin speed is `demo_spin_speed` and the detection age `sight_timeout`,
+    both taken from the constants YAML the tree loaded.
+    """
+
+    def __init__(self, name="FindPeople", spin_speed=None, sight_timeout=None):
         super().__init__(name)
-        self.spin_speed = float(spin_speed)
-        self.sight_timeout = float(sight_timeout)
+        self.spin_speed = spin_speed
+        self.sight_timeout = sight_timeout
         self.publisher = None
         self.people_poses = []
         self.last_people_seen_time = None
 
+        self.blackboard = self.attach_blackboard_client(name=name)
+        register_param_keys(self.blackboard, "sight_timeout", *DEMO_KEYS)
+
     def setup(self, **kwargs):
         self.node = kwargs["node"]
+        self.spin_speed = float(
+            resolve(self.spin_speed, self.blackboard, "demo_spin_speed", DEMO_DEFAULTS)
+        )
+        self.sight_timeout = float(
+            resolve(
+                self.sight_timeout, self.blackboard, "sight_timeout", SHARED_DEFAULTS
+            )
+        )
         self.publisher = self.node.create_publisher(Twist, "/cmd_vel", 10)
         self.people_subscriber = self.node.create_subscription(
             PoseArray,
@@ -169,10 +209,18 @@ class FindPeople(py_trees.behaviour.Behaviour):
 
 
 class GoToRandomPerson(py_trees.behaviour.Behaviour):
-    """Select a fresh person at random from people_fusion and navigate toward them."""
+    """Select a fresh person at random from people_fusion and navigate toward them.
 
-    def __init__(self, name="GoToRandomPerson", sight_timeout=3.0):
+    `demo_sight_timeout` is how old a detection may be and still be walked to --
+    longer than the leading trees' `sight_timeout`, because here a person who was
+    seen a moment ago is still somewhere worth going.
+    """
+
+    def __init__(self, name="GoToRandomPerson", sight_timeout=None, stop_distance=None):
         super().__init__(name)
+        self.stop_distance = stop_distance
+        self.blackboard = self.attach_blackboard_client(name=name)
+        register_param_keys(self.blackboard, *DEMO_KEYS)
         self.publisher = None
         self.people_poses = []
         self.robot_pose = None
@@ -183,11 +231,24 @@ class GoToRandomPerson(py_trees.behaviour.Behaviour):
         self.compare_position = None
         self.cmd_send_time = None
         self.goal_status = STATUS_UNKNOWN
-        self.sight_timeout = float(sight_timeout)
+        self.sight_timeout = sight_timeout
         self.last_people_seen_time = None
 
     def setup(self, **kwargs):
         self.node = kwargs["node"]
+        self.sight_timeout = float(
+            resolve(
+                self.sight_timeout, self.blackboard, "demo_sight_timeout", DEMO_DEFAULTS
+            )
+        )
+        self.stop_distance = float(
+            resolve(
+                self.stop_distance,
+                self.blackboard,
+                "demo_person_stop_distance",
+                DEMO_DEFAULTS,
+            )
+        )
 
         qos_profile = QoSProfile(
             depth=10,
@@ -359,8 +420,12 @@ class GoToRandomPerson(py_trees.behaviour.Behaviour):
         return False
 
     def send_goal_command(self):
+        # "exact" mode: drive all the way to the person bar `stop_distance`, so
+        # no per-goal step length is involved.
         desired_pose = pose_to_goal(
-            self.compare_position, self.robot_pose, stop_threshold=0.5, go_threshold=10
+            self.compare_position,
+            self.robot_pose,
+            stop_threshold=self.stop_distance,
         )
 
         self.goal_cmd = PoseStamped()

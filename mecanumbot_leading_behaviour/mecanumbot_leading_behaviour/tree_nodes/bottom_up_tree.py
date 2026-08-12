@@ -4,6 +4,7 @@ import py_trees
 
 from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import (
+    ConfiguredTimer,
     ConstantParamsToBlackboard,
 )
 from mecanumbot_leading_behaviour.behaviours.movement_managers import (
@@ -51,7 +52,9 @@ def create_root(yaml_path=None):
     root.add_children(
         [
             ConstantParamsToBlackboard(name="LoadConstantParams", yaml_path=yaml_path),
-            py_trees.timers.Timer(name="DelayTimer", duration=2),
+            # `init_delay` was declared in the YAML all along; this is the pause
+            # it names, which used to be a hard-coded 2 s.
+            ConfiguredTimer(name="DelayTimer", key="init_delay"),
             Approach(name="ApproachSubject", target_type=SUBJECT),
             # Stops at the last checkpoint rather than on the target itself.
             Approach(name="ApproachTarget", target_type=LAST_CHECKPOINT),

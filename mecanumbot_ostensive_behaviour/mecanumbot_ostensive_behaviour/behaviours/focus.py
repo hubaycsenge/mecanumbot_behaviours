@@ -52,13 +52,8 @@ class KeepTargetInFocus(InPlaceTurn):
     longer than `track_loss_timeout`, which is how the exchange is abandoned.
     """
 
-    def __init__(self, name="KeepTargetInFocus", settle=False, timeout=20.0, **kwargs):
-        super().__init__(
-            name,
-            head=HEAD_SEEK,
-            timeout=float(timeout) if settle else float("inf"),
-            **kwargs,
-        )
+    def __init__(self, name="KeepTargetInFocus", settle=False, timeout=None, **kwargs):
+        super().__init__(name, head=HEAD_SEEK, timeout=timeout, **kwargs)
         self.settle = bool(settle)
         register_param_keys(self.blackboard)
         self.blackboard.register_key(
@@ -66,10 +61,15 @@ class KeepTargetInFocus(InPlaceTurn):
         )
 
     def setup(self, **kwargs):
-        """Take the turn speed from the constants, then build the usual handles."""
-        self._turner_kwargs.setdefault(
-            "max_speed", self.blackboard.focus_turn_speed
-        )
+        """Take the turn speed and the timeout from the constants, then build the handles."""
+        self._turner_kwargs.setdefault("max_speed", self.blackboard.focus_turn_speed)
+        if not self.settle:
+            # The version that runs beside the cue decoder never gives up on
+            # its own; it ends when its parallel does, or when the addressee is
+            # lost for `track_loss_timeout`.
+            self.timeout = float("inf")
+        elif self.timeout is None:
+            self.timeout = float(self.blackboard.focus_timeout)
         super().setup(**kwargs)
         self.follower = TargetFollower(
             self.node,
@@ -171,7 +171,12 @@ class KeepTargetInFocus(InPlaceTurn):
 
 
 class FaceTarget(KeepTargetInFocus):
-    """Turn once to face the addressee, and succeed as soon as they are centred."""
+    """
+    Turn once to face the addressee, and succeed as soon as they are centred.
 
-    def __init__(self, name="FaceTarget", timeout=20.0, **kwargs):
+    Gives up after `focus_timeout`, so a person who signalled and then walked
+    behind something does not hold the tree.
+    """
+
+    def __init__(self, name="FaceTarget", timeout=None, **kwargs):
         super().__init__(name, settle=True, timeout=timeout, **kwargs)

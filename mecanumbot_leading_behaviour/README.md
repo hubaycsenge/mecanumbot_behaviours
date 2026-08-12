@@ -61,6 +61,7 @@ everything, so `from ...behaviours.movement_managers import X` keeps working
 
 | Module                 | Contents                                                                                          |
 | ---------------------- | ------------------------------------------------------------------------------------------------- |
+| `constants.py`         | The tunables: what every behaviour used to hard-code, their defaults, and how the YAML is read.  |
 | `geometry.py`          | Pure geometry: angles, bearings, `signed_rotation`, `pose_to_goal`, checkpoint lookups, `route_progress`. |
 | `ros_interfaces.py`    | Topic names, QoS, pose/people/ball trackers, the Nav2 goal monitor, velocity and neck commanders. |
 | `targets.py`           | What a `target_type` points at, and the head pose / turn direction that goes with it.             |
@@ -86,9 +87,11 @@ everything, so `from ...behaviours.movement_managers import X` keeps working
 In-place rotations do **not** go through Nav2. `SmoothTurner` drives `/cmd_vel`
 with a profile that ramps up under an acceleration limit and eases out
 proportionally to the angle left, and it tracks progress on AMCL yaw,
-dead-reckoning from the commanded speed between pose updates. Tunables per
-behaviour: `max_speed`, `accel`, `decel_gain`, `min_speed`, `tolerance` (defaults
-stay inside the Nav2 controller's `max_vel_theta` / `max_angular_accel`).
+dead-reckoning from the commanded speed between pose updates. The profile comes
+from the constants YAML — `turn_max_speed`, `turn_accel`, `turn_decel_gain`,
+`turn_min_speed`, `turn_tolerance_deg` (keep them inside the Nav2 controller's
+`max_vel_theta` / `max_angular_accel`) — and a call site may still override any
+of them for one behaviour by passing the `SmoothTurner` keyword.
 
 Owning the rotation is what makes the direction selectable. `TurnToward` takes
 `direction`:
@@ -117,12 +120,18 @@ already true of the old search spins, and only in-place rotation is affected.
 ### Head (neck) poses
 
 `n_pos` is the neck-mounted camera tilt (`2.0 … 8.6`, larger looks further up).
-Two named poses in `ros_interfaces.py`:
+Two named poses, set from the YAML and held on `AccessoryCommander` — they are
+class state, because there is only one head, and the parameter loader hands them
+over once with `AccessoryCommander.configure()` before any tree is ticked:
 
-| Constant         | Value | Used when                                                                                                                                                    |
+| YAML key         | Value | Used when                                                                                                                                                    |
 | ---------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `NECK_SEEK_POS`  | `7.0` | The robot is looking for or at a human: reads as seeking contact, and gives YOLO26n-pose a full-body view instead of a pair of knees, which it often misses. |
-| `NECK_LEVEL_POS` | `6.0` | The robot is driving its route or pointing at the target.                                                                                                    |
+| `neck_seek_pos`  | `7.0` | The robot is looking for or at a human: reads as seeking contact, and gives YOLO26n-pose a full-body view instead of a pair of knees, which it often misses. |
+| `neck_level_pos` | `6.0` | The robot is driving its route or pointing at the target.                                                                                                    |
+
+`gripper_left_neutral` / `gripper_right_neutral` (`6.83` / `3.36`) are the
+gripper positions any command that does not name its own uses; the gesture
+sequences move between the same values.
 
 Behaviours pick the pose from their target type (`head="seek"` / `"level"`), so
 the head stays lifted for the whole seeking phase rather than flicking up for a
@@ -134,6 +143,7 @@ that so their comparison conditions carry no head gestures at all.
 | Behaviour                    | Role                                                                                                                     |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `ConstantParamsToBlackboard` | Loads the YAML constants, parses LED/gesture/checkpoint entries into message objects, and applies the start LED setting. |
+| `ConfiguredTimer`            | A `py_trees` timer whose duration is a blackboard key, looked up when the timer starts rather than when the tree is built. |
 | `DistanceToBlackboard`       | Computes robot–subject, robot–target and subject–target distances plus their threshold flags.                            |
 
 `ConstantParamsToBlackboard` reads the YAML under the fixed
@@ -199,10 +209,11 @@ started by the launch file — run it with `ros2 run`.
 
 ### Common pattern
 
-1. Load YAML constants into blackboard (`ConstantParamsToBlackboard`).
+1. Load YAML constants into blackboard (`ConstantParamsToBlackboard`) — always the
+   first leaf, because every other behaviour reads its constants during `setup()`.
 2. Build a sequence/selector/retry structure from movement and signalling behaviours.
-3. `tree_common.run_tree()` sets the tree up, ticks it every 100 ms and keeps the
-   node alive with `rclpy.spin`.
+3. `tree_common.run_tree()` sets the tree up, ticks it every `tick_period_ms`
+   (100 ms by default) and keeps the node alive with `rclpy.spin`.
 
 ### Lost-subject recovery
 
@@ -223,8 +234,8 @@ Which checkpoint the robot resumes from is a separate decision, made by
 projected onto the checkpoint polyline as a float index, so `1.4` means "four tenths
 of the way from checkpoint 1 to checkpoint 2". The robot takes the checkpoint nearest
 itself and leads on to the one after it when the human is already past it (by more
-than `PASSED_MARGIN`, 0.15 of a stretch), otherwise to that checkpoint itself. The
-same helper backs `path_progress_sign()`, which decides the patrol direction.
+than `resume_passed_margin`, 0.15 of a stretch), otherwise to that checkpoint itself.
+The same helper backs `path_progress_sign()`, which decides the patrol direction.
 
 ### `ctrl_tree.py` logic
 
@@ -289,6 +300,10 @@ Both `config/*.yaml` files use the same schema, nested under
 `bottom_up_tree_node: ros__parameters:`. Sequence entries are strings holding Python
 dict literals, parsed with `ast.literal_eval`.
 
+There are two kinds of key, and they behave differently when one is missing.
+
+### Experiment parameters — required
+
 | Group               | Keys                                                                                                                                                            |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Timing              | `init_delay`, `visibility_time_threshold`                                                                                                                       |
@@ -300,6 +315,52 @@ dict literals, parsed with `ast.literal_eval`.
 Each `*_seq` list pairs with a `*_times` list of equal length giving the duration of
 each step in seconds. LED entries are `{fl,fr,bl,br}` dicts of `color`/`mode` values;
 gesture entries are `{n_pos, gl_pos, gr_pos}` dicts; checkpoints are `{X, Y, Z}` dicts.
+
+These describe the run, so a file that omits one fails to load rather than
+having a distance invented for it.
+
+### Tunables — optional, defaulted from `behaviours/constants.py`
+
+Everything the behaviour library used to carry as a constructor default or a
+module constant. Declaring one in the YAML changes it everywhere; omitting it
+keeps the value in `TUNABLE_DEFAULTS`, which is what lets a constants file
+written before a key existed still load. The shipped files declare all of them,
+so a run is described by one file.
+
+| Group             | Keys                                                                                                              | Read by                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Tree runtime      | `tick_period_ms`, `setup_timeout`                                                                                 | `tree_common.run_tree`                           |
+| Seeing people     | `sight_timeout`                                                                                                   | every behaviour that watches `people_fusion`     |
+| Rotation profile  | `turn_max_speed`, `turn_accel`, `turn_decel_gain`, `turn_min_speed`, `turn_tolerance_deg`, `facing_epsilon_deg`   | `SmoothTurner`, `signed_rotation`                |
+| Turning           | `turn_timeout`, `turn_nav2_wait`, `turn_target_timeout`, `turn_corrections`, `attention_turn_step_deg`            | `InPlaceTurn`, `TurnToward`, `RelativeTurnPattern` |
+| Scanning          | `scan_spin_speed`, `scan_timeout`; `full_scan_spin_speed`, `full_scan_timeout`, `full_scan_revolutions`           | `FindPeople`; `Spin360`                          |
+| Approaching       | `approach_target_timeout`, `approach_goal_timeout`, `route_step_distance`                                         | `Approach`                                       |
+| Getting them back | `resume_passed_margin`, `recover_retries`                                                                         | `DogResumeLeading`, the dog tree's `Retry`       |
+| Pacing            | `thank_delay`, `show_turn_delay`                                                                                  | the dog tree's `ConfiguredTimer`s                |
+| Accessory poses   | `neck_seek_pos`, `neck_level_pos`, `gripper_left_neutral`, `gripper_right_neutral`                                | `AccessoryCommander`                             |
+
+Angles are declared in **degrees** with a `_deg` suffix and reach the blackboard
+in **radians** under the name without it — the convention
+`mecanumbot_ostensive_behaviour` established. Nothing converts an angle twice.
+
+How a tunable reaches the code:
+
+* behaviours register the keys in `__init__` and read them in `setup()`, through
+  `constants.constant()` / `constants.resolve()`. `setup()` runs depth-first in
+  tree order and `ConstantParamsToBlackboard` is the first leaf, so the values
+  are on the blackboard before anything else asks for them;
+* a constructor argument left at `None` means "take the configured value", and
+  passing a number still wins — the YAML is the default for every turn in the
+  tree, not a ceiling on what one turn may be;
+* the handful settled while the tree is still being *built* — `tick_period_ms`,
+  `setup_timeout`, `recover_retries` — come from the file through
+  `tree_common.build_params()` / `constants.file_constant()`, because no
+  blackboard exists yet. Timer durations avoid this with `ConfiguredTimer`,
+  which looks its duration up when it starts.
+
+`mecanumbot_ostensive_behaviour` borrows this package's scanning and turning
+behaviours and declares the subset of these keys it uses in its own constants
+file, under the same names.
 
 ## Run examples
 

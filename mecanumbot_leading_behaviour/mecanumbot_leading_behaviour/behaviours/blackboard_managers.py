@@ -1,14 +1,32 @@
-"""Behaviours that put configuration and live measurements on the blackboard."""
+"""
+Behaviours that put configuration and live measurements on the blackboard.
+
+The constants themselves -- which tunables exist, what they default to, how the
+YAML is read -- live in `constants.py`; this module is what writes them onto the
+blackboard, alongside the experiment parameters and the runtime state.
+"""
 
 import ast
+import math
 
 import py_trees
-import yaml
 from geometry_msgs.msg import Point
 
 from mecanumbot_msgs.msg import AccessMotorCmd
 from mecanumbot_msgs.srv import SetLedStatus
 
+from mecanumbot_leading_behaviour.behaviours.constants import (  # noqa: F401  (re-export)
+    ANGLE_PARAMS,
+    INTEGER_TUNABLES,
+    PARAM_KEYS,
+    TUNABLE_DEFAULTS,
+    YAML_ROOT_KEYS,
+    constant,
+    file_constant,
+    load_params,
+    register_param_keys,
+    resolve,
+)
 from mecanumbot_leading_behaviour.behaviours.geometry import distance_xy
 from mecanumbot_leading_behaviour.behaviours.ros_interfaces import (
     AccessoryCommander,
@@ -17,9 +35,6 @@ from mecanumbot_leading_behaviour.behaviours.ros_interfaces import (
     SubjectPoseTracker,
 )
 from mecanumbot_leading_behaviour.behaviours.searching import SEARCH_BACKWARDS
-
-# The YAML files keep everything under this node name, whichever tree loads them.
-YAML_ROOT_KEYS = ("bottom_up_tree_node", "ros__parameters")
 
 LED_SERVICE = "/mecanumbot/set_led_status"
 
@@ -74,6 +89,8 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
     * search state: `patrol_checkpoints`, `patrol_current_checkpoint`,
       `patrol_direction`, `patrol_initialized`, `search_spin_sign`
     * signalling scripts: `LED_*_seq` / `_times`, `Dog_*_seq` / `_times`
+    * tunables: every key of `TUNABLE_DEFAULTS`, defaulted when the YAML file
+      does not declare it
     """
 
     SCALAR_PARAMS = (
@@ -123,6 +140,7 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
             self.SCALAR_PARAMS
             + self.ROUTE_KEYS
             + self.SEARCH_STATE_KEYS
+            + PARAM_KEYS
             + ("Dog_max_wander_allowed", "LED_start_setting", "last_distance")
         ):
             self.blackboard.register_key(key=key, access=py_trees.common.Access.WRITE)
@@ -140,8 +158,9 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
         self.accessories = AccessoryCommander(self.node)
         self.led_client = self.node.create_client(SetLedStatus, LED_SERVICE)
 
-        params = self._load_params()
+        params = load_params(self.yaml_path)
         self._write_thresholds(params)
+        self._write_tunables(params)
         self._write_scripts(params)
         self._write_route(params)
         self._write_search_state()
@@ -163,18 +182,52 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
 
     # --- internals ----------------------------------------------------------
 
-    def _load_params(self):
-        with open(self.yaml_path, "r") as handle:
-            params = yaml.safe_load(handle)
-        for key in YAML_ROOT_KEYS:
-            params = params[key]
-        return params
-
     def _write_thresholds(self, params):
         for key in self.SCALAR_PARAMS:
             setattr(self.blackboard, key, float(params[key]))
         self.blackboard.Dog_max_wander_allowed = params["Dog_max_wander_allowed"]
         self.blackboard.last_distance = 200.0
+
+    def _write_tunables(self, params):
+        """Write every tunable, filling in the packaged default for missing ones."""
+        missing = []
+        for yaml_key, blackboard_key in ANGLE_PARAMS.items():
+            default = math.degrees(TUNABLE_DEFAULTS[blackboard_key])
+            if yaml_key not in params:
+                missing.append(yaml_key)
+            setattr(
+                self.blackboard,
+                blackboard_key,
+                math.radians(float(params.get(yaml_key, default))),
+            )
+
+        for key, default in TUNABLE_DEFAULTS.items():
+            if key in ANGLE_PARAMS.values():
+                continue
+            if key not in params:
+                missing.append(key)
+            value = params.get(key, default)
+            setattr(
+                self.blackboard,
+                key,
+                int(value) if key in INTEGER_TUNABLES else float(value),
+            )
+
+        # The neck and gripper poses belong to the commander rather than to any
+        # one behaviour, so they are handed over once here instead of being
+        # threaded through every constructor that creates one.
+        AccessoryCommander.configure(
+            seek_pos=self.blackboard.neck_seek_pos,
+            level_pos=self.blackboard.neck_level_pos,
+            gripper_left=self.blackboard.gripper_left_neutral,
+            gripper_right=self.blackboard.gripper_right_neutral,
+        )
+
+        if missing:
+            self.node.get_logger().info(
+                f"{self.name}: {len(missing)} tunable(s) not in the YAML, using the "
+                f"packaged defaults: {', '.join(sorted(missing))}"
+            )
 
     def _write_scripts(self, params):
         self.blackboard.LED_start_setting = parse_led(params["LED_start_setting"][0])
@@ -213,6 +266,28 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
         # Handedness of the last turn made while looking for a person; the turns
         # back to the route unwind it. 0 until the robot has turned at all.
         self.blackboard.search_spin_sign = 0
+
+
+class ConfiguredTimer(py_trees.timers.Timer):
+    """
+    A `py_trees` timer whose duration is a blackboard constant.
+
+    `py_trees.timers.Timer` takes its duration at construction, which is while
+    the tree is being built and therefore before any YAML has been read. This
+    subclass looks the duration up when the timer starts instead, so a pause
+    between two gestures is configured in the same file as the gestures.
+    """
+
+    def __init__(self, name, key):
+        super().__init__(name=name, duration=0.0)
+        self.key = key
+        self.blackboard = self.attach_blackboard_client(name=name)
+        self.blackboard.register_key(key=key, access=py_trees.common.Access.READ)
+
+    def initialise(self):
+        """Take the duration from the blackboard, then start the timer."""
+        self.duration = float(constant(self.blackboard, self.key))
+        super().initialise()
 
 
 class DistanceToBlackboard(py_trees.behaviour.Behaviour):

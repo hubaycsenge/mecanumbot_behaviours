@@ -10,6 +10,11 @@ for the `mecanumbot_demo_behaviours` package.
 
 import py_trees
 
+from mecanumbot_leading_behaviour.behaviours.constants import (
+    constant,
+    register_param_keys,
+    resolve,
+)
 from mecanumbot_leading_behaviour.behaviours.geometry import (
     calculate_facing_orientation,
     distance_xy,
@@ -68,19 +73,20 @@ class Approach(py_trees.behaviour.Behaviour):
         name="Approach",
         target_type=SUBJECT,
         mode="exact",
-        target_timeout=3.0,
-        goal_timeout=10.0,
-        sight_timeout=1.0,
+        target_timeout=None,
+        goal_timeout=None,
+        sight_timeout=None,
     ):
         super().__init__(name)
         self.target_type = target_type
         self.mode = mode
-        self.target_timeout = float(target_timeout)
-        self.goal_timeout = float(goal_timeout)
-        self.sight_timeout = float(sight_timeout)
+        self.target_timeout = target_timeout
+        self.goal_timeout = goal_timeout
+        self.sight_timeout = sight_timeout
 
         self.blackboard = self.attach_blackboard_client(name=name)
         register_target_keys(self.blackboard)
+        register_param_keys(self.blackboard)
         self.blackboard.register_key(
             "robot_closeness_threshold", access=py_trees.common.Access.READ
         )
@@ -96,6 +102,15 @@ class Approach(py_trees.behaviour.Behaviour):
 
     def setup(self, **kwargs):
         self.node = kwargs["node"]
+        self.target_timeout = float(
+            resolve(self.target_timeout, self.blackboard, "approach_target_timeout")
+        )
+        self.goal_timeout = float(
+            resolve(self.goal_timeout, self.blackboard, "approach_goal_timeout")
+        )
+        self.sight_timeout = float(
+            resolve(self.sight_timeout, self.blackboard, "sight_timeout")
+        )
         self.pose = RobotPoseTracker(self.node)
         self.nav2 = Nav2GoalMonitor(self.node)
         self.people = (
@@ -174,10 +189,12 @@ class Approach(py_trees.behaviour.Behaviour):
         )
 
     def _send_goal(self):
+        # Walking up to a human is stepped, so the human distance is an
+        # experiment parameter; a route target only needs a sane stride.
         go_threshold = (
             self.blackboard.robot_approach_distance
             if is_human(self.target_type)
-            else 1.0
+            else constant(self.blackboard, "route_step_distance")
         )
         goal = pose_to_goal(
             self._target_position,
@@ -209,11 +226,12 @@ class Approach(py_trees.behaviour.Behaviour):
 class CheckSubjectTargetSuccess(py_trees.behaviour.Behaviour):
     """SUCCESS once the human stands within `target_reached_threshold` of the target."""
 
-    def __init__(self, name="CheckSubjectTargetSuccess", sight_timeout=1.0):
+    def __init__(self, name="CheckSubjectTargetSuccess", sight_timeout=None):
         super().__init__(name)
-        self.sight_timeout = float(sight_timeout)
+        self.sight_timeout = sight_timeout
 
         self.blackboard = self.attach_blackboard_client(name=name)
+        register_param_keys(self.blackboard, "sight_timeout")
         self.blackboard.register_key(
             "target_position", access=py_trees.common.Access.READ
         )
@@ -223,6 +241,9 @@ class CheckSubjectTargetSuccess(py_trees.behaviour.Behaviour):
 
     def setup(self, **kwargs):
         self.node = kwargs["node"]
+        self.sight_timeout = float(
+            resolve(self.sight_timeout, self.blackboard, "sight_timeout")
+        )
         self.people = PeopleTracker(self.node, self.sight_timeout)
         self.logger.info(f"{self.name}: Setup complete")
 

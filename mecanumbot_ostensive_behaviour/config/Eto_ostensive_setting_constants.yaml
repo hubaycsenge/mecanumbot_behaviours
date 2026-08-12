@@ -78,6 +78,11 @@ ostensive_bt_node:
     # somebody, at conversational distance.
     focus_turn_speed: 0.4
 
+    # How long `FaceTarget` gets to bring the addressee into the deadband before
+    # the exchange is given up on. Only the one-shot turn is bounded; the
+    # version that runs beside the cue decoder ends with its parallel instead.
+    focus_timeout: 20.0
+
     # ----- Reading the direction cue -----------------------------------------
     # Wrist-to-shoulder distance, in body scales, before the arm counts as held
     # out rather than bent.
@@ -112,6 +117,46 @@ ostensive_bt_node:
     # ----- Acknowledgement nod -----------------------------------------------
     # Neck tilt positions (2.0 .. 8.6, larger looks further up) and how long each
     # is held. The last entry is where the head is left, so it should stay the
-    # lifted seeking pose (7.0) the rest of the exchange expects.
+    # lifted seeking pose -- `neck_seek_pos` below, which the loader checks it
+    # against and warns about if the two drift apart.
     ack_neck_seq: [7.6, 6.2, 7.6, 7.0]
     ack_neck_times: [0.35, 0.35, 0.35, 0.3]
+
+    # ==========================================================================
+    # Tunables of `mecanumbot_leading_behaviour`, whose scanning and turning
+    # behaviours this tree borrows. Declared here under exactly the names that
+    # package reads, so the ostensive condition's turns are described in the
+    # ostensive file rather than inherited silently. Every one is optional:
+    # omit it and that package's own default applies.
+    #
+    # Identical to ostensive_setting_constants.yaml -- how the robot turns does
+    # not depend on the room, only on how much floor it has to cross, which is
+    # what the room-dependent values above cover.
+    # ==========================================================================
+
+    # ----- Tree runtime -------------------------------------------------------
+    tick_period_ms: 100.0
+    setup_timeout: 15.0
+
+    # ----- Looking around when nobody is there to be addressed ----------------
+    sight_timeout: 1.0
+    scan_spin_speed: 0.5
+    scan_timeout: 10.0
+
+    # ----- Rotation profile ---------------------------------------------------
+    # `focus_turn_speed` above overrides `turn_max_speed` for the re-centring
+    # turns, so that one only applies to the look-around.
+    turn_max_speed: 0.6
+    turn_accel: 0.8
+    turn_decel_gain: 1.6
+    turn_min_speed: 0.12
+    turn_tolerance_deg: 3.0
+    facing_epsilon_deg: 1.5
+    turn_timeout: 20.0
+    turn_nav2_wait: 2.0
+
+    # ----- Neck and gripper poses ---------------------------------------------
+    neck_seek_pos: 7.0
+    neck_level_pos: 6.0
+    gripper_left_neutral: 6.83
+    gripper_right_neutral: 3.36

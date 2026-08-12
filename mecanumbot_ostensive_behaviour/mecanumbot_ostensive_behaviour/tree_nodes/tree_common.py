@@ -15,13 +15,17 @@ import py_trees_ros
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 
+from mecanumbot_leading_behaviour.behaviours.constants import (
+    file_constant,
+    load_params,
+)
+
 PACKAGE_NAME = "mecanumbot_ostensive_behaviour"
 
 # The ROS node name, and the root key the constants YAML is nested under.
 NODE_NAME = "ostensive_bt_node"
 
-TICK_PERIOD_MS = 100.0
-SETUP_TIMEOUT_S = 15.0
+YAML_ROOT_KEYS = (NODE_NAME, "ros__parameters")
 
 
 def resolve_yaml_path(tree_name, default_filename):
@@ -43,16 +47,41 @@ def resolve_yaml_path(tree_name, default_filename):
     return fallback
 
 
-def run_tree(
-    create_root, tree_name, default_yaml, args=None, tick_period_ms=TICK_PERIOD_MS
-):
-    """Build, set up and spin one behaviour tree."""
+def build_params(yaml_path):
+    """
+    Read the constants file for the values needed before the first tick.
+
+    The tick period and the setup timeout are settled while the tree is being
+    built, which is before `OstensiveParamsToBlackboard` runs, so they come from
+    the file. An unreadable file is not reported here -- the loader behaviour
+    does that properly a moment later.
+    """
+    try:
+        return load_params(yaml_path, YAML_ROOT_KEYS)
+    except Exception as error:  # unreadable, malformed, or missing the root key
+        print(f"[tree_common] could not pre-read {yaml_path} ({error}); using defaults")
+        return {}
+
+
+def run_tree(create_root, tree_name, default_yaml, args=None, tick_period_ms=None):
+    """
+    Build, set up and spin one behaviour tree.
+
+    `tick_period_ms` defaults to the constants file's `tick_period_ms`; passing
+    one overrides it.
+    """
     rclpy.init(args=args)
 
     yaml_path = resolve_yaml_path(tree_name, default_yaml)
+    params = build_params(yaml_path)
+    if tick_period_ms is None:
+        tick_period_ms = file_constant(params, "tick_period_ms")
+
     tree_node = py_trees_ros.trees.BehaviourTree(root=create_root(yaml_path=yaml_path))
-    tree_node.setup(timeout=SETUP_TIMEOUT_S, node_name=NODE_NAME)
+    tree_node.setup(
+        timeout=float(file_constant(params, "setup_timeout")), node_name=NODE_NAME
+    )
     print(f"Starting {tree_name} behaviour tree using YAML: {yaml_path}")
 
-    tree_node.tick_tock(period_ms=tick_period_ms)
+    tree_node.tick_tock(period_ms=float(tick_period_ms))
     rclpy.spin(tree_node.node)

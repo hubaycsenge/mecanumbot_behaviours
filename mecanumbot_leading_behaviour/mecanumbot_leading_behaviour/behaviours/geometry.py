@@ -13,7 +13,8 @@ COUNTERCLOCKWISE = 1
 CLOCKWISE = -1
 
 # Below this the robot is considered "already facing there" and no turn is made,
-# even when a turn direction was requested.
+# even when a turn direction was requested. The fallback for the `facing_epsilon`
+# constant, which the turning behaviours pass in from the YAML.
 FACING_EPSILON = math.radians(1.5)
 
 
@@ -47,7 +48,9 @@ def calculate_facing_orientation(robot_pose, target_position):
     return quaternion_from_yaw(bearing_to(robot_pose.position, target_position))
 
 
-def signed_rotation(current_yaw, desired_yaw, preferred_sign=None):
+def signed_rotation(
+    current_yaw, desired_yaw, preferred_sign=None, epsilon=FACING_EPSILON
+):
     """Rotation [rad] that turns `current_yaw` into `desired_yaw`.
 
     Without a preference the shortest way round is taken. With `preferred_sign`
@@ -55,9 +58,11 @@ def signed_rotation(current_yaw, desired_yaw, preferred_sign=None):
     taking the long way if it has to. That is what lets the robot unwind a
     search turn -- if it looked back for its human clockwise, it returns to its
     route counterclockwise instead of carrying on around.
+
+    A rotation smaller than `epsilon` is reported as no rotation at all.
     """
     delta = normalize_angle(desired_yaw - current_yaw)
-    if abs(delta) < FACING_EPSILON:
+    if abs(delta) < epsilon:
         return 0.0
     if preferred_sign and (delta > 0.0) != (preferred_sign > 0):
         delta -= math.copysign(2.0 * math.pi, delta)

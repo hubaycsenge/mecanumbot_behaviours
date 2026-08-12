@@ -1,21 +1,40 @@
+import argparse
+
 import rclpy
 import py_trees
 import py_trees_ros
 from geometry_msgs.msg import PoseStamped, PoseArray
 from nav2_msgs.action import NavigateToPose
 from mecanumbot_demo_behaviours.behaviours.movement_managers import (
+    DEMO_DEFAULTS,
     ProcessDetections,
     GetNextWaypoint,
 )
 from mecanumbot_demo_behaviours.behaviours.blackboard_managers import (
     MapWaypointsToBlackboard,
 )
+from mecanumbot_leading_behaviour.behaviours.constants import TUNABLE_DEFAULTS
 
 
-def create_tree():
+def get_map_name():
+    """`--map_name`, else the `demo_map_name` default.
+
+    This tree loads no constants YAML -- it has no route, no gestures and no
+    thresholds to read -- so the map it patrols is named on the command line
+    rather than on the blackboard.
+    """
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--map_name", type=str, default=None)
+    parsed, _ = parser.parse_known_args()
+    return parsed.map_name or DEMO_DEFAULTS["demo_map_name"]
+
+
+def create_tree(map_name=None):
     # 1. The Root Priority Selector
     root = py_trees.composites.Selector(name="Priority_Root", memory=False)
-    map_waypoints_manager = MapWaypointsToBlackboard(base_name="AI_dept")
+    map_waypoints_manager = MapWaypointsToBlackboard(
+        base_name=map_name if map_name is not None else get_map_name()
+    )
     # 2. INTERCEPT BRANCH
 
     intercept_sequence = py_trees.composites.Sequence(name="Intercept_Seq", memory=True)
@@ -75,9 +94,9 @@ def main():
         ).setup
     )
 
-    # Setup and tick the tree at 10Hz
-    ros_tree.setup(timeout=15.0)
-    ros_tree.tick_tock(period_ms=100)
+    # Setup and tick the tree at the library's standard rate
+    ros_tree.setup(timeout=float(TUNABLE_DEFAULTS["setup_timeout"]))
+    ros_tree.tick_tock(period_ms=float(TUNABLE_DEFAULTS["tick_period_ms"]))
 
     rclpy.spin(ros_tree.node)
     rclpy.shutdown()

@@ -10,12 +10,25 @@ Angles are declared in the YAML in degrees, because that is how anybody tuning a
 field of view or a deadband thinks about them, and are written to the blackboard
 in radians under the name without the `_deg` suffix. No behaviour converts an
 angle a second time.
+
+The file also sets the handful of `mecanumbot_leading_behaviour` tunables this
+tree exercises -- it borrows that package's scanning and turning behaviours, and
+they read their constants off the blackboard under fixed names. Declaring them
+here under those same names is what puts the ostensive condition's turn speeds
+and head poses in the ostensive file, instead of leaving them to the leading
+package's defaults. Anything not declared falls back to those defaults, so this
+file only has to mention what it actually means to set.
 """
 
 import math
 
 import py_trees
-import yaml
+
+from mecanumbot_leading_behaviour.behaviours.constants import (
+    TUNABLE_DEFAULTS as SHARED_DEFAULTS,
+    load_params,
+)
+from mecanumbot_leading_behaviour.behaviours.ros_interfaces import AccessoryCommander
 
 # Every tree in this package registers under this node name, and the YAML is
 # nested under the same key -- the convention the leading package established.
@@ -32,6 +45,7 @@ SCALAR_PARAMS = (
     "target_max_image_jump",
     "track_loss_timeout",
     "focus_turn_speed",
+    "focus_timeout",
     "cue_min_extension",
     "cue_full_extension",
     "cue_min_lateral",
@@ -40,6 +54,38 @@ SCALAR_PARAMS = (
     "cue_distance",
     "cue_goal_timeout",
 )
+
+# Tunables owned by `mecanumbot_leading_behaviour` that this file may set, under
+# exactly the blackboard names that package's behaviours read. Optional: a
+# missing one keeps the value in that package's `TUNABLE_DEFAULTS`.
+SHARED_SCALARS = (
+    # the tree runner, read from the file rather than from the blackboard
+    "tick_period_ms",
+    "setup_timeout",
+    # FindPeople, the look-around when nobody is there to be addressed
+    "sight_timeout",
+    "scan_spin_speed",
+    "scan_timeout",
+    # the SmoothTurner profile behind every in-place turn, including the
+    # re-centring ones (whose top speed is `focus_turn_speed` above)
+    "turn_max_speed",
+    "turn_accel",
+    "turn_decel_gain",
+    "turn_min_speed",
+    "turn_timeout",
+    "turn_nav2_wait",
+    # the neck and gripper poses the nod moves between
+    "neck_seek_pos",
+    "neck_level_pos",
+    "gripper_left_neutral",
+    "gripper_right_neutral",
+)
+
+# Shared tunables declared in degrees, under the same rule as ANGLE_PARAMS.
+SHARED_ANGLE_PARAMS = {
+    "turn_tolerance_deg": "turn_tolerance",
+    "facing_epsilon_deg": "facing_epsilon",
+}
 
 INTEGER_PARAMS = ("wave_min_reversals",)
 
@@ -68,6 +114,10 @@ PARAM_KEYS = (
     + tuple(ANGLE_PARAMS.values())
 )
 
+# Written to the blackboard as well, but read there by the leading package's
+# behaviours through its own `register_param_keys`, not by anything here.
+SHARED_KEYS = SHARED_SCALARS + tuple(SHARED_ANGLE_PARAMS.values())
+
 
 def register_param_keys(blackboard):
     """Give a blackboard client read access to every constant loaded from the YAML."""
@@ -89,13 +139,13 @@ class OstensiveParamsToBlackboard(py_trees.behaviour.Behaviour):
         super().__init__(name=name)
         self.yaml_path = yaml_path
         self.blackboard = self.attach_blackboard_client(name=name)
-        for key in PARAM_KEYS + STATE_KEYS:
+        for key in PARAM_KEYS + SHARED_KEYS + STATE_KEYS:
             self.blackboard.register_key(key=key, access=py_trees.common.Access.WRITE)
 
     def setup(self, **kwargs):
         """Read the YAML and write every constant to the blackboard."""
         self.node = kwargs["node"]
-        params = self._load_params()
+        params = load_params(self.yaml_path, YAML_ROOT_KEYS)
 
         for key in SCALAR_PARAMS:
             setattr(self.blackboard, key, float(params[key]))
@@ -110,6 +160,7 @@ class OstensiveParamsToBlackboard(py_trees.behaviour.Behaviour):
                 self.blackboard, blackboard_key, math.radians(float(params[yaml_key]))
             )
 
+        self._write_shared(params)
         self._check_nod()
         self.feedback_message = "constants loaded"
         self.node.get_logger().info(
@@ -129,21 +180,44 @@ class OstensiveParamsToBlackboard(py_trees.behaviour.Behaviour):
 
     # --- internals ------------------------------------------------------------
 
-    def _load_params(self):
-        with open(self.yaml_path, "r") as handle:
-            params = yaml.safe_load(handle)
-        for key in YAML_ROOT_KEYS:
-            params = params[key]
-        return params
+    def _write_shared(self, params):
+        """Write the leading library's tunables, defaulting the undeclared ones."""
+        for key in SHARED_SCALARS:
+            setattr(self.blackboard, key, float(params.get(key, SHARED_DEFAULTS[key])))
+        for yaml_key, blackboard_key in SHARED_ANGLE_PARAMS.items():
+            default = math.degrees(SHARED_DEFAULTS[blackboard_key])
+            setattr(
+                self.blackboard,
+                blackboard_key,
+                math.radians(float(params.get(yaml_key, default))),
+            )
+
+        # The head poses belong to the commander rather than to any one
+        # behaviour; the nod in `acknowledge.py` moves the same neck.
+        AccessoryCommander.configure(
+            seek_pos=self.blackboard.neck_seek_pos,
+            level_pos=self.blackboard.neck_level_pos,
+            gripper_left=self.blackboard.gripper_left_neutral,
+            gripper_right=self.blackboard.gripper_right_neutral,
+        )
 
     def _check_nod(self):
-        """Warn rather than fail when the nod sequence and its timings disagree."""
+        """Warn rather than fail when the nod does not agree with itself."""
         positions = self.blackboard.ack_neck_seq
         times = self.blackboard.ack_neck_times
         if len(positions) != len(times):
             self.node.get_logger().warn(
                 f"{self.name}: ack_neck_seq has {len(positions)} entries but "
                 f"ack_neck_times has {len(times)}; the nod will stop at the shorter one"
+            )
+        # The nod leaves the head wherever its last step put it, and the rest of
+        # the exchange expects the seeking pose. Now that both are in this file,
+        # the two can be checked against each other.
+        seek = self.blackboard.neck_seek_pos
+        if positions and abs(positions[-1] - seek) > 1e-3:
+            self.node.get_logger().warn(
+                f"{self.name}: the nod ends at n_pos={positions[-1]}, not at the "
+                f"seeking pose neck_seek_pos={seek}; the head will stay there"
             )
 
 

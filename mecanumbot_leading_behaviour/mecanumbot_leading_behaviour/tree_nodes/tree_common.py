@@ -13,6 +13,10 @@ import py_trees_ros
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 
+from mecanumbot_leading_behaviour.behaviours.constants import (
+    file_constant,
+    load_params,
+)
 from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach
 from mecanumbot_leading_behaviour.behaviours.searching import (
     ManageSearchCheckpoint,
@@ -27,8 +31,22 @@ PACKAGE_NAME = "mecanumbot_leading_behaviour"
 # constants YAML files are nested under.
 NODE_NAME = "bottom_up_tree_node"
 
-TICK_PERIOD_MS = 100.0
-SETUP_TIMEOUT_S = 15.0
+
+def build_params(yaml_path):
+    """
+    Read the constants file for the values needed while building the tree.
+
+    The tick period, the setup timeout and a decorator's retry count are all
+    settled before the first tick, which is before `ConstantParamsToBlackboard`
+    has run, so they come from the file rather than from the blackboard. A file
+    that cannot be read is not fatal here -- the loader behaviour will report it
+    properly a moment later, and until then the packaged defaults apply.
+    """
+    try:
+        return load_params(yaml_path)
+    except Exception as error:  # unreadable, malformed, or missing the root key
+        print(f"[tree_common] could not pre-read {yaml_path} ({error}); using defaults")
+        return {}
 
 
 def resolve_yaml_path(tree_name, default_filename):
@@ -70,7 +88,7 @@ def create_recover_lost_sequence(ID=""):
     )
     recovery.add_children(
         [
-            WaitForPerson(name=ID + "InterruptOnPersonFound", sight_timeout=1.0),
+            WaitForPerson(name=ID + "InterruptOnPersonFound"),
             py_trees.decorators.Repeat(
                 name=ID + "SearchLoop", child=patrol, num_success=-1
             ),
@@ -79,16 +97,25 @@ def create_recover_lost_sequence(ID=""):
     return recovery
 
 
-def run_tree(
-    create_root, tree_name, default_yaml, args=None, tick_period_ms=TICK_PERIOD_MS
-):
-    """Build, set up and spin one behaviour tree."""
+def run_tree(create_root, tree_name, default_yaml, args=None, tick_period_ms=None):
+    """
+    Build, set up and spin one behaviour tree.
+
+    `tick_period_ms` defaults to the constants file's `tick_period_ms`; passing
+    one overrides it.
+    """
     rclpy.init(args=args)
 
     yaml_path = resolve_yaml_path(tree_name, default_yaml)
+    params = build_params(yaml_path)
+    if tick_period_ms is None:
+        tick_period_ms = file_constant(params, "tick_period_ms")
+
     tree_node = py_trees_ros.trees.BehaviourTree(root=create_root(yaml_path=yaml_path))
-    tree_node.setup(timeout=SETUP_TIMEOUT_S, node_name=NODE_NAME)
+    tree_node.setup(
+        timeout=float(file_constant(params, "setup_timeout")), node_name=NODE_NAME
+    )
     print(f"Starting {tree_name} behaviour tree using YAML: {yaml_path}")
 
-    tree_node.tick_tock(period_ms=tick_period_ms)
+    tree_node.tick_tock(period_ms=float(tick_period_ms))
     rclpy.spin(tree_node.node)

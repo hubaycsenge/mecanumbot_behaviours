@@ -18,6 +18,11 @@ import math
 
 import py_trees
 
+from mecanumbot_leading_behaviour.behaviours.constants import (
+    constant,
+    register_param_keys,
+    resolve,
+)
 from mecanumbot_leading_behaviour.behaviours.geometry import (
     COUNTERCLOCKWISE,
     bearing_to,
@@ -49,6 +54,16 @@ SHORTEST = "shortest"
 UNWIND = "unwind"
 REPEAT = "repeat"
 
+# `SmoothTurner` keyword -> the blackboard constant that supplies it when the
+# call site does not. `InPlaceTurn` fills these in before it builds the turner.
+TURNER_PARAMS = {
+    "max_speed": "turn_max_speed",
+    "accel": "turn_accel",
+    "decel_gain": "turn_decel_gain",
+    "min_speed": "turn_min_speed",
+    "tolerance": "turn_tolerance",
+}
+
 
 class SmoothTurner:
     """Velocity-profiled in-place rotation by a signed angle.
@@ -56,6 +71,10 @@ class SmoothTurner:
     Progress is measured on AMCL yaw and dead-reckoned from the commanded speed
     between pose updates, so a slow localisation update rate does not stall the
     profile.
+
+    The signature defaults are only what a turner built outside a behaviour
+    gets; every one the trees create is handed the configured values through
+    `TURNER_PARAMS`.
     """
 
     def __init__(
@@ -163,22 +182,36 @@ class InPlaceTurn(py_trees.behaviour.Behaviour):
 
     Subclasses decide *what* to turn by; this class owns the ROS handles, the
     velocity profile, the head pose, the nav2 hand-over and the exit ramp.
+
+    `timeout` and `nav2_wait` default to None, meaning "take the configured
+    value". A caller may still pass a number, which wins -- the constants are
+    the default for every turn in the tree, not a ceiling on what one turn is
+    allowed to be.
     """
 
-    def __init__(self, name, head=None, timeout=20.0, nav2_wait=2.0, **turner_kwargs):
+    def __init__(self, name, head=None, timeout=None, nav2_wait=None, **turner_kwargs):
         super().__init__(name)
         self.head = head
-        self.timeout = float(timeout)
-        self.nav2_wait = float(nav2_wait)
+        self.timeout = timeout
+        self.nav2_wait = nav2_wait
         self._turner_kwargs = turner_kwargs
 
         self.blackboard = self.attach_blackboard_client(name=name)
         self.blackboard.register_key(
             key=SPIN_SIGN_KEY, access=py_trees.common.Access.WRITE
         )
+        register_param_keys(self.blackboard)
 
     def setup(self, **kwargs):
         self.node = kwargs["node"]
+        self.timeout = float(resolve(self.timeout, self.blackboard, "turn_timeout"))
+        self.nav2_wait = float(
+            resolve(self.nav2_wait, self.blackboard, "turn_nav2_wait")
+        )
+        self.facing_epsilon = float(constant(self.blackboard, "facing_epsilon"))
+        for keyword, key in TURNER_PARAMS.items():
+            self._turner_kwargs.setdefault(keyword, constant(self.blackboard, key))
+
         self.pose = RobotPoseTracker(self.node)
         self.velocity = VelocityCommander(self.node)
         self.accessories = AccessoryCommander(self.node)
@@ -272,9 +305,9 @@ class TurnToward(InPlaceTurn):
         target_type=SUBJECT,
         direction=None,
         head=None,
-        corrections=1,
-        target_timeout=3.0,
-        sight_timeout=1.0,
+        corrections=None,
+        target_timeout=None,
+        sight_timeout=None,
         **kwargs,
     ):
         super().__init__(
@@ -288,13 +321,22 @@ class TurnToward(InPlaceTurn):
             if direction is not None
             else (SHORTEST if is_human(target_type) else UNWIND)
         )
-        self.corrections = int(corrections)
-        self.target_timeout = float(target_timeout)
-        self.sight_timeout = float(sight_timeout)
+        self.corrections = corrections
+        self.target_timeout = target_timeout
+        self.sight_timeout = sight_timeout
         register_target_keys(self.blackboard)
 
     def setup(self, **kwargs):
         super().setup(**kwargs)
+        self.corrections = int(
+            resolve(self.corrections, self.blackboard, "turn_corrections")
+        )
+        self.target_timeout = float(
+            resolve(self.target_timeout, self.blackboard, "turn_target_timeout")
+        )
+        self.sight_timeout = float(
+            resolve(self.sight_timeout, self.blackboard, "sight_timeout")
+        )
         self.people = (
             PeopleTracker(self.node, self.sight_timeout)
             if is_human(self.target_type)
@@ -359,6 +401,7 @@ class TurnToward(InPlaceTurn):
             self.pose.yaw,
             bearing_to(self.pose.position, self._target_position),
             self.preferred_sign(self.direction),
+            epsilon=self.facing_epsilon,
         )
         if is_human(self.target_type):
             self.record_spin_sign(rotation)
@@ -383,7 +426,9 @@ class TurnToward(InPlaceTurn):
             if fresh is not None:
                 self._target_position = fresh
                 error = signed_rotation(
-                    self.pose.yaw, bearing_to(self.pose.position, fresh)
+                    self.pose.yaw,
+                    bearing_to(self.pose.position, fresh),
+                    epsilon=self.facing_epsilon,
                 )
                 if error != 0.0:
                     self.turner.begin(error)
@@ -404,10 +449,16 @@ class RelativeTurnPattern(InPlaceTurn):
     """
 
     def __init__(
-        self, name="RelativeTurnPattern", step_angle_deg=20.0, head=HEAD_SEEK, **kwargs
+        self, name="RelativeTurnPattern", step_angle=None, head=HEAD_SEEK, **kwargs
     ):
         super().__init__(name, head=head, **kwargs)
-        step = math.radians(float(step_angle_deg))
+        self.step_angle = step_angle
+
+    def setup(self, **kwargs):
+        super().setup(**kwargs)
+        # `attention_turn_step` is declared in degrees and reaches the
+        # blackboard in radians, like every other angle.
+        step = float(resolve(self.step_angle, self.blackboard, "attention_turn_step"))
         self._pattern = (step, -2.0 * step, 2.0 * step, -step)
 
     def initialise(self):
@@ -454,29 +505,55 @@ class ScanSpin(InPlaceTurn):
     place a person was seen, and is stored on the blackboard so the turn back to
     the route can unwind it. `revolutions=None` spins until somebody is seen or
     the timeout expires.
+
+    Which constants configure the scan is a class attribute, so the subclasses
+    below get their own entries in the YAML: a glance around and the recovery
+    patrol's full revolution are different gestures and are tuned apart.
     """
+
+    SPEED_KEY = "scan_spin_speed"
+    TIMEOUT_KEY = "scan_timeout"
+    # Set by a subclass whose sweep length is configured too; where it is None,
+    # `revolutions=None` keeps its plain meaning of "spin until something stops
+    # the scan".
+    REVOLUTIONS_KEY = None
 
     def __init__(
         self,
         name="ScanSpin",
         revolutions=1.0,
-        spin_speed=0.5,
+        spin_speed=None,
         direction=None,
         stop_on_person=True,
-        sight_timeout=1.0,
-        timeout=10.0,
+        sight_timeout=None,
+        timeout=None,
         head=HEAD_SEEK,
         **kwargs,
     ):
-        kwargs.setdefault("max_speed", float(spin_speed))
         super().__init__(name, head=head, timeout=timeout, **kwargs)
-        self.revolutions = None if revolutions is None else float(revolutions)
+        self.revolutions = revolutions
+        self.spin_speed = spin_speed
         self.direction = direction
         self.stop_on_person = bool(stop_on_person)
-        self.sight_timeout = float(sight_timeout)
+        self.sight_timeout = sight_timeout
 
     def setup(self, **kwargs):
+        # The spin speed *is* the turner's top speed, and the timeout is the one
+        # InPlaceTurn would otherwise resolve, so both have to be settled before
+        # the profile is built.
+        speed = resolve(self.spin_speed, self.blackboard, self.SPEED_KEY)
+        self._turner_kwargs.setdefault("max_speed", float(speed))
+        self.timeout = float(resolve(self.timeout, self.blackboard, self.TIMEOUT_KEY))
+
         super().setup(**kwargs)
+        self.sight_timeout = float(
+            resolve(self.sight_timeout, self.blackboard, "sight_timeout")
+        )
+        if self.REVOLUTIONS_KEY is not None:
+            self.revolutions = resolve(
+                self.revolutions, self.blackboard, self.REVOLUTIONS_KEY
+            )
+        self.revolutions = None if self.revolutions is None else float(self.revolutions)
         self.people = PeopleTracker(self.node, self.sight_timeout)
 
     def initialise(self):
@@ -534,7 +611,9 @@ class ScanSpin(InPlaceTurn):
         if last_pose is None:
             return COUNTERCLOCKWISE
         rotation = signed_rotation(
-            self.pose.yaw, bearing_to(self.pose.position, last_pose.position)
+            self.pose.yaw,
+            bearing_to(self.pose.position, last_pose.position),
+            epsilon=self.facing_epsilon,
         )
         if rotation == 0.0:
             return COUNTERCLOCKWISE
@@ -542,40 +621,40 @@ class ScanSpin(InPlaceTurn):
 
 
 class FindPeople(ScanSpin):
-    """Spin until a fresh people detection arrives, FAILURE if nobody shows up."""
+    """
+    Spin until a fresh people detection arrives, FAILURE if nobody shows up.
 
-    def __init__(
-        self,
-        name="FindPeople",
-        spin_speed=0.5,
-        sight_timeout=1.0,
-        timeout=10.0,
-        **kwargs,
-    ):
+    Configured by `scan_spin_speed` / `scan_timeout` -- the glance-around
+    numbers, which is what this is.
+    """
+
+    def __init__(self, name="FindPeople", spin_speed=None, **kwargs):
         super().__init__(
             name,
             revolutions=None,
             spin_speed=spin_speed,
             stop_on_person=True,
-            sight_timeout=sight_timeout,
-            timeout=timeout,
             **kwargs,
         )
 
 
 class Spin360(ScanSpin):
-    """One full scanning revolution.
+    """A full scanning revolution, configured by the `full_scan_*` constants.
 
     Detections are not acted on here: this runs inside the recovery parallel
-    where `WaitForPerson` is the branch that reacts to seeing somebody.
+    where `WaitForPerson` is the branch that reacts to seeing somebody. It is
+    slower and longer than a glance because it is a search of the room.
     """
 
-    def __init__(self, name="Spin360", spin_speed=0.3, timeout=45.0, **kwargs):
+    SPEED_KEY = "full_scan_spin_speed"
+    TIMEOUT_KEY = "full_scan_timeout"
+    REVOLUTIONS_KEY = "full_scan_revolutions"
+
+    def __init__(self, name="Spin360", spin_speed=None, revolutions=None, **kwargs):
         super().__init__(
             name,
-            revolutions=1.0,
+            revolutions=revolutions,
             spin_speed=spin_speed,
             stop_on_person=False,
-            timeout=timeout,
             **kwargs,
         )

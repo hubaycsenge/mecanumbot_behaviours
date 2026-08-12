@@ -2,6 +2,11 @@
 
 import py_trees
 
+from mecanumbot_leading_behaviour.behaviours.constants import (
+    constant,
+    register_param_keys,
+    resolve,
+)
 from mecanumbot_leading_behaviour.behaviours.geometry import (
     closest_checkpoint_index,
     distance_xy,
@@ -162,15 +167,16 @@ class DogResumeLeading(py_trees.behaviour.Behaviour):
     """
 
     # How far past a checkpoint (as a fraction of the stretch to the next one)
-    # the human has to be before it counts as walked. Keeps somebody standing
-    # right on a checkpoint from flipping the decision back and forth.
-    PASSED_MARGIN = 0.15
+    # the human has to be before it counts as walked is `resume_passed_margin`,
+    # which keeps somebody standing right on a checkpoint from flipping the
+    # decision back and forth.
 
-    def __init__(self, name="DogResumeLeading", sight_timeout=1.0):
+    def __init__(self, name="DogResumeLeading", sight_timeout=None):
         super().__init__(name)
-        self.sight_timeout = float(sight_timeout)
+        self.sight_timeout = sight_timeout
 
         self.blackboard = self.attach_blackboard_client(name=name)
+        register_param_keys(self.blackboard, "sight_timeout", "resume_passed_margin")
         self.blackboard.register_key(
             "Dog_checkpoints", access=py_trees.common.Access.READ
         )
@@ -183,6 +189,9 @@ class DogResumeLeading(py_trees.behaviour.Behaviour):
 
     def setup(self, **kwargs):
         self.node = kwargs["node"]
+        self.sight_timeout = float(
+            resolve(self.sight_timeout, self.blackboard, "sight_timeout")
+        )
         self.pose = RobotPoseTracker(self.node)
         self.people = PeopleTracker(self.node, self.sight_timeout)
         self.logger.info(f"{self.name}: Setup complete")
@@ -213,7 +222,8 @@ class DogResumeLeading(py_trees.behaviour.Behaviour):
             return nearest, "nobody to place on the route"
 
         progress = route_progress(checkpoints, person_pose.position)
-        if progress > nearest + self.PASSED_MARGIN:
+        margin = constant(self.blackboard, "resume_passed_margin")
+        if progress > nearest + margin:
             return (
                 nearest + 1,
                 f"human is past checkpoint {nearest} (at {progress:.2f})",

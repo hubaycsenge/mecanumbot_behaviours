@@ -9,6 +9,71 @@ bottom_up_tree_node:
     Dog_following_max_threshold: 2.0 # maximum distance difference allowed from the robot to still consider following 
     Dog_max_wander_allowed: 2 # maximum allowed wander count before considering the subject lost
 
+    # ======================================================================
+    # Tunables. Every key below used to be a constructor default or a module
+    # constant in the behaviour library; the values here are those numbers.
+    # They are optional -- a file that omits one keeps the packaged default in
+    # `behaviours/constants.py` -- but the shipped files declare all of them so
+    # that a run is described by one file.
+    #
+    # These are the same values as in behaviour_setting_constants.yaml. What
+    # differs between the two rooms is the route and the distances above, not
+    # how the robot turns or how long it waits; a tunable that does turn out to
+    # be room-dependent belongs here with a note saying so, the way the
+    # ostensive files mark theirs.
+    #
+    # Angles are in degrees and reach the blackboard in radians, under the same
+    # name without the `_deg` suffix.
+    # ======================================================================
+
+    # ----- Tree runtime ---------------------------------------------------
+    tick_period_ms: 100.0
+    setup_timeout: 15.0
+
+    # ----- Seeing people --------------------------------------------------
+    sight_timeout: 1.0
+
+    # ----- Rotation profile -----------------------------------------------
+    turn_max_speed: 0.6
+    turn_accel: 0.8
+    turn_decel_gain: 1.6
+    turn_min_speed: 0.12
+    turn_tolerance_deg: 3.0
+    facing_epsilon_deg: 1.5
+
+    # ----- Turning behaviours ---------------------------------------------
+    turn_timeout: 20.0
+    turn_nav2_wait: 2.0
+    turn_target_timeout: 3.0
+    turn_corrections: 1
+    attention_turn_step_deg: 15.0
+
+    # ----- Scanning for people --------------------------------------------
+    scan_spin_speed: 0.5
+    scan_timeout: 10.0
+    full_scan_spin_speed: 0.3
+    full_scan_timeout: 45.0
+    full_scan_revolutions: 1.0
+
+    # ----- Approaching with nav2 -------------------------------------------
+    approach_target_timeout: 3.0
+    approach_goal_timeout: 10.0
+    route_step_distance: 1.0
+
+    # ----- Getting the human back ------------------------------------------
+    resume_passed_margin: 0.15
+    recover_retries: 3
+
+    # ----- Pacing of the signalling ----------------------------------------
+    thank_delay: 1.0
+    show_turn_delay: 2.0
+
+    # ----- Accessory poses --------------------------------------------------
+    neck_seek_pos: 7.0
+    neck_level_pos: 6.0
+    gripper_left_neutral: 6.83
+    gripper_right_neutral: 3.36
+
     Dog_checkpoints:
      #- "{'X':0.687003, 'Y':3.54149, 'Z':0.0 }" # too close to wall :/
      - "{'X':1.35244, 'Y':4.01954, 'Z':0.0 }"

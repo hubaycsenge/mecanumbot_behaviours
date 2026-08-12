@@ -9,6 +9,35 @@ bottom_up_tree_node:
     Dog_following_max_threshold: 2.0 # maximum distance difference allowed from the robot to still consider following 
     Dog_max_wander_allowed: 2 # maximum allowed wander count before considering the subject lost
 
+    # ======================================================================
+    # Demo tunables. `wander_between_people` reads these; they are optional,
+    # and a file that omits one keeps the value in `DEMO_DEFAULTS`
+    # (behaviours/movement_managers.py).
+    #
+    # The tunables of the leading behaviour library may be set here too, under
+    # the names listed in that package's `behaviours/constants.py` -- the demo
+    # trees load a constants file the same way its trees do.
+    # ======================================================================
+
+    # Spin speed of the demo's own FindPeople [rad/s]. Gentler than the leading
+    # trees' scan: it drives /cmd_vel directly, with no velocity profile.
+    demo_spin_speed: 0.2
+
+    # How old a people_fusion detection may be and still be walked up to.
+    # Longer than the leading `sight_timeout`, because wandering up to somebody
+    # who was there a moment ago is still worth doing.
+    demo_sight_timeout: 3.0
+
+    # How far short of the person the nav2 goal is placed [m].
+    demo_person_stop_distance: 0.5
+
+    # Tick period of the wander tree [ms]. Faster than the leading trees'
+    # `tick_period_ms` because the spin is commanded tick by tick.
+    demo_tick_period_ms: 10.0
+
+    # Map `hide_and_seek` patrols, when `--map_name` is not given.
+    demo_map_name: "AI_dept"
+
     Dog_checkpoints:
      - "{'X':0.687003, 'Y':3.54149, 'Z':0.0 }"
      - "{'X':-3.06462, 'Y':5.40894, 'Z':0.0 }"
