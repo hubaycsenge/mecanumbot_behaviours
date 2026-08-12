@@ -106,12 +106,13 @@ class TargetFollower:
         sight_timeout=1.0,
         max_image_jump=0.25,
         bearing_tolerance=math.radians(20.0),
+        mirror=False,
     ):
         self.node = node
         self.hfov = float(hfov)
         self.max_image_jump = float(max_image_jump)
         self.bearing_tolerance = float(bearing_tolerance)
-        self.camera = CamDetectionTracker(node, sight_timeout)
+        self.camera = CamDetectionTracker(node, sight_timeout, mirror)
         self.people = PeopleTracker(node, sight_timeout)
         self.pose = RobotPoseTracker(node)
 

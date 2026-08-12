@@ -27,10 +27,12 @@ from mecanumbot_ostensive_behaviour.behaviours.gestures import (
     raised_hand,
 )
 from mecanumbot_ostensive_behaviour.behaviours.keypoints import (
+    KEYPOINT_FIELDS,
     body_scale,
     image_centroid_x,
     keypoint,
     keypoints_from_msg,
+    mirror_joints,
     shoulder_width,
 )
 
@@ -346,3 +348,88 @@ def test_half_a_reach_is_thirty_degrees_not_forty_five():
     # shoulder actually does.
     azimuth = azimuth_from_lateral_ratio(0.75, 1.5)
     assert math.isclose(math.degrees(azimuth), 30.0, abs_tol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# A mirrored camera image
+# ---------------------------------------------------------------------------
+def test_mirroring_reflects_the_columns_and_swaps_the_side_labels():
+    joints = person(centre_x=0.4)
+    mirrored = mirror_joints(joints)
+    # The joint the model called the person's left is their right once the
+    # image is un-mirrored, and it sits the same distance the other side of
+    # the centre line.
+    assert math.isclose(
+        mirrored["right_shoulder"].x, 1.0 - joints["left_shoulder"].x, abs_tol=1e-9
+    )
+    assert math.isclose(mirrored["right_shoulder"].y, joints["left_shoulder"].y)
+    assert math.isclose(mirrored["nose"].x, 1.0 - joints["nose"].x, abs_tol=1e-9)
+    assert len(mirrored) == 17
+
+
+def test_mirroring_leaves_a_missing_joint_missing():
+    # (0, 0) means "not found", not "at the top-left corner": reflecting it
+    # into (1, 0) would invent a joint on the far side of the image.
+    mirrored = mirror_joints(person(missing=("left_wrist",)))
+    assert not mirrored["right_wrist"].visible
+
+
+def test_mirroring_twice_is_the_original_pose():
+    joints = person(centre_x=0.35, left_wrist=(0.8, 0.2))
+    twice = mirror_joints(mirror_joints(joints))
+    for name, point in joints.items():
+        assert math.isclose(twice[name].x, point.x, abs_tol=1e-9)
+        assert math.isclose(twice[name].y, point.y, abs_tol=1e-9)
+        assert twice[name].visible == point.visible
+
+
+def test_mirroring_reverses_which_side_of_the_frame_a_person_is_on():
+    # This is the turn: `KeepTargetInFocus` turns on this value, so a mirror
+    # here is a robot that turns away from the person instead of towards them.
+    joints = person(centre_x=0.3)
+    assert math.isclose(
+        image_centroid_x(mirror_joints(joints)),
+        1.0 - image_centroid_x(joints),
+        abs_tol=1e-9,
+    )
+
+
+def test_mirroring_keeps_a_raised_hand_raised_on_the_other_hand():
+    # A horizontal mirror does not move anything up or down, so the gesture
+    # still reads -- it is only the hand it is attributed to that changes.
+    joints = person(left_wrist=(0.62, 0.15))
+    assert raised_hand(joints) == "left"
+    assert raised_hand(mirror_joints(joints)) == "right"
+
+
+def test_mirroring_reverses_the_direction_a_cue_points():
+    joints = person(left_wrist=(0.5 + HALF_WIDTH + 0.30, SHOULDER_Y))
+    cue = pointing_cue(joints)
+    mirrored = pointing_cue(mirror_joints(joints))
+    assert cue is not None and mirrored is not None
+    assert mirrored.side == "right"
+    assert math.isclose(mirrored.azimuth, -cue.azimuth, abs_tol=1e-9)
+
+
+def test_keypoints_from_msg_mirrors_on_request():
+    class _Position:
+        def __init__(self, x, y):
+            self.x, self.y = x, y
+
+    class _Pose:
+        def __init__(self, x, y):
+            self.position = _Position(x, y)
+
+    class _Keypoints:
+        pass
+
+    message = _Keypoints()
+    for field in KEYPOINT_FIELDS:
+        setattr(message, field, _Pose(0.25, 0.5))
+    message.left_wrist = _Pose(0.9, 0.2)
+
+    plain = keypoints_from_msg(message)
+    mirrored = keypoints_from_msg(message, mirror=True)
+    assert math.isclose(plain["left_wrist"].x, 0.9, abs_tol=1e-9)
+    assert math.isclose(mirrored["right_wrist"].x, 0.1, abs_tol=1e-9)
+    assert math.isclose(mirrored["right_wrist"].y, 0.2, abs_tol=1e-9)

@@ -77,6 +77,7 @@ class KeepTargetInFocus(InPlaceTurn):
             sight_timeout=self.blackboard.detection_timeout,
             max_image_jump=self.blackboard.target_max_image_jump,
             bearing_tolerance=self.blackboard.target_bearing_tolerance,
+            mirror=self.blackboard.mirror_image_x,
         )
 
     def initialise(self):

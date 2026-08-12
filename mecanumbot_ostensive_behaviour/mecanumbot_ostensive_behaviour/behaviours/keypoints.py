@@ -13,6 +13,13 @@ below its visibility threshold. Both have to count as invisible here, and
 `(0.0, 0.0)` is safe to reject because it is the top-left pixel -- no real joint
 of a framed person lands there.
 
+`mirror_joints` is the other thing this module knows about the image: whether
+the camera hands over a mirrored view of the room. Everything downstream --
+which way the robot turns to keep somebody centred, which way their arm points
+-- is read off image x, so if the image is reflected then every one of those
+directions is reflected with it. Undoing it once, here, is what keeps the rest
+of the package working in a single convention.
+
 Everything is plain arithmetic on floats, so it is unit-tested without a ROS
 graph or a camera.
 """
@@ -79,13 +86,54 @@ def keypoint(x, y):
     return Keypoint(x, y, True)
 
 
-def keypoints_from_msg(message):
-    """Convert a `mecanumbot_msgs/PersonKeypoints` into a name -> keypoint dict."""
+def keypoints_from_msg(message, mirror=False):
+    """
+    Convert a `mecanumbot_msgs/PersonKeypoints` into a name -> keypoint dict.
+
+    With `mirror` set the pose is reflected on the way in, for a camera whose
+    image is a mirrored view of the room; see `mirror_joints`.
+    """
     joints = {}
     for field in KEYPOINT_FIELDS:
         position = getattr(message, field).position
         joints[field] = keypoint(position.x, position.y)
-    return joints
+    return mirror_joints(joints) if mirror else joints
+
+
+def opposite_side(name):
+    """Return a joint name with its side swapped; unsided names come back as they are."""
+    if name.startswith(f"{LEFT}_"):
+        return f"{RIGHT}_{name[len(LEFT) + 1:]}"
+    if name.startswith(f"{RIGHT}_"):
+        return f"{LEFT}_{name[len(RIGHT) + 1:]}"
+    return name
+
+
+def mirror_keypoint(point):
+    """Reflect one joint about the vertical centre line of the image."""
+    if not point.visible:
+        return point  # `MISSING` has no position to reflect
+    return Keypoint(1.0 - point.x, point.y, True)
+
+
+def mirror_joints(joints):
+    """
+    Return the pose a mirrored image would have shown of the real body.
+
+    Two things are reflected together, and they have to be, because a mirrored
+    image mirrors both:
+
+    * the **coordinates** -- a joint seen at image x is really at `1 - x`, which
+      is what puts the person back on the side of the robot they stand on;
+    * the **side labels** -- the pose model names joints by how the body looks,
+      so in a mirrored image it calls the person's left arm their right one.
+
+    Image y is untouched: a horizontal mirror leaves heights alone, and every
+    gesture that reads a wrist against a shoulder or a hip is unaffected by it.
+    """
+    return {
+        opposite_side(name): mirror_keypoint(point) for name, point in joints.items()
+    }
 
 
 def visible(joints, *names):

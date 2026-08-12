@@ -91,6 +91,11 @@ INTEGER_PARAMS = ("wave_min_reversals",)
 
 STRING_PARAMS = ("attention_signal_mode",)
 
+# Optional, with the default that applies to the robot as it is currently built.
+# `mirror_image_x` says the camera hands over a mirrored view of the room, which
+# reflects every direction read off the image; see `keypoints.mirror_joints`.
+BOOL_PARAMS = {"mirror_image_x": True}
+
 # YAML name in degrees -> blackboard name in radians.
 ANGLE_PARAMS = {
     "camera_hfov_deg": "camera_hfov",
@@ -111,6 +116,7 @@ PARAM_KEYS = (
     + INTEGER_PARAMS
     + STRING_PARAMS
     + LIST_PARAMS
+    + tuple(BOOL_PARAMS)
     + tuple(ANGLE_PARAMS.values())
 )
 
@@ -153,6 +159,8 @@ class OstensiveParamsToBlackboard(py_trees.behaviour.Behaviour):
             setattr(self.blackboard, key, int(params[key]))
         for key in STRING_PARAMS:
             setattr(self.blackboard, key, str(params[key]))
+        for key, default in BOOL_PARAMS.items():
+            setattr(self.blackboard, key, bool(params.get(key, default)))
         for key in LIST_PARAMS:
             setattr(self.blackboard, key, [float(entry) for entry in params[key]])
         for yaml_key, blackboard_key in ANGLE_PARAMS.items():
@@ -165,6 +173,17 @@ class OstensiveParamsToBlackboard(py_trees.behaviour.Behaviour):
         self.feedback_message = "constants loaded"
         self.node.get_logger().info(
             f"{self.name}: constants loaded from {self.yaml_path}"
+        )
+        # Worth a line of its own in the log: it is the one constant that, set
+        # the wrong way round, produces a robot that turns and drives to the
+        # mirror image of where it was told, with nothing else looking wrong.
+        self.node.get_logger().info(
+            f"{self.name}: the camera image is treated as "
+            + (
+                "mirrored -- every image column is reflected before it is used"
+                if self.blackboard.mirror_image_x
+                else "not mirrored"
+            )
         )
         return True
 

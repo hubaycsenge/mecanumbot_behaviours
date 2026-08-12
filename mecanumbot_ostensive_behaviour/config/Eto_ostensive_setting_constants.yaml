@@ -25,6 +25,15 @@ ostensive_bt_node:
     # scales every turn the robot makes towards a person.
     camera_hfov_deg: 60.0
 
+    # Does the camera hand over a mirrored view of the room? Everything this
+    # tree decides about direction -- which way to turn to keep somebody
+    # centred, which way their arm points, where the goal goes -- is read off
+    # image x, so a mirrored image mirrors all of it at once. Set true, the pose
+    # is reflected once as it arrives (image column and left/right joint labels
+    # together). It is a property of the camera, not of the room, so it is the
+    # same in both files.
+    mirror_image_x: true
+
     # How old the newest cam_people_detections frame may be and still be acted
     # on. The Ultralytics detector runs around 15 Hz, DeepStream faster.
     detection_timeout: 1.0

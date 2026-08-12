@@ -81,6 +81,7 @@ class WaitForAttentionSignal(py_trees.behaviour.Behaviour):
             sight_timeout=self.blackboard.detection_timeout,
             max_image_jump=self.blackboard.target_max_image_jump,
             bearing_tolerance=self.blackboard.target_bearing_tolerance,
+            mirror=self.blackboard.mirror_image_x,
         )
         self.accessories = AccessoryCommander(self.node)
         self.logger.info(f"{self.name}: Setup complete")

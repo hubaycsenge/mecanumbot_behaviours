@@ -112,7 +112,7 @@ tuples, no graph and no camera.
 
 | Module | Pure? | Contents |
 | --- | --- | --- |
-| `keypoints.py` | yes | COCO-17 access, the two "joint not found" conventions, torso, body scale. |
+| `keypoints.py` | yes | COCO-17 access, the two "joint not found" conventions, torso, body scale, the image mirror. |
 | `gestures.py` | yes | `raised_hand`, `WaveTracker`, `pointing_cue`, `azimuth_from_lateral_ratio`. |
 | `cue_geometry.py` | yes | Image column → bearing, cue azimuth → map bearing, goal placement, both association functions. |
 | `ros_interfaces.py` | no | `CamDetectionTracker`, `PersonObservation`, and the re-exports of the leading package's helpers. |
@@ -145,6 +145,29 @@ These are the part that produces a robot which confidently drives the wrong way
 rather than an error anybody notices, so they are pinned by tests in
 `test/test_cue_geometry.py`.
 
+**Is the image mirrored?** This is the first question, because it is upstream of
+every other convention here. A mirrored image reflects *everything* read off
+image x at once — which way the robot turns to keep somebody centred, which arm
+the pose model calls their left, which way that arm points, and so where the
+goal is placed — and the result is a robot that confidently drives to the
+reflection of the place it was sent to, with no other symptom.
+
+`mirror_image_x` (default **true**) is that switch. Set, `keypoints.mirror_joints`
+reflects each pose once, in the subscription callback, before anything has been
+measured off it: image columns become `1 - x`, and the `left_*`/`right_*` labels
+are swapped with them, because a pose model naming joints by how the body looks
+calls a mirrored person's left arm their right one. Image y is untouched — a
+horizontal mirror moves nothing up or down, so every gesture that reads a wrist
+against a shoulder or a hip is unaffected.
+
+Doing it once, at the edge, is deliberate: the mirror is a property of the
+camera, not a sign for each behaviour to remember, and the conventions below are
+then true of every pose the package handles.
+
+To check which way it should be set, stand clearly off to the robot's left and
+watch `KeepTargetInFocus`: with `mirror_image_x` right, it turns *towards* you.
+`OstensiveParamsToBlackboard` logs the setting on startup for the same reason.
+
 **Image x to bearing.** Normalized image x runs 0 at the left edge to 1 at the
 right; robot yaw is counter-clockwise-positive. The left of the image is
 therefore the *positive* side:
@@ -154,7 +177,11 @@ bearing_offset = (0.5 - x) * hfov
 ```
 
 This matches `cam_to_angle` in both camera detectors, which invert x for the same
-reason.
+reason — and note that they do *not* apply `mirror_image_x`, so a mirrored camera
+also mirrors `bound_angle_min`/`bound_angle_max` and, through
+`mecanumbot_locate_detections`, the camera's contribution to `people_fusion`.
+This package does not use those fields (see below), but anything else that does
+is mirrored with them.
 
 > The detectors' own `bound_angle_min` / `bound_angle_max` fields are **not** used.
 > They disagree between back ends: the Ultralytics node adds the robot's AMCL yaw
@@ -266,6 +293,7 @@ name without the `_deg` suffix. No behaviour converts an angle twice.
 | Group | Parameter | Default | Meaning |
 | --- | --- | --- | --- |
 | Camera | `camera_hfov_deg` | `60.0` | Must match `camera_params.camera_fov` of the running detector. Getting it wrong scales every turn towards a person. |
+| | `mirror_image_x` | `true` | The camera shows a mirrored view of the room, so every pose is reflected on arrival. Set the wrong way, the robot turns away from the addressee and drives to the mirror image of where they pointed. Optional; omitting it keeps the default. |
 | | `detection_timeout` | `1.0` | How stale a camera frame may be and still be acted on. |
 | Attention | `attention_signal_mode` | `any` | `raised_hand`, `wave` or `any`. |
 | | `attention_dwell` | `1.0` | How long the signal is held before the robot commits. |
@@ -348,8 +376,9 @@ ros2 run py_trees_ros_viewer py-trees-ros-viewer   # feedback messages per behav
 
 ## Tests
 
-`test/test_gestures.py` and `test/test_cue_geometry.py` are real unit tests — 50
-of them, covering the gesture decoding and every sign convention. They import
+`test/test_gestures.py` and `test/test_cue_geometry.py` are real unit tests — 57
+of them, covering the gesture decoding, the image mirror and every sign
+convention. They import
 only the three pure modules, so they need neither a ROS graph nor a sourced
 workspace:
 
@@ -365,6 +394,10 @@ not the code. `test_pep257` passes and is worth keeping green.
 
 ## Known limits
 
+* **Whether the image is mirrored is declared, not detected.** `mirror_image_x`
+  is a constant in the YAML; nothing checks it against the camera, and nothing
+  else in the workspace reads it. Change the camera, its `csi_flip_method`, or
+  which topic the detector consumes, and this is the value to revisit.
 * **A cue's azimuth is recovered from one image**, so its depth component is not.
   Pointing towards or away from the camera is refused rather than guessed at, and
   a cue given at a steep angle up or down is read only by its horizontal part.

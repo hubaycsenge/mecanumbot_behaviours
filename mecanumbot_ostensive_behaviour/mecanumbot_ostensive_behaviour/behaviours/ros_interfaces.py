@@ -10,6 +10,12 @@ What is new is `cam_people_detections`. The fused `people_fusion` poses say
 *where* people are in the map but nothing about what they are doing with their
 arms, and the gestures are the whole point here, so the camera detector's
 keypoint output is subscribed to directly.
+
+`CamDetectionTracker` is also the one place the incoming pose is reflected when
+`mirror_image_x` is set. Doing it in the subscription callback, before anything
+has been measured off the joints, is what makes the mirror a property of the
+camera rather than a sign to remember in each behaviour: turning, bearings and
+the direction cue all follow from the same reflected pose.
 """
 
 from mecanumbot_msgs.msg import CamPersonDetectionArray
@@ -62,11 +68,15 @@ class CamDetectionTracker:
 
     Frames are identified by their header stamp, which is what lets the tracking
     in `target_lock` run once per frame no matter how many behaviours ask for it.
+
+    `mirror` reflects every pose as it arrives, for a camera that shows a
+    mirrored view of the room (see `keypoints.mirror_joints`).
     """
 
-    def __init__(self, node, sight_timeout=1.0):
+    def __init__(self, node, sight_timeout=1.0, mirror=False):
         self.node = node
         self.sight_timeout = float(sight_timeout)
+        self.mirror = bool(mirror)
         self.people = []
         self.stamp = None
         self._time = None
@@ -90,7 +100,7 @@ class CamDetectionTracker:
         self.people = [
             observation
             for observation in (
-                PersonObservation(keypoints_from_msg(person.keypoints))
+                PersonObservation(keypoints_from_msg(person.keypoints, self.mirror))
                 for person in message.people
             )
             if observation.usable
