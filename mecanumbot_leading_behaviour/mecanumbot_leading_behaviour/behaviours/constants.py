@@ -97,6 +97,13 @@ TUNABLE_DEFAULTS = {
     # How far the robot drives towards a route target in one goal. The human
     # equivalent is `robot_approach_distance`, which is an experiment parameter.
     "route_step_distance": 1.0,
+    # How far short of a place on the route a goal stops. The human equivalent
+    # is `robot_closeness_threshold`, and the two are separate because they
+    # answer different questions: how close the robot may come to a person is
+    # about the person, and is the number that has to grow when the footprint
+    # says the bumper would reach them; how close it parks to a checkpoint is
+    # only about not fussing over a waypoint it is passing anyway.
+    "route_stop_distance": 0.45,
     # How many route checkpoints one waypoint goal may cover. Longer legs mean
     # fewer interruptions of the drive; the look-back pacing shortens a leg that
     # would run past a check-in anyway.

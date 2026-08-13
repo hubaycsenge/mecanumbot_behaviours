@@ -225,17 +225,24 @@ class Approach(py_trees.behaviour.Behaviour):
         )
 
     def _send_goal(self):
-        # Walking up to a human is stepped, so the human distance is an
-        # experiment parameter; a route target only needs a sane stride.
+        # Walking up to a human is stepped, and how close the robot may come to
+        # one is an experiment parameter; a route target only needs a sane
+        # stride and to be parked near, so it has its own pair of numbers.
+        human = is_human(self.target_type)
         go_threshold = (
             self.blackboard.robot_approach_distance
-            if is_human(self.target_type)
+            if human
             else constant(self.blackboard, "route_step_distance")
+        )
+        stop_threshold = (
+            self.blackboard.robot_closeness_threshold
+            if human
+            else constant(self.blackboard, "route_stop_distance")
         )
         goal = pose_to_goal(
             self._target_position,
             self.pose.pose,
-            stop_threshold=self.blackboard.robot_closeness_threshold,
+            stop_threshold=stop_threshold,
             mode=self.mode,
             go_threshold=go_threshold,
         )
@@ -323,7 +330,6 @@ class FollowRoute(py_trees.behaviour.Behaviour):
             "target_position",
             "Dog_following_max_threshold",
             "visibility_time_threshold",
-            "robot_closeness_threshold",
         ):
             self.blackboard.register_key(key, access=py_trees.common.Access.READ)
         self.blackboard.register_key(
@@ -495,7 +501,7 @@ class FollowRoute(py_trees.behaviour.Behaviour):
             pose_to_goal(
                 checkpoint,
                 self.pose.pose,
-                stop_threshold=self.blackboard.robot_closeness_threshold,
+                stop_threshold=constant(self.blackboard, "route_stop_distance"),
                 go_threshold=constant(self.blackboard, "route_step_distance"),
             )
         )

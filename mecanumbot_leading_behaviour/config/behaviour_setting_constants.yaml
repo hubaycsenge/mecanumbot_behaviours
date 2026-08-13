@@ -1,7 +1,11 @@
 bottom_up_tree_node:
   ros__parameters:
     init_delay: 1.5
-    robot_closeness_threshold: 0.45 #minimum approach distance of the robot, we do not want to hit subject TODO: test optimum
+    # Minimum approach distance, measured from base_link to the *detected
+    # person centre*. The footprint reaches 0.2875 m ahead of base_link, so the
+    # bumper stops 0.46 m short of that point and roughly 0.25 m clear of the
+    # person themselves. Anything under about 0.5 m here means contact.
+    robot_closeness_threshold: 0.75
     target_reached_threshold: 0.75  # the critical distance of target and subject to tell if reached TODO: test optimum
 
     visibility_time_threshold: 5 # time threshold of last incoming 'subject' data
@@ -101,6 +105,11 @@ bottom_up_tree_node:
     # equivalent is `robot_approach_distance` above, which is an experiment
     # parameter rather than a tunable.
     route_step_distance: 1.0
+    # How far short of a place on the route a goal stops -- the route's own
+    # equivalent of robot_closeness_threshold above. Separate from it because
+    # how close the robot may come to a person is about the person, while this
+    # is only about not fussing over a waypoint it is passing anyway.
+    route_stop_distance: 0.45
     # How many route checkpoints one NavigateThroughPoses goal may cover.
     # Longer legs mean fewer interruptions of the drive; the look-back pacing
     # shortens a leg that would otherwise run past a check-in.

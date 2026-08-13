@@ -84,6 +84,17 @@ everything, so `from ...behaviours.movement_managers import X` keeps working
 | Behaviour                    | Role                                                                                                                                                |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Approach`                   | Navigates to a target through Nav2; `mode="exact"` drives to the point, `mode="fixed_distance"` steps `robot_approach_distance` closer.             |
+
+**How close a goal gets.** `Approach` never aims at its target itself, it aims
+short of it — at `robot_closeness_threshold` for a human and
+`route_stop_distance` for a place on the route. The two are separate numbers
+because they answer different questions. The human one is measured from
+`base_link` to the *detected person centre*, and the footprint reaches 0.2875 m
+ahead of `base_link`, so the bumper stops that much nearer than the number
+says: at `0.75` it ends 0.46 m from the point the detector reported, which is
+about 0.25 m of air in front of a real person. Set it under about 0.5 m and the
+robot touches them, however correctly the threshold is applied.
+
 | `FollowRoute`                | Leads one leg of the route — several checkpoints in a single `NavigateThroughPoses` goal, cut short when the human stops following.                 |
 | `TurnToward`                 | Rotates in place to face a `subject` / `target` / `start` / `checkpoint` / `patrol` / `last_checkpoint`, in a chosen direction (see below).         |
 | `GlanceBack`                 | The dog's look over the shoulder: a slow turn onto the human's last known place, then a slow sweep around it. FAILURE is what starts the patrol.    |
@@ -446,7 +457,7 @@ so a run is described by one file.
 | Scanning          | `scan_spin_speed`, `scan_timeout`; `full_scan_spin_speed`, `full_scan_timeout`, `full_scan_revolutions`           | `FindPeople`; `Spin360`                          |
 | Looking back      | `glance_spin_speed`, `glance_timeout`, `glance_sweep_deg`                                                        | `GlanceBack`                                     |
 | Check-in pacing   | `check_in_every_checkpoints`, `check_in_interval`, `check_in_grace`, `check_in_catch_up_timeout`                 | `DogCheckInDue`, `FollowRoute`, `DogWaitForCatchUp` |
-| Approaching       | `approach_target_timeout`, `approach_goal_timeout`, `route_step_distance`, `nav_goal_retries`                    | `Approach`                                       |
+| Approaching       | `approach_target_timeout`, `approach_goal_timeout`, `route_step_distance`, `route_stop_distance`, `nav_goal_retries` | `Approach`                                  |
 | Leading a leg     | `route_lookahead`, `checkpoint_reached_distance`, `route_turn_min_deg`                                           | `FollowRoute`, the dog tree's checkpoint turn    |
 | Getting them back | `resume_passed_margin`, `recover_retries`                                                                         | `DogResumeLeading`, the dog tree's `Retry`       |
 | Pacing            | `thank_delay`, `show_turn_delay`                                                                                  | the dog tree's `ConfiguredTimer`s                |
