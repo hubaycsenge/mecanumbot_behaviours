@@ -286,6 +286,19 @@ class FollowRoute(py_trees.behaviour.Behaviour):
     rather than by nav2's own arrival, so `Dog_current_checkpoint` moves along
     while the robot drives through and does not depend on which nav2 behaviour
     tree is loaded.
+
+    A waypoint run asks more of the route than a single goal does.
+    `ComputePathThroughPoses` plans robot -> first checkpoint, then *from* that
+    checkpoint to the next, so every checkpoint has to be somewhere the planner
+    will both aim at and set off from -- and a checkpoint pressed against a wall
+    is neither, once the costmap has inflated it. `Approach` never asked that:
+    it aims `robot_closeness_threshold` short of its target and stops there.
+
+    So a leg nav2 gives up on is not retried as-is. It falls back to exactly
+    that older move -- one `NavigateToPose` goal stopping short of the next
+    checkpoint -- and the leg carries on checkpoint by checkpoint from there.
+    Leading is then no smoother than it used to be, but it never stops dead over
+    one awkwardly placed checkpoint.
     """
 
     def __init__(
@@ -310,6 +323,7 @@ class FollowRoute(py_trees.behaviour.Behaviour):
             "target_position",
             "Dog_following_max_threshold",
             "visibility_time_threshold",
+            "robot_closeness_threshold",
         ):
             self.blackboard.register_key(key, access=py_trees.common.Access.READ)
         self.blackboard.register_key(
@@ -331,11 +345,14 @@ class FollowRoute(py_trees.behaviour.Behaviour):
         )
         self.pose = RobotPoseTracker(self.node)
         self.subject = FollowedSubjectTracker(self.node, self.sight_timeout)
-        self.nav2 = Nav2RouteNavigator(self.node)
+        self.route = Nav2RouteNavigator(self.node)
+        self.single = Nav2PoseNavigator(self.node)
         self.logger.info(f"{self.name}: Setup complete")
 
     def initialise(self):
-        self.nav2.reset()
+        self.route.reset()
+        self.single.reset()
+        self.nav2 = self.route
         self._leg = None
         self._step = 0
         self._resends = 0
@@ -344,7 +361,8 @@ class FollowRoute(py_trees.behaviour.Behaviour):
 
     def terminate(self, new_status):
         if new_status != py_trees.common.Status.RUNNING:
-            self.nav2.cancel()
+            self.route.cancel()
+            self.single.cancel()
 
     def update(self):
         if self.pose.position is None:
@@ -352,7 +370,7 @@ class FollowRoute(py_trees.behaviour.Behaviour):
             return py_trees.common.Status.RUNNING
 
         if self._leg is None:
-            if not self.nav2.server_ready():
+            if not self.route.server_ready() or not self.single.server_ready():
                 if self._elapsed() > self.goal_timeout:
                     self.node.get_logger().info(
                         f"{self.name}: no nav2 waypoint action server within "
@@ -383,35 +401,46 @@ class FollowRoute(py_trees.behaviour.Behaviour):
             return py_trees.common.Status.RUNNING
 
         if status == STATUS_SUCCEEDED:
-            # Nav2 says the run is over; take its word even if the robot stopped
-            # a little short of the last checkpoint by our own measure, and
-            # count the rest of the leg as walked so the route index agrees.
-            for index in self._leg[self._step :]:
-                self.blackboard.check_in_checkpoints_since += 1
-                self.blackboard.Dog_current_checkpoint = min(
-                    index + 1, self.blackboard.Dog_max_checkpoint
-                )
-            self._step = len(self._leg)
-            return self._leg_done("nav2 finished the route")
+            # Take nav2's word for what it drove, even where the robot ended up
+            # further from the checkpoint than our own measure counts as
+            # reached: a goal it says it finished must not be sent again, or the
+            # same instant success comes straight back.
+            if self.nav2 is self.route:
+                while self._step < len(self._leg):
+                    self._advance()
+                return self._leg_done("nav2 finished the route")
+
+            # One checkpoint of a leg being walked a checkpoint at a time.
+            self._advance()
+            if self._step >= len(self._leg):
+                return self._leg_done("leg driven one checkpoint at a time")
+            return self._send_single()
         if status in GOAL_ACTIVE_STATUSES:
-            remaining = self.nav2.poses_remaining
-            self.feedback_message = (
-                f"leading to checkpoint {self._leg[min(self._step, len(self._leg) - 1)]}"
-                + ("" if remaining is None else f", {remaining} waypoint(s) left")
-            )
+            self.feedback_message = self._progress()
             return py_trees.common.Status.RUNNING
+
+        # Nav2 gave up on the goal. Sending the same one again only buys the
+        # same answer, so the first drop steps down to the single-goal move that
+        # stops short of the checkpoint; only that one is worth retrying.
+        if self.nav2 is self.route:
+            self.node.get_logger().warn(
+                f"{self.name}: nav2 could not drive the leg as waypoints -- check "
+                "whether the checkpoints themselves are clear of the costmap "
+                "inflation; leading to them one at a time instead"
+            )
+            return self._send_single()
 
         if self._resends >= self.retries:
             self.node.get_logger().info(
-                f"{self.name}: nav2 dropped the route {self._resends} time(s), giving up"
+                f"{self.name}: nav2 dropped the goal {self._resends} time(s), giving up"
             )
             return py_trees.common.Status.FAILURE
         self._resends += 1
         self.node.get_logger().info(
-            f"{self.name}: nav2 dropped the route, sending the rest again "
+            f"{self.name}: nav2 dropped the goal, sending it again "
             f"({self._resends}/{self.retries})"
         )
-        return self._send(self._leg[self._step :])
+        return self._send_single()
 
     # --- internals ----------------------------------------------------------
 
@@ -443,7 +472,8 @@ class FollowRoute(py_trees.behaviour.Behaviour):
         return self._send(self._leg[self._step :])
 
     def _send(self, indices):
-        self.nav2.follow(
+        self.nav2 = self.route
+        self.route.follow(
             route_poses(
                 self.blackboard.Dog_checkpoints,
                 indices,
@@ -456,6 +486,33 @@ class FollowRoute(py_trees.behaviour.Behaviour):
         )
         return py_trees.common.Status.RUNNING
 
+    def _send_single(self):
+        """Fall back to `Approach`'s move: one goal, stopping short of the checkpoint."""
+        index = self._leg[min(self._step, len(self._leg) - 1)]
+        checkpoint = self.blackboard.Dog_checkpoints[index]
+        self.nav2 = self.single
+        self.single.go_to(
+            pose_to_goal(
+                checkpoint,
+                self.pose.pose,
+                stop_threshold=self.blackboard.robot_closeness_threshold,
+                go_threshold=constant(self.blackboard, "route_step_distance"),
+            )
+        )
+        self.node.get_logger().info(
+            f"{self.name}: leading to checkpoint {index} on its own"
+        )
+        return py_trees.common.Status.RUNNING
+
+    def _progress(self):
+        index = self._leg[min(self._step, len(self._leg) - 1)]
+        if self.nav2 is not self.route:
+            return f"leading to checkpoint {index}"
+        remaining = self.route.poses_remaining
+        return f"leading to checkpoint {index}" + (
+            "" if remaining is None else f", {remaining} waypoint(s) left"
+        )
+
     def _mark_checkpoints_passed(self, count=True):
         """Walk the route index on for every checkpoint of the leg driven past."""
         checkpoints = self.blackboard.Dog_checkpoints
@@ -464,17 +521,22 @@ class FollowRoute(py_trees.behaviour.Behaviour):
             index = self._leg[self._step]
             if distance_xy(self.pose.position, checkpoints[index]) > reached:
                 return
-            self._step += 1
-            if count:
-                self.blackboard.check_in_checkpoints_since += 1
-            self.blackboard.Dog_current_checkpoint = min(
-                index + 1, self.blackboard.Dog_max_checkpoint
-            )
-            self.node.get_logger().info(
-                f"{self.name}: checkpoint {index} "
-                f"{'reached' if count else 'already behind us'}, next is "
-                f"{self.blackboard.Dog_current_checkpoint}"
-            )
+            self._advance(count=count)
+
+    def _advance(self, count=True):
+        """Put one checkpoint of the leg behind us."""
+        index = self._leg[self._step]
+        self._step += 1
+        if count:
+            self.blackboard.check_in_checkpoints_since += 1
+        self.blackboard.Dog_current_checkpoint = min(
+            index + 1, self.blackboard.Dog_max_checkpoint
+        )
+        self.node.get_logger().info(
+            f"{self.name}: checkpoint {index} "
+            f"{'reached' if count else 'already behind us'}, next is "
+            f"{self.blackboard.Dog_current_checkpoint}"
+        )
 
     def _lagging_reason(self):
         """Why the human is no longer following, once they have been for `grace`."""
