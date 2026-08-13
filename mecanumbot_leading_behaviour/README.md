@@ -221,9 +221,10 @@ a timed sequence taken from the blackboard. Supported modes:
 | `indicate_close_target` | `LED_indicate_close_target_seq` / `_times` (LED only)                      |
 | `thank`                 | `LED_thank_seq` / `_times`, `Dog_thank_seq` / `_times`                     |
 
-`dog_behaviours.py` also provides `DogCheckFollowing` (verifies the subject stayed
-within `Dog_following_max_threshold` while leading) and `DogResumeLeading` (picks the
-checkpoint leading carries on from after a search).
+`dog_behaviours.py` also provides `DogCheckFollowing` (verifies the subject is within
+`Dog_following_max_threshold` — asked both after a check-in glance and after a recovery
+patrol, to decide whether the robot has to go back to them at all) and
+`DogResumeLeading` (picks the checkpoint leading carries on from after a search).
 
 ## Launch files
 
@@ -286,6 +287,15 @@ along the route, reversing at either end. As soon as a person is seen the patrol
 cancelled, and `WaitForPerson` sets `patrol_direction` from which side of the route
 the person appeared on.
 
+The cancellation is immediate and mid-movement: `WaitForPerson` succeeding makes the
+parallel succeed, which invalidates the running search branch, so whichever leaf was
+running is stopped on the same tick — a `Spin360` a third of the way round is not
+played out to the full revolution (`InPlaceTurn.terminate()` stops the turner and
+zeroes `/cmd_vel`), and a drive to the next search checkpoint is not driven to the
+end (`Approach.terminate()` cancels the nav2 goal). `Spin360` itself is configured
+`stop_on_person=False` precisely because it is not the branch that watches for
+people; `WaitForPerson` is, and it sees the same `people_fusion` detections.
+
 Because `WaitForPerson` succeeds on the very first tick when somebody is already
 visible, the same branch covers both cases: a human who merely lagged behind is
 fetched immediately, and only a real disappearance turns into a patrol.
@@ -340,10 +350,13 @@ it does not ignore its person for the whole walk either.
          (`direction="shortest"`, head levelled, and only if the route really bends by
          more than `route_turn_min`), then `FollowRoute`;
      - if the check-in found nobody, the human is gone: recover and resume — patrol the
-       route until somebody is seen, walk up to them and ask for their attention again,
-       then `DogResumeLeading` picks the checkpoint to carry on from. Wrapped in
-       `Retry(num_failures=3)`, because the human is most likely to slip out of view
-       again during that walk up to them.
+       route until somebody is seen, then `RegainOrCarryOnSelector` decides what that
+       sighting was worth. `DogCheckFollowing` first: somebody within
+       `Dog_following_max_threshold` of where the patrol stopped is close enough to be
+       led on from there, and the robot skips straight to `DogResumeLeading`. Otherwise
+       `create_seek_attention()` walks up to them and asks for their attention again
+       before resuming. Wrapped in `Retry(num_failures=3)`, because the human is most
+       likely to slip out of view again during that walk up to them.
 4. The root only fails when even the patrol turns up nobody; it is then ticked again
    from the top, which runs `SeekOrFind` before leading resumes.
 

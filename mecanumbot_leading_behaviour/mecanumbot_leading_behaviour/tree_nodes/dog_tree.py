@@ -28,6 +28,11 @@ look round, and it does not ignore its person for the whole walk either.
   robot waits a moment for them (`DogWaitForCatchUp`), and if they still do not
   come, walks back, faces them, wiggles and asks for their attention again
   before carrying on. Not found at all: the patrol.
+* **Seeing them again ends the search there and then.** The patrol is cut off
+  mid-scan or mid-drive the moment somebody is detected, and how it ends is
+  decided by where they are: close enough to be led, and the robot simply leads
+  on from where it is standing; further off, and it goes back to them and asks
+  for their attention again first.
 
 Two habits from the older tree carry the gestures:
 
@@ -246,18 +251,38 @@ def create_root(yaml_path=None):
     )
 
     # --- the human dropped out of a lead cycle ------------------------------
-    # Patrol the route until somebody turns up, walk up to them and ask for
-    # their attention again, then work out where leading has to carry on from.
-    # The recovery parallel succeeds on its first tick when a person is already
-    # visible, so this is only reached once the look back has properly failed to
-    # find them -- by then they really are gone, not merely behind the robot.
+    # Patrol the route until somebody turns up, deal with where they turned up,
+    # then work out where leading has to carry on from. The recovery parallel
+    # succeeds on its first tick when a person is already visible, so this is
+    # only reached once the look back has properly failed to find them -- by
+    # then they really are gone, not merely behind the robot.
+    #
+    # The patrol is interrupted the moment somebody is seen -- `WaitForPerson`
+    # runs against it in a `SuccessOnOne` parallel, so a scan or a drive to the
+    # next search checkpoint is cut off mid-movement rather than played out --
+    # and where that leaves the pair decides what happens next. It is the same
+    # question the check-in asks, so it is asked with the same behaviour:
+    # somebody within `Dog_following_max_threshold` is close enough to lead on
+    # from where the robot stands, and walking back at a human who is already
+    # there reads as fussing. Anybody further off is fetched: walk up to them,
+    # face them, wiggle and ask for their attention again.
+    regain_or_carry_on = py_trees.composites.Selector(
+        name="RegainOrCarryOnSelector", memory=True
+    )
+    regain_or_carry_on.add_children(
+        [
+            DogCheckFollowing(name="PatrolCheckFollowing"),
+            create_seek_attention(ID="Regain"),
+        ]
+    )
+
     recover_and_resume = py_trees.composites.Sequence(
         name="RecoverAndResumeSeq", memory=True
     )
     recover_and_resume.add_children(
         [
             create_recover_lost_sequence(ID="Patrol"),
-            create_seek_attention(ID="Regain"),
+            regain_or_carry_on,
             DogResumeLeading(name="ResumeLeadingCheckpoint"),
         ]
     )

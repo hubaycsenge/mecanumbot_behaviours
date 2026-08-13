@@ -550,8 +550,6 @@ class FollowRoute(py_trees.behaviour.Behaviour):
         age = self.subject.age
         if self.subject.position is None or age is None:
             reason = "the human has not been seen yet"
-        elif age > self.blackboard.visibility_time_threshold:
-            reason = f"the human was last seen {age:.1f} s ago"
         else:
             distance = distance_xy(self.pose.position, self.subject.position)
             allowed = self.blackboard.Dog_following_max_threshold
