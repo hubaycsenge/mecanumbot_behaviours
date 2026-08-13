@@ -32,8 +32,11 @@ NAV2_STATUS_TOPIC = "/navigate_to_pose/_action/status"
 NAV2_ROUTE_STATUS_TOPIC = "/navigate_through_poses/_action/status"
 
 # --- nav2 actions ------------------------------------------------------------
-NAV2_TO_POSE_ACTION = "navigate_to_pose"
-NAV2_THROUGH_POSES_ACTION = "navigate_through_poses"
+# Absolute, like every topic above: the trees run in the `mecanumbot` namespace
+# and nav2 does not, so a relative name would be looked for under the tree's own
+# namespace and never found.
+NAV2_TO_POSE_ACTION = "/navigate_to_pose"
+NAV2_THROUGH_POSES_ACTION = "/navigate_through_poses"
 
 # --- nav2 goal statuses (action_msgs/GoalStatus) -----------------------------
 STATUS_UNKNOWN = 0
