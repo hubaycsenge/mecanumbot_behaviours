@@ -29,6 +29,7 @@ from mecanumbot_leading_behaviour.behaviours.geometry import (
     normalize_angle,
     signed_rotation,
 )
+from mecanumbot_leading_behaviour.behaviours.pacing import sweep_pattern
 from mecanumbot_leading_behaviour.behaviours.ros_interfaces import (
     AccessoryCommander,
     HEAD_SEEK,
@@ -36,6 +37,7 @@ from mecanumbot_leading_behaviour.behaviours.ros_interfaces import (
     PeopleTracker,
     RobotPoseTracker,
     VelocityCommander,
+    now_seconds,
 )
 from mecanumbot_leading_behaviour.behaviours.targets import (
     SUBJECT,
@@ -297,6 +299,13 @@ class TurnToward(InPlaceTurn):
 
     After the profiled turn a human target is re-checked once, so a person who
     stepped aside meanwhile is still faced properly.
+
+    `min_rotation_key` names a constant holding the smallest turn worth making
+    for this call site. Below it the behaviour succeeds without turning at all,
+    which is how the route turns stay out of the way: setting off down a leg
+    that bends by a few degrees is nav2's job, and stopping to rotate for it
+    only breaks the drive up. Left unset, every turn is made, however small --
+    the comparison conditions turn exactly as they always did.
     """
 
     def __init__(
@@ -308,6 +317,8 @@ class TurnToward(InPlaceTurn):
         corrections=None,
         target_timeout=None,
         sight_timeout=None,
+        min_rotation=None,
+        min_rotation_key=None,
         **kwargs,
     ):
         super().__init__(
@@ -324,10 +335,18 @@ class TurnToward(InPlaceTurn):
         self.corrections = corrections
         self.target_timeout = target_timeout
         self.sight_timeout = sight_timeout
+        self.min_rotation = min_rotation
+        self.min_rotation_key = min_rotation_key
         register_target_keys(self.blackboard)
 
     def setup(self, **kwargs):
         super().setup(**kwargs)
+        if self.min_rotation is None:
+            self.min_rotation = (
+                0.0
+                if self.min_rotation_key is None
+                else float(constant(self.blackboard, self.min_rotation_key))
+            )
         self.corrections = int(
             resolve(self.corrections, self.blackboard, "turn_corrections")
         )
@@ -405,9 +424,10 @@ class TurnToward(InPlaceTurn):
         )
         if is_human(self.target_type):
             self.record_spin_sign(rotation)
-        if rotation == 0.0:
+        if rotation == 0.0 or abs(rotation) < self.min_rotation:
             self.node.get_logger().info(
-                f"{self.name}: already facing the {self.target_type}"
+                f"{self.name}: already facing the {self.target_type} closely enough "
+                f"({math.degrees(rotation):+.0f} deg off)"
             )
             return py_trees.common.Status.SUCCESS
 
@@ -459,7 +479,7 @@ class RelativeTurnPattern(InPlaceTurn):
         # `attention_turn_step` is declared in degrees and reaches the
         # blackboard in radians, like every other angle.
         step = float(resolve(self.step_angle, self.blackboard, "attention_turn_step"))
-        self._pattern = (step, -2.0 * step, 2.0 * step, -step)
+        self._pattern = sweep_pattern(step)
 
     def initialise(self):
         super().initialise()
@@ -658,3 +678,189 @@ class Spin360(ScanSpin):
             stop_on_person=False,
             **kwargs,
         )
+
+
+class GlanceBack(InPlaceTurn):
+    """The look over the shoulder: turn to where the human was, and check.
+
+    This is the dog's check-in, and it is a different movement from a search.
+    It goes at `glance_spin_speed`, slower than either scan, for two reasons at
+    once: a slow turn reads as looking rather than casting about, and it gives
+    the camera detector time to find a person the robot sweeps past -- turning
+    fast past somebody and declaring them missing is exactly how a following
+    human gets treated as a lost one.
+
+    Two phases:
+
+    1. **look** -- turn onto the bearing of the place the human was last seen,
+       the short way round. With nobody ever seen it faces back down the route
+       instead, towards the checkpoint the pair came from, because that is where
+       somebody following would be.
+    2. **sweep** -- only if nobody is in sight once the robot is facing there:
+       a slow `+1, -2, +2, -1` sweep of `glance_sweep` either side, ending back
+       on the middle. Any detection at any point during it ends the glance.
+
+    SUCCESS means the human was found and leading can carry on. FAILURE means
+    they were not, which is the only thing that starts the recovery patrol: the
+    robot does not go hunting through the building for somebody it has not
+    properly looked for yet.
+
+    Whatever the answer, the check-in counters are reset as the behaviour ends,
+    so the pacing counts from this look back rather than from the last one.
+    """
+
+    def __init__(
+        self,
+        name="GlanceBack",
+        spin_speed=None,
+        sweep_angle=None,
+        timeout=None,
+        sight_timeout=None,
+        head=HEAD_SEEK,
+        **kwargs,
+    ):
+        super().__init__(name, head=head, timeout=timeout, **kwargs)
+        self.spin_speed = spin_speed
+        self.sweep_angle = sweep_angle
+        self.sight_timeout = sight_timeout
+        register_target_keys(self.blackboard)
+        self.blackboard.register_key(
+            key="check_in_checkpoints_since", access=py_trees.common.Access.WRITE
+        )
+        self.blackboard.register_key(
+            key="check_in_last_time", access=py_trees.common.Access.WRITE
+        )
+
+    def setup(self, **kwargs):
+        # Both the top speed of the profile and the timeout have to be settled
+        # before InPlaceTurn builds the turner out of them.
+        self._turner_kwargs.setdefault(
+            "max_speed",
+            float(resolve(self.spin_speed, self.blackboard, "glance_spin_speed")),
+        )
+        self.timeout = float(resolve(self.timeout, self.blackboard, "glance_timeout"))
+
+        super().setup(**kwargs)
+        self.sweep_angle = float(
+            resolve(self.sweep_angle, self.blackboard, "glance_sweep")
+        )
+        self.sight_timeout = float(
+            resolve(self.sight_timeout, self.blackboard, "sight_timeout")
+        )
+        self.people = PeopleTracker(self.node, self.sight_timeout)
+
+    def initialise(self):
+        super().initialise()
+        self._phase = "look"
+        self._offsets = []
+        self._index = -1
+        self._turning = False
+        self.turner.stop()
+
+    def terminate(self, new_status):
+        super().terminate(new_status)
+        if new_status in (
+            py_trees.common.Status.SUCCESS,
+            py_trees.common.Status.FAILURE,
+        ):
+            self.blackboard.check_in_checkpoints_since = 0
+            self.blackboard.check_in_last_time = now_seconds(self.node)
+
+    def update(self):
+        if self._exit_status is not None:
+            return self.ramp_down()
+
+        if self.pose.pose is None:
+            self.feedback_message = "waiting for AMCL pose"
+            return py_trees.common.Status.RUNNING
+
+        if self.elapsed() > self.timeout:
+            return self.finish(
+                py_trees.common.Status.FAILURE, "ran out of time looking back"
+            )
+
+        if not self._turning:
+            if not self.nav2_handed_over():
+                return py_trees.common.Status.RUNNING
+            return self._start_look()
+
+        if not self.turner.step():
+            if self._phase == "sweep" and self.people.has_fresh_detection():
+                return self.finish(
+                    py_trees.common.Status.SUCCESS, "the human turned up in the sweep"
+                )
+            self.feedback_message = f"{self._phase}ing for the human"
+            return py_trees.common.Status.RUNNING
+
+        if self._phase == "look":
+            if self.people.has_fresh_detection():
+                return self.finish(
+                    py_trees.common.Status.SUCCESS, "the human is there, still following"
+                )
+            return self._start_sweep()
+        return self._next_sweep_step()
+
+    # --- internals ----------------------------------------------------------
+
+    def _start_look(self):
+        rotation = signed_rotation(
+            self.pose.yaw,
+            self._look_bearing(),
+            epsilon=self.facing_epsilon,
+        )
+        self.record_spin_sign(rotation)
+        self._turning = True
+        if rotation == 0.0:
+            # Already facing the place: there is nothing to look round at, so
+            # this is a sweep from the start.
+            return self._start_sweep()
+        self.turner.begin(rotation)
+        self.node.get_logger().info(
+            f"{self.name}: looking back {math.degrees(rotation):+.0f} deg for the human"
+        )
+        return py_trees.common.Status.RUNNING
+
+    def _look_bearing(self):
+        """Where to look: the human's last known place, else back down the route."""
+        last_seen = self.people.last_seen_pose
+        if last_seen is not None:
+            return bearing_to(self.pose.position, last_seen.position)
+
+        behind = self._checkpoint_behind()
+        if behind is not None:
+            return bearing_to(self.pose.position, behind)
+        return normalize_angle(self.pose.yaw + math.pi)
+
+    def _checkpoint_behind(self):
+        checkpoints = self.blackboard.Dog_checkpoints
+        index = int(self.blackboard.Dog_current_checkpoint) - 1
+        if checkpoints and 0 <= index < len(checkpoints):
+            return checkpoints[index]
+        return None
+
+    def _start_sweep(self):
+        # The sweep carries on the handedness of the look, so the two read as
+        # one movement rather than as a turn followed by a correction.
+        sign = self.last_spin_sign() or COUNTERCLOCKWISE
+        self._offsets = [offset * sign for offset in sweep_pattern(self.sweep_angle)]
+        self._phase = "sweep"
+        self._index = -1
+        self.node.get_logger().info(
+            f"{self.name}: nobody there, sweeping "
+            f"{math.degrees(self.sweep_angle):.0f} deg either side"
+        )
+        return self._next_sweep_step()
+
+    def _next_sweep_step(self):
+        if self.people.has_fresh_detection():
+            return self.finish(
+                py_trees.common.Status.SUCCESS, "the human turned up in the sweep"
+            )
+        self._index += 1
+        if self._index >= len(self._offsets):
+            return self.finish(
+                py_trees.common.Status.FAILURE, "the human is nowhere in sight"
+            )
+        self.turner.begin(self._offsets[self._index])
+        self.feedback_message = f"sweep step {self._index + 1}/{len(self._offsets)}"
+        return py_trees.common.Status.RUNNING

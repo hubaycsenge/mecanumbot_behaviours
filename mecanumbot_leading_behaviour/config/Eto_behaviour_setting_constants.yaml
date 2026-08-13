@@ -55,10 +55,32 @@ bottom_up_tree_node:
     full_scan_timeout: 45.0
     full_scan_revolutions: 1.0
 
+    # ----- Looking back while leading (dog condition) ----------------------
+    # The check-in turn onto the human's last known place, slower than either
+    # scan above so that it reads as looking and the detector has time to find
+    # somebody the robot sweeps past.
+    glance_spin_speed: 0.4
+    glance_timeout: 20.0
+    glance_sweep_deg: 25.0
+    # A look back every so many checkpoints and every so many seconds,
+    # whichever falls due first, plus straight away when the human goes out of
+    # sight or drops further than Dog_following_max_threshold.
+    check_in_every_checkpoints: 2
+    check_in_interval: 20.0
+    check_in_grace: 2.0
+    check_in_catch_up_timeout: 6.0
+
     # ----- Approaching with nav2 -------------------------------------------
     approach_target_timeout: 3.0
     approach_goal_timeout: 10.0
     route_step_distance: 1.0
+    # How many route checkpoints one NavigateThroughPoses goal may cover, how
+    # close counts as having driven past one, and the smallest bend worth
+    # turning on the spot for before setting off.
+    route_lookahead: 3
+    checkpoint_reached_distance: 0.5
+    route_turn_min_deg: 30.0
+    nav_goal_retries: 3
 
     # ----- Getting the human back ------------------------------------------
     resume_passed_margin: 0.15

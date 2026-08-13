@@ -129,6 +129,8 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
         "patrol_direction",
         "patrol_initialized",
         "search_spin_sign",
+        "check_in_checkpoints_since",
+        "check_in_last_time",
     )
 
     def __init__(self, name, yaml_path):
@@ -266,6 +268,12 @@ class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
         # Handedness of the last turn made while looking for a person; the turns
         # back to the route unwind it. 0 until the robot has turned at all.
         self.blackboard.search_spin_sign = 0
+        # Pacing of the dog tree's look backs: checkpoints driven since the last
+        # one, and when it was. 0.0 means "not started yet" -- `DogCheckInDue`
+        # starts the clock the first time it is asked, which is when leading
+        # begins rather than when this file is read.
+        self.blackboard.check_in_checkpoints_since = 0
+        self.blackboard.check_in_last_time = 0.0
 
 
 class ConfiguredTimer(py_trees.timers.Timer):

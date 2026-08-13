@@ -12,12 +12,15 @@ from mecanumbot_leading_behaviour.behaviours.geometry import (
     distance_xy,
     route_progress,
 )
+from mecanumbot_leading_behaviour.behaviours.pacing import check_in_due
 from mecanumbot_leading_behaviour.behaviours.ros_interfaces import (
     AccessoryCommander,
+    FollowedSubjectTracker,
+    HEAD_SEEK,
     PeopleTracker,
     RobotPoseTracker,
-    SubjectPoseTracker,
     duration,
+    now_seconds,
 )
 
 # Gesture mode -> the pair of blackboard keys holding its commands and timings.
@@ -98,10 +101,12 @@ class DogCheckFollowing(py_trees.behaviour.Behaviour):
     `Dog_max_wander_allowed` checks in a row.
     """
 
-    def __init__(self, name="DogCheckFollowing"):
+    def __init__(self, name="DogCheckFollowing", sight_timeout=None):
         super().__init__(name)
+        self.sight_timeout = sight_timeout
 
         self.blackboard = self.attach_blackboard_client(name=name)
+        register_param_keys(self.blackboard, "sight_timeout")
         self.blackboard.register_key(
             "visibility_time_threshold", access=py_trees.common.Access.READ
         )
@@ -117,8 +122,11 @@ class DogCheckFollowing(py_trees.behaviour.Behaviour):
 
     def setup(self, **kwargs):
         self.node = kwargs["node"]
+        self.sight_timeout = float(
+            resolve(self.sight_timeout, self.blackboard, "sight_timeout")
+        )
         self.pose = RobotPoseTracker(self.node)
-        self.subject = SubjectPoseTracker(self.node)
+        self.subject = FollowedSubjectTracker(self.node, self.sight_timeout)
         self.wanders = 0
         self.logger.info(f"{self.name}: Setup complete")
 
@@ -155,6 +163,143 @@ class DogCheckFollowing(py_trees.behaviour.Behaviour):
         return py_trees.common.Status.SUCCESS
 
 
+class DogCheckInDue(py_trees.behaviour.Behaviour):
+    """Decide whether it is time to look back for the human.
+
+    SUCCESS when a look back is due, FAILURE while leading may simply carry on.
+    The tree wraps it in an inverter so that "not due" is the branch that lets
+    the robot keep driving; `pacing.check_in_due()` holds the rule itself, and
+    this behaviour only measures the world for it -- how long since the last
+    look back, how many checkpoints since, how old the subject pose is and how
+    far away they are.
+
+    The clock starts the first time this is asked rather than when the constants
+    are loaded, because leading begins with the robot face to face with its
+    human: it has just caught their attention, so the interval is counted from
+    there and the first look back comes a leg or two later, not immediately.
+    """
+
+    def __init__(self, name="DogCheckInDue", sight_timeout=None):
+        super().__init__(name)
+        self.sight_timeout = sight_timeout
+
+        self.blackboard = self.attach_blackboard_client(name=name)
+        register_param_keys(
+            self.blackboard,
+            "check_in_every_checkpoints",
+            "check_in_interval",
+            "sight_timeout",
+        )
+        for key in (
+            "Dog_following_max_threshold",
+            "visibility_time_threshold",
+            "check_in_checkpoints_since",
+        ):
+            self.blackboard.register_key(key, access=py_trees.common.Access.READ)
+        self.blackboard.register_key(
+            "check_in_last_time", access=py_trees.common.Access.WRITE
+        )
+
+    def setup(self, **kwargs):
+        self.node = kwargs["node"]
+        self.sight_timeout = float(
+            resolve(self.sight_timeout, self.blackboard, "sight_timeout")
+        )
+        self.pose = RobotPoseTracker(self.node)
+        self.subject = FollowedSubjectTracker(self.node, self.sight_timeout)
+        self.logger.info(f"{self.name}: Setup complete")
+
+    def update(self):
+        now = now_seconds(self.node)
+        if not self.blackboard.check_in_last_time:
+            self.blackboard.check_in_last_time = now
+
+        due, reason = check_in_due(
+            checkpoints_since=self.blackboard.check_in_checkpoints_since,
+            seconds_since=now - self.blackboard.check_in_last_time,
+            subject_age=self.subject.age,
+            subject_distance=self._subject_distance(),
+            every_checkpoints=constant(self.blackboard, "check_in_every_checkpoints"),
+            interval=constant(self.blackboard, "check_in_interval"),
+            follow_threshold=self.blackboard.Dog_following_max_threshold,
+            stale_after=self.blackboard.visibility_time_threshold,
+        )
+
+        self.feedback_message = reason
+        if due:
+            self.node.get_logger().info(f"{self.name}: looking back -- {reason}")
+            return py_trees.common.Status.SUCCESS
+        return py_trees.common.Status.FAILURE
+
+    def _subject_distance(self):
+        if self.pose.position is None or self.subject.position is None:
+            return None
+        return distance_xy(self.pose.position, self.subject.position)
+
+
+class DogWaitForCatchUp(py_trees.behaviour.Behaviour):
+    """Stand still, head up, and give a lagging human a moment to catch up.
+
+    A dog that has looked back and found its human trailing waits for them
+    before it does anything else, and only goes back to fetch them when waiting
+    did not help. SUCCESS as soon as they are within
+    `Dog_following_max_threshold` again, FAILURE after `check_in_catch_up_timeout`
+    seconds -- which is what sends the tree off to walk back to them.
+    """
+
+    def __init__(self, name="DogWaitForCatchUp", timeout=None, sight_timeout=None):
+        super().__init__(name)
+        self.timeout = timeout
+        self.sight_timeout = sight_timeout
+
+        self.blackboard = self.attach_blackboard_client(name=name)
+        register_param_keys(
+            self.blackboard, "check_in_catch_up_timeout", "sight_timeout"
+        )
+        self.blackboard.register_key(
+            "Dog_following_max_threshold", access=py_trees.common.Access.READ
+        )
+
+    def setup(self, **kwargs):
+        self.node = kwargs["node"]
+        self.timeout = float(
+            resolve(self.timeout, self.blackboard, "check_in_catch_up_timeout")
+        )
+        self.sight_timeout = float(
+            resolve(self.sight_timeout, self.blackboard, "sight_timeout")
+        )
+        self.pose = RobotPoseTracker(self.node)
+        self.subject = FollowedSubjectTracker(self.node, self.sight_timeout)
+        self.accessories = AccessoryCommander(self.node)
+        self.logger.info(f"{self.name}: Setup complete")
+
+    def initialise(self):
+        self._start_time = self.node.get_clock().now()
+        self.accessories.look(HEAD_SEEK)
+        self.node.get_logger().info(f"{self.name}: waiting for the human to catch up")
+
+    def update(self):
+        elapsed = (self.node.get_clock().now() - self._start_time).nanoseconds / 1e9
+
+        if self.pose.position is not None and self.subject.position is not None:
+            distance = distance_xy(self.pose.position, self.subject.position)
+            allowed = self.blackboard.Dog_following_max_threshold
+            self.feedback_message = f"{distance:.2f} m away, waiting {elapsed:.0f} s"
+            if distance <= allowed:
+                self.node.get_logger().info(
+                    f"{self.name}: the human caught up ({distance:.2f} m)"
+                )
+                return py_trees.common.Status.SUCCESS
+
+        if elapsed > self.timeout:
+            self.node.get_logger().info(
+                f"{self.name}: the human did not catch up in {self.timeout:.0f} s, "
+                "going back to them"
+            )
+            return py_trees.common.Status.FAILURE
+        return py_trees.common.Status.RUNNING
+
+
 class DogResumeLeading(py_trees.behaviour.Behaviour):
     """Pick the checkpoint to lead to now that the human has been found again.
 
@@ -183,9 +328,12 @@ class DogResumeLeading(py_trees.behaviour.Behaviour):
         self.blackboard.register_key(
             "Dog_max_checkpoint", access=py_trees.common.Access.READ
         )
-        self.blackboard.register_key(
-            "Dog_current_checkpoint", access=py_trees.common.Access.WRITE
-        )
+        for key in (
+            "Dog_current_checkpoint",
+            "check_in_checkpoints_since",
+            "check_in_last_time",
+        ):
+            self.blackboard.register_key(key, access=py_trees.common.Access.WRITE)
 
     def setup(self, **kwargs):
         self.node = kwargs["node"]
@@ -209,6 +357,10 @@ class DogResumeLeading(py_trees.behaviour.Behaviour):
         index = max(0, min(index, self.blackboard.Dog_max_checkpoint))
 
         self.blackboard.Dog_current_checkpoint = index
+        # Leading resumes straight out of a face-to-face, so the look backs are
+        # paced from here rather than from the one before the human was lost.
+        self.blackboard.check_in_checkpoints_since = 0
+        self.blackboard.check_in_last_time = now_seconds(self.node)
         self.feedback_message = f"leading on to checkpoint {index}"
         self.node.get_logger().info(
             f"{self.name}: {reason}, leading on to checkpoint {index}"

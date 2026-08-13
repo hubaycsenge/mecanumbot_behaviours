@@ -1,8 +1,10 @@
 """Navigation behaviours, plus the public face of the behaviour library.
 
-`Approach` (the only behaviour that actually drives somewhere) lives here and
-goes through nav2. The in-place turns live in `turning.py`, the recovery patrol
-in `searching.py`, and the geometry/ROS helpers in `geometry.py` /
+The two behaviours that actually drive somewhere live here and both go through
+nav2's actions: `Approach` navigates to a single place, `FollowRoute` runs a leg
+of route checkpoints as one waypoint goal. The in-place turns live in
+`turning.py`, the recovery patrol in `searching.py`, the pacing of the look
+backs in `pacing.py`, and the geometry/ROS helpers in `geometry.py` /
 `ros_interfaces.py`; they are re-exported at the bottom of this module so
 `from ...behaviours.movement_managers import X` keeps working for every tree and
 for the `mecanumbot_demo_behaviours` package.
@@ -21,13 +23,18 @@ from mecanumbot_leading_behaviour.behaviours.geometry import (
     normalize_angle,
     pose_to_goal,
     quaternion_from_yaw,
+    route_poses,
     yaw_from_quaternion,
 )
+from mecanumbot_leading_behaviour.behaviours.pacing import route_leg
 from mecanumbot_leading_behaviour.behaviours.ros_interfaces import (
     BallTracker,
     GOAL_ACTIVE_STATUSES,
     GOAL_FAILED_STATUSES,
+    FollowedSubjectTracker,
     Nav2GoalMonitor,
+    Nav2PoseNavigator,
+    Nav2RouteNavigator,
     PeopleTracker,
     RobotPoseTracker,
     STATUS_ABORTED,
@@ -51,6 +58,7 @@ from mecanumbot_leading_behaviour.behaviours.targets import (
 )
 from mecanumbot_leading_behaviour.behaviours.turning import (  # noqa: F401  (re-export)
     FindPeople,
+    GlanceBack,
     InPlaceTurn,
     RelativeTurnPattern,
     ScanSpin,
@@ -66,6 +74,12 @@ class Approach(py_trees.behaviour.Behaviour):
     `mode="exact"` aims for the target minus `robot_closeness_threshold`,
     `mode="fixed_distance"` only steps `robot_approach_distance` closer per run,
     which is how the robot walks up to a human in stages.
+
+    The goal goes through the `NavigateToPose` action rather than the
+    `/goal_pose` topic, so the outcome belongs to this goal rather than being
+    guessed from a status array, and the drive is cancelled when the behaviour
+    stops -- a turn that follows owns `/cmd_vel` straight away instead of
+    waiting for nav2 to notice it is finished.
     """
 
     def __init__(
@@ -76,6 +90,7 @@ class Approach(py_trees.behaviour.Behaviour):
         target_timeout=None,
         goal_timeout=None,
         sight_timeout=None,
+        retries=None,
     ):
         super().__init__(name)
         self.target_type = target_type
@@ -83,6 +98,7 @@ class Approach(py_trees.behaviour.Behaviour):
         self.target_timeout = target_timeout
         self.goal_timeout = goal_timeout
         self.sight_timeout = sight_timeout
+        self.retries = retries
 
         self.blackboard = self.attach_blackboard_client(name=name)
         register_target_keys(self.blackboard)
@@ -111,8 +127,9 @@ class Approach(py_trees.behaviour.Behaviour):
         self.sight_timeout = float(
             resolve(self.sight_timeout, self.blackboard, "sight_timeout")
         )
+        self.retries = int(resolve(self.retries, self.blackboard, "nav_goal_retries"))
         self.pose = RobotPoseTracker(self.node)
-        self.nav2 = Nav2GoalMonitor(self.node)
+        self.nav2 = Nav2PoseNavigator(self.node)
         self.people = (
             PeopleTracker(self.node, self.sight_timeout)
             if is_human(self.target_type)
@@ -123,8 +140,14 @@ class Approach(py_trees.behaviour.Behaviour):
     def initialise(self):
         self.nav2.reset()
         self._target_position = None
+        self._resends = 0
         self._start_time = self.node.get_clock().now()
         self.node.get_logger().info(f"{self.name}: approaching the {self.target_type}")
+
+    def terminate(self, new_status):
+        """Stop driving when the behaviour stops, whatever stopped it."""
+        if new_status != py_trees.common.Status.RUNNING:
+            self.nav2.cancel()
 
     def update(self):
         if self.pose.pose is None:
@@ -144,8 +167,14 @@ class Approach(py_trees.behaviour.Behaviour):
             return py_trees.common.Status.RUNNING
 
         if not self.nav2.goal_sent:
-            if self.nav2.busy():
-                self.feedback_message = "waiting for the previous nav2 goal to finish"
+            if not self.nav2.server_ready():
+                if self._elapsed() > self.goal_timeout:
+                    self.node.get_logger().info(
+                        f"{self.name}: no nav2 action server within "
+                        f"{self.goal_timeout:.0f} s, giving up"
+                    )
+                    return py_trees.common.Status.FAILURE
+                self.feedback_message = "waiting for the nav2 action server"
                 return py_trees.common.Status.RUNNING
             self._send_goal()
             return py_trees.common.Status.RUNNING
@@ -167,10 +196,17 @@ class Approach(py_trees.behaviour.Behaviour):
             self.feedback_message = f"driving to the {self.target_type}"
             return py_trees.common.Status.RUNNING
 
+        if self._resends >= self.retries:
+            self.node.get_logger().info(
+                f"{self.name}: nav2 dropped the goal {self._resends} time(s), giving up"
+            )
+            return py_trees.common.Status.FAILURE
+        self._resends += 1
         self.node.get_logger().info(
-            f"{self.name}: nav2 dropped the goal, sending it again"
+            f"{self.name}: nav2 dropped the goal, sending it again "
+            f"({self._resends}/{self.retries})"
         )
-        self.nav2.reset()
+        self._send_goal()
         return py_trees.common.Status.RUNNING
 
     # --- internals ----------------------------------------------------------
@@ -203,7 +239,7 @@ class Approach(py_trees.behaviour.Behaviour):
             mode=self.mode,
             go_threshold=go_threshold,
         )
-        self.nav2.send(goal)
+        self.nav2.go_to(goal)
         self.node.get_logger().info(
             f"{self.name}: goal for the {self.target_type} at "
             f"x={goal.position.x:.2f} y={goal.position.y:.2f}"
@@ -220,6 +256,262 @@ class Approach(py_trees.behaviour.Behaviour):
             )
         else:
             self.node.get_logger().info(f"{self.name}: reached the {self.target_type}")
+        return py_trees.common.Status.SUCCESS
+
+
+class FollowRoute(py_trees.behaviour.Behaviour):
+    """Lead one leg of the route: several checkpoints in a single nav2 goal.
+
+    Leading used to be one nav2 goal per checkpoint, which meant the robot came
+    to a full stop, waited for the goal to be reported done, turned, and set off
+    again at every one of them. A leg goes through `NavigateThroughPoses`
+    instead: nav2 plans through all the checkpoints of the leg at once and
+    drives them without stopping, and because `route_poses()` orients every
+    waypoint along the route the robot is already pointing the right way when it
+    passes one.
+
+    How long a leg is comes from `pacing.route_leg()` -- as far as the look-back
+    pacing allows, so the robot never plans past a check-in it is about to owe,
+    and never further than `route_lookahead` checkpoints.
+
+    The leg is cut short, with SUCCESS, when the human stops following: they
+    have been out of sight for longer than `visibility_time_threshold`, or
+    further away than `Dog_following_max_threshold`, for `check_in_grace`
+    seconds together. SUCCESS rather than FAILURE because stopping the drive is
+    not a failure of it -- the check-in that comes next in the cycle is due by
+    exactly the same measurements, and it is the look back that decides whether
+    this is a human who fell behind or a human who is gone.
+
+    Checkpoints count as reached by distance (`checkpoint_reached_distance`)
+    rather than by nav2's own arrival, so `Dog_current_checkpoint` moves along
+    while the robot drives through and does not depend on which nav2 behaviour
+    tree is loaded.
+    """
+
+    def __init__(
+        self,
+        name="FollowRoute",
+        goal_timeout=None,
+        retries=None,
+        grace=None,
+        sight_timeout=None,
+    ):
+        super().__init__(name)
+        self.goal_timeout = goal_timeout
+        self.retries = retries
+        self.grace = grace
+        self.sight_timeout = sight_timeout
+
+        self.blackboard = self.attach_blackboard_client(name=name)
+        register_param_keys(self.blackboard)
+        for key in (
+            "Dog_checkpoints",
+            "Dog_max_checkpoint",
+            "target_position",
+            "Dog_following_max_threshold",
+            "visibility_time_threshold",
+        ):
+            self.blackboard.register_key(key, access=py_trees.common.Access.READ)
+        self.blackboard.register_key(
+            "Dog_current_checkpoint", access=py_trees.common.Access.WRITE
+        )
+        self.blackboard.register_key(
+            "check_in_checkpoints_since", access=py_trees.common.Access.WRITE
+        )
+
+    def setup(self, **kwargs):
+        self.node = kwargs["node"]
+        self.goal_timeout = float(
+            resolve(self.goal_timeout, self.blackboard, "approach_goal_timeout")
+        )
+        self.retries = int(resolve(self.retries, self.blackboard, "nav_goal_retries"))
+        self.grace = float(resolve(self.grace, self.blackboard, "check_in_grace"))
+        self.sight_timeout = float(
+            resolve(self.sight_timeout, self.blackboard, "sight_timeout")
+        )
+        self.pose = RobotPoseTracker(self.node)
+        self.subject = FollowedSubjectTracker(self.node, self.sight_timeout)
+        self.nav2 = Nav2RouteNavigator(self.node)
+        self.logger.info(f"{self.name}: Setup complete")
+
+    def initialise(self):
+        self.nav2.reset()
+        self._leg = None
+        self._step = 0
+        self._resends = 0
+        self._lagging_since = None
+        self._start_time = self.node.get_clock().now()
+
+    def terminate(self, new_status):
+        if new_status != py_trees.common.Status.RUNNING:
+            self.nav2.cancel()
+
+    def update(self):
+        if self.pose.position is None:
+            self.feedback_message = "waiting for AMCL pose"
+            return py_trees.common.Status.RUNNING
+
+        if self._leg is None:
+            if not self.nav2.server_ready():
+                if self._elapsed() > self.goal_timeout:
+                    self.node.get_logger().info(
+                        f"{self.name}: no nav2 waypoint action server within "
+                        f"{self.goal_timeout:.0f} s, giving up"
+                    )
+                    return py_trees.common.Status.FAILURE
+                self.feedback_message = "waiting for the nav2 waypoint action server"
+                return py_trees.common.Status.RUNNING
+            return self._begin_leg()
+
+        self._mark_checkpoints_passed()
+        if self._step >= len(self._leg):
+            return self._leg_done("leg driven")
+
+        lagging = self._lagging_reason()
+        if lagging is not None:
+            return self._leg_done(f"stopping the leg early: {lagging}")
+
+        status = self.nav2.status()
+        if status is None:
+            if self.nav2.seconds_since_send() > self.goal_timeout:
+                self.node.get_logger().info(
+                    f"{self.name}: nav2 never reported our route within "
+                    f"{self.goal_timeout:.0f} s, giving up"
+                )
+                return py_trees.common.Status.FAILURE
+            self.feedback_message = "waiting for nav2 to accept the route"
+            return py_trees.common.Status.RUNNING
+
+        if status == STATUS_SUCCEEDED:
+            # Nav2 says the run is over; take its word even if the robot stopped
+            # a little short of the last checkpoint by our own measure, and
+            # count the rest of the leg as walked so the route index agrees.
+            for index in self._leg[self._step :]:
+                self.blackboard.check_in_checkpoints_since += 1
+                self.blackboard.Dog_current_checkpoint = min(
+                    index + 1, self.blackboard.Dog_max_checkpoint
+                )
+            self._step = len(self._leg)
+            return self._leg_done("nav2 finished the route")
+        if status in GOAL_ACTIVE_STATUSES:
+            remaining = self.nav2.poses_remaining
+            self.feedback_message = (
+                f"leading to checkpoint {self._leg[min(self._step, len(self._leg) - 1)]}"
+                + ("" if remaining is None else f", {remaining} waypoint(s) left")
+            )
+            return py_trees.common.Status.RUNNING
+
+        if self._resends >= self.retries:
+            self.node.get_logger().info(
+                f"{self.name}: nav2 dropped the route {self._resends} time(s), giving up"
+            )
+            return py_trees.common.Status.FAILURE
+        self._resends += 1
+        self.node.get_logger().info(
+            f"{self.name}: nav2 dropped the route, sending the rest again "
+            f"({self._resends}/{self.retries})"
+        )
+        return self._send(self._leg[self._step :])
+
+    # --- internals ----------------------------------------------------------
+
+    def _elapsed(self):
+        return (self.node.get_clock().now() - self._start_time).nanoseconds / 1e9
+
+    def _begin_leg(self):
+        """Work out how far this leg goes, and send it."""
+        if not self.blackboard.Dog_checkpoints:
+            self.node.get_logger().warn(f"{self.name}: no route checkpoints to lead to")
+            return py_trees.common.Status.FAILURE
+
+        self._leg = route_leg(
+            self.blackboard.Dog_current_checkpoint,
+            self.blackboard.Dog_max_checkpoint,
+            self.blackboard.check_in_checkpoints_since,
+            constant(self.blackboard, "check_in_every_checkpoints"),
+            constant(self.blackboard, "route_lookahead"),
+        )
+        self._step = 0
+
+        # Checkpoints the robot is already standing on are not driven past, so
+        # they are dropped from the goal and left out of the look-back pacing:
+        # waiting at the end of the route is not covering ground, and counting
+        # it as ground covered would have the robot glancing back on the spot.
+        self._mark_checkpoints_passed(count=False)
+        if self._step >= len(self._leg):
+            return self._leg_done("already at the end of this leg")
+        return self._send(self._leg[self._step :])
+
+    def _send(self, indices):
+        self.nav2.follow(
+            route_poses(
+                self.blackboard.Dog_checkpoints,
+                indices,
+                look_beyond=self.blackboard.target_position,
+            )
+        )
+        self.node.get_logger().info(
+            f"{self.name}: leading through checkpoint(s) {indices} of "
+            f"0..{self.blackboard.Dog_max_checkpoint}"
+        )
+        return py_trees.common.Status.RUNNING
+
+    def _mark_checkpoints_passed(self, count=True):
+        """Walk the route index on for every checkpoint of the leg driven past."""
+        checkpoints = self.blackboard.Dog_checkpoints
+        reached = constant(self.blackboard, "checkpoint_reached_distance")
+        while self._step < len(self._leg):
+            index = self._leg[self._step]
+            if distance_xy(self.pose.position, checkpoints[index]) > reached:
+                return
+            self._step += 1
+            if count:
+                self.blackboard.check_in_checkpoints_since += 1
+            self.blackboard.Dog_current_checkpoint = min(
+                index + 1, self.blackboard.Dog_max_checkpoint
+            )
+            self.node.get_logger().info(
+                f"{self.name}: checkpoint {index} "
+                f"{'reached' if count else 'already behind us'}, next is "
+                f"{self.blackboard.Dog_current_checkpoint}"
+            )
+
+    def _lagging_reason(self):
+        """Why the human is no longer following, once they have been for `grace`."""
+        reason = None
+        age = self.subject.age
+        if self.subject.position is None or age is None:
+            reason = "the human has not been seen yet"
+        elif age > self.blackboard.visibility_time_threshold:
+            reason = f"the human was last seen {age:.1f} s ago"
+        else:
+            distance = distance_xy(self.pose.position, self.subject.position)
+            allowed = self.blackboard.Dog_following_max_threshold
+            if distance > allowed:
+                reason = (
+                    f"the human is {distance:.2f} m behind, "
+                    f"more than the {allowed:.2f} m allowed"
+                )
+
+        if reason is None:
+            self._lagging_since = None
+            return None
+
+        # A human who steps behind a pillar for a moment is still following, so
+        # the reason has to hold for a while before it stops the leg.
+        now = self.node.get_clock().now()
+        if self._lagging_since is None:
+            self._lagging_since = now
+            return None
+        if (now - self._lagging_since).nanoseconds / 1e9 < self.grace:
+            self.feedback_message = f"{reason} (waiting {self.grace:.0f} s)"
+            return None
+        return reason
+
+    def _leg_done(self, reason):
+        self.nav2.cancel()
+        self.node.get_logger().info(f"{self.name}: {reason}")
+        self.feedback_message = reason
         return py_trees.common.Status.SUCCESS
 
 
@@ -323,8 +615,10 @@ __all__ = [
     "CheckRobotAtLastCheckpoint",
     "CheckRobotHasBall",
     "CheckSubjectTargetSuccess",
+    "FollowRoute",
     # turning behaviours
     "FindPeople",
+    "GlanceBack",
     "InPlaceTurn",
     "RelativeTurnPattern",
     "ScanSpin",

@@ -132,6 +132,35 @@ def _projection_fraction(start, end, position):
     return max(0.0, min(1.0, fraction))
 
 
+def route_poses(checkpoints, indices, look_beyond=None):
+    """Goal poses for a run through `indices` of the checkpoint list.
+
+    Each pose sits on its checkpoint and faces the next point of the route, so a
+    robot handed the whole leg at once arrives at every waypoint already
+    pointing the way it is about to go -- there is no turn-on-the-spot between
+    one waypoint and the next. `look_beyond` is what the final checkpoint of the
+    route faces (the target, where the human is being led); without it that
+    checkpoint keeps the heading the robot came in on.
+    """
+    poses = []
+    for index in indices:
+        point = checkpoints[index]
+        if index + 1 < len(checkpoints):
+            yaw = bearing_to(point, checkpoints[index + 1])
+        elif look_beyond is not None:
+            yaw = bearing_to(point, look_beyond)
+        elif index > 0:
+            yaw = bearing_to(checkpoints[index - 1], point)
+        else:
+            yaw = 0.0
+        pose = Pose()
+        pose.position.x = float(point.x)
+        pose.position.y = float(point.y)
+        pose.orientation = quaternion_from_yaw(yaw)
+        poses.append(pose)
+    return poses
+
+
 def pose_to_goal(
     object_position, robot_pose, stop_threshold=0.3, mode="exact", go_threshold=1.0
 ):

@@ -7,6 +7,9 @@
   <maintainer email="csengehubay@gmail.com">temesi</maintainer>
   <license>TODO: License declaration</license>
 
+  <!-- The leading behaviours drive Nav2 through its actions. -->
+  <exec_depend>nav2_msgs</exec_depend>
+
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

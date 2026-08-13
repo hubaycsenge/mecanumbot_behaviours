@@ -25,11 +25,21 @@ executable tree nodes.
 
 ### Publishers
 
-| Topic                | Data type                            | Function                                                                                                    |
-| -------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `/goal_pose`         | `geometry_msgs/msg/PoseStamped`      | Sends Nav2 navigation goals — only for `Approach`, i.e. whenever the robot actually drives somewhere.       |
-| `/cmd_vel`           | `geometry_msgs/msg/Twist`            | Every in-place rotation (`TurnToward`, `RelativeTurnPattern`, `ScanSpin`/`FindPeople`/`Spin360`), profiled. |
-| `/cmd_accessory_pos` | `mecanumbot_msgs/msg/AccessMotorCmd` | Neck (camera tilt) and gripper commands: gesture sequences plus the lifted/level head poses.                |
+| Topic                | Data type                            | Function                                                                                                                    |
+| -------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `/cmd_vel`           | `geometry_msgs/msg/Twist`            | Every in-place rotation (`TurnToward`, `RelativeTurnPattern`, `GlanceBack`, `ScanSpin`/`FindPeople`/`Spin360`), profiled.   |
+| `/cmd_accessory_pos` | `mecanumbot_msgs/msg/AccessMotorCmd` | Neck (camera tilt) and gripper commands: gesture sequences plus the lifted/level head poses.                                |
+| `/goal_pose`         | `geometry_msgs/msg/PoseStamped`      | Created by `Nav2GoalMonitor`, which the leading behaviours no longer use — it stays for the ostensive package's pointing goals. |
+
+### Action clients used
+
+Driving goes through Nav2's actions rather than the `/goal_pose` topic, so a
+goal has an identity, a result and a cancel (see *Navigating by action* below).
+
+| Action                    | Type                             | Used by                                                          |
+| ------------------------- | -------------------------------- | ------------------------------------------------------------------ |
+| `/navigate_to_pose`       | `nav2_msgs/action/NavigateToPose` | `Approach` — one place to drive to.                              |
+| `/navigate_through_poses` | `nav2_msgs/action/NavigateThroughPoses` | `FollowRoute` — a leg of route checkpoints in one goal. |
 
 ### Subscribers
 
@@ -37,9 +47,10 @@ executable tree nodes.
 | ---------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `/amcl_pose`                       | `geometry_msgs/msg/PoseWithCovarianceStamped` | Tracks robot pose for goal generation and checkpoint selection. Subscribed with `RELIABLE` + `TRANSIENT_LOCAL` QoS to match AMCL. |
 | `/mecanumbot/people_fusion`        | `geometry_msgs/msg/PoseArray`                 | Fused people detections — used to find, select and approach the subject and to test target success.                               |
-| `/mecanumbot/subject_pose`         | `geometry_msgs/msg/PoseStamped`               | Tracked subject pose, used by `DogCheckFollowing` and `DistanceToBlackboard`.                                                     |
+| `/mecanumbot/subject_pose`         | `geometry_msgs/msg/PoseStamped`               | Tracked subject pose. Read together with the fused detections by `FollowedSubjectTracker`, whichever of the two is fresher.       |
 | `/mecanumbot/has_object`           | `std_msgs/msg/Bool`                           | Ball-handover trigger read by `CheckRobotHasBall`.                                                                                |
-| `/navigate_to_pose/_action/status` | `action_msgs/msg/GoalStatusArray`             | Monitors Nav2 goal execution states; goals are matched by UUID and retried on abort/cancel.                                       |
+| `/navigate_to_pose/_action/status` | `action_msgs/msg/GoalStatusArray`             | Only for `Nav2GoalMonitor.busy()` — "is Nav2 driving right now", which is what a turn waits for before it takes `/cmd_vel`.       |
+| `/navigate_through_poses/_action/status` | `action_msgs/msg/GoalStatusArray`       | The same question for a waypoint run, so a turn does not take `/cmd_vel` in the middle of one.                                     |
 
 ### Services handled
 
@@ -62,25 +73,51 @@ everything, so `from ...behaviours.movement_managers import X` keeps working
 | Module                 | Contents                                                                                          |
 | ---------------------- | ------------------------------------------------------------------------------------------------- |
 | `constants.py`         | The tunables: what every behaviour used to hard-code, their defaults, and how the YAML is read.  |
-| `geometry.py`          | Pure geometry: angles, bearings, `signed_rotation`, `pose_to_goal`, checkpoint lookups, `route_progress`. |
-| `ros_interfaces.py`    | Topic names, QoS, pose/people/ball trackers, the Nav2 goal monitor, velocity and neck commanders. |
+| `geometry.py`          | Pure geometry: angles, bearings, `signed_rotation`, `pose_to_goal`, `route_poses`, checkpoint lookups, `route_progress`. |
+| `pacing.py`            | When the dog looks back and how far it drives between two look backs. Imports nothing — the decision logic on its own. |
+| `ros_interfaces.py`    | Topic names, QoS, pose/people/ball trackers, the Nav2 action navigators, velocity and neck commanders. |
 | `targets.py`           | What a `target_type` points at, and the head pose / turn direction that goes with it.             |
 | `turning.py`           | `SmoothTurner` plus the in-place turning behaviours.                                              |
 | `searching.py`         | `WaitForPerson`, `ManageSearchCheckpoint` — the lost-human patrol.                                |
-| `movement_managers.py` | `Approach`, the condition checks, and the re-exports above.                                       |
+| `movement_managers.py` | `Approach`, `FollowRoute`, the condition checks, and the re-exports above.                        |
 
 | Behaviour                    | Role                                                                                                                                                |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Approach`                   | Navigates to a target through Nav2; `mode="exact"` drives to the point, `mode="fixed_distance"` steps `robot_approach_distance` closer.             |
+| `FollowRoute`                | Leads one leg of the route — several checkpoints in a single `NavigateThroughPoses` goal, cut short when the human stops following.                 |
 | `TurnToward`                 | Rotates in place to face a `subject` / `target` / `start` / `checkpoint` / `patrol` / `last_checkpoint`, in a chosen direction (see below).         |
+| `GlanceBack`                 | The dog's look over the shoulder: a slow turn onto the human's last known place, then a slow sweep around it. FAILURE is what starts the patrol.    |
 | `RelativeTurnPattern`        | Attention-getting wiggle: alternating turns that end on the starting heading, beginning in the direction of the last search turn.                   |
 | `ScanSpin`                   | Spins in place looking for people, head lifted; `FindPeople` (spin until somebody is seen) and `Spin360` (one full scan) are configured subclasses. |
 | `WaitForPerson`              | Interrupt half of the lost-recovery parallel: waits with a lifted head, and records whether the person turned up ahead of or behind the robot.      |
 | `ManageSearchCheckpoint`     | Walks the patrol index along the route, reversing at either end.                                                                                    |
+| `DogCheckInDue`              | SUCCESS when a look back is due — the pacing measured against `pacing.check_in_due()`.                                                              |
+| `DogWaitForCatchUp`          | Stands still, head up, while a trailing human catches up; FAILURE after `check_in_catch_up_timeout` sends the robot back to fetch them.             |
 | `DogResumeLeading`           | After a search: leads on from the checkpoint nearest the robot, or the one after it when the human has already walked past it.                      |
 | `CheckSubjectTargetSuccess`  | SUCCESS when the subject is within `target_reached_threshold` of the target.                                                                        |
 | `CheckRobotHasBall`          | SUCCESS while `/mecanumbot/has_object` is true.                                                                                                     |
 | `CheckRobotAtLastCheckpoint` | SUCCESS when `Dog_current_checkpoint >= Dog_max_checkpoint`.                                                                                        |
+
+### Navigating by action
+
+Every drive is a Nav2 action goal. A pose published on `/goal_pose` is a message
+shouted into the dark: Nav2 never says which goal id it became, so the outcome
+had to be guessed from the newest entry of the status array, and there was no
+way to take the goal back. `Nav2PoseNavigator` and `Nav2RouteNavigator` wrap
+`NavigateToPose` and `NavigateThroughPoses`, which give all three — the goal
+handle identifies the goal, the result says how it ended, and `cancel()` stops
+it. Everything is asynchronous: callbacks land between ticks on the same
+executor, a behaviour only reads `status()` during its tick, and nothing waits.
+
+Cancelling is what makes the leading seamless. A drive is cancelled the moment
+the behaviour that owns it stops, so the turn that comes next has `/cmd_vel` to
+itself instead of waiting `turn_nav2_wait` seconds for Nav2 to notice it is
+finished, and `FollowRoute` can stop a leg mid-way when the human drops behind.
+
+`Nav2GoalMonitor` stays for `mecanumbot_ostensive_behaviour`, which still
+publishes goal poses, and for `busy()` — "is Nav2 driving right now", which a
+turn asks before it takes `/cmd_vel`, and which is a question about the status
+topics rather than about a goal of our own.
 
 ### Turning: smoothness and direction
 
@@ -203,7 +240,20 @@ started by the launch file — run it with `ros2 run`.
 | `launch/`                                  | Runtime launcher with condition-based node selection.                                                                   |
 | `config/`                                  | Behaviour constants and sequences in YAML (`behaviour_setting_constants.yaml`, `Eto_behaviour_setting_constants.yaml`). |
 | `resource/`                                | ROS package resource marker.                                                                                            |
-| `test/`                                    | Package lint tests.                                                                                                     |
+| `test/`                                    | `test_pacing.py` plus the package lint tests.                                                                           |
+
+## Tests
+
+`test/test_pacing.py` covers the leading pacing rules — when a look back falls
+due, how long a leg may be, and the waypoint poses a leg is sent as. The pacing
+rules import nothing, so most of it runs against a bare interpreter; the three
+`route_poses` tests need `geometry_msgs` and skip without it.
+
+```bash
+cd src/mecanumbot_behaviours/mecanumbot_leading_behaviour
+PYTHONPATH=.:$PYTHONPATH python3 -m pytest test/test_pacing.py -v
+colcon test --packages-select mecanumbot_leading_behaviour   # from the workspace root
+```
 
 ## BT logic
 
@@ -249,33 +299,93 @@ The same helper backs `path_progress_sign()`, which decides the patrol direction
 
 ### `dog_tree.py` logic
 
+The loop is built around walking and checking being different things, and the
+walking being most of it. A dog does not stop at every step to look round, and
+it does not ignore its person for the whole walk either.
+
 1. Load constants.
 2. `SeekOrFind` selector — the seek-attention sequence (approach the human, face them,
    attention wiggle, catch-attention gesture) or, on failure, lost recovery followed by
    the same sequence. Both branches come from `create_seek_attention()`.
 3. Endless `ShowOrLeadSelector` loop:
    - Ball reaction: if the robot has been handed the ball, recover the human, approach
-     them and play the thank gesture. It needs no glance of its own, so it stays ahead
-     of the cycle below;
+     them and play the thank gesture. It needs no look back of its own, so it stays
+     ahead of the cycle below;
    - else `LeadOrRecoverSelector`:
-     - `GlanceThenActSequence` — one glance back for the human (`FindPeople`, head
-       lifted) per cycle, then `ShowOrLeadStepSelector` acts on it:
-       - if the human is near the target (`CheckSubjectTargetSuccess`), run the
-         show/point sequence;
-       - else lead one step: check they kept up (`DogCheckFollowing`), turn to face the
-         next checkpoint by the smaller angle (`direction="shortest"`, head levelled)
-         and drive there.
-
-       Both used to open with their own `FindPeople`. That only scans when nobody is in
-       view, but on a cycle where the closeness check failed the robot could still sweep
-       twice over the same glance, which reads as dithering;
-     - if the glance finds nobody, or the lead step fails — the human is gone — recover
-       and resume: patrol the route until somebody is seen, walk up to them and ask for
-       their attention again (`create_seek_attention()`), then `DogResumeLeading` picks
-       the checkpoint to carry on from. Wrapped in `Retry(num_failures=3)`, because the
-       human is most likely to slip out of view again during that walk up to them.
+     - `LeadCycleSequence` — check in if it is time, then lead on:
+       - `LeadCheckInIfDueSelector` (`create_check_in()`): `DogCheckInDue` under an
+         inverter, so "not due" is the branch that lets the robot carry straight on
+         driving. When one *is* due:
+         - `GlanceBack` turns slowly onto the human's last known place and sweeps
+           around it. FAILURE here — and only here — means the human is lost;
+         - `DogCheckFollowing` then says whether they are close enough. If they are
+           not: `DogWaitForCatchUp` stands still and gives them
+           `check_in_catch_up_timeout` seconds, and only when that runs out does the
+           robot walk back (`create_seek_attention()`) and `DogResumeLeading` pick up
+           the route again from wherever the pair now are;
+       - `ShowOrLeadStepSelector`: if the human is near the target
+         (`CheckSubjectTargetSuccess`), run the show/point sequence; otherwise lead a
+         leg — turn to face the next checkpoint by the smaller angle
+         (`direction="shortest"`, head levelled, and only if the route really bends by
+         more than `route_turn_min`), then `FollowRoute`;
+     - if the check-in found nobody, the human is gone: recover and resume — patrol the
+       route until somebody is seen, walk up to them and ask for their attention again,
+       then `DogResumeLeading` picks the checkpoint to carry on from. Wrapped in
+       `Retry(num_failures=3)`, because the human is most likely to slip out of view
+       again during that walk up to them.
 4. The root only fails when even the patrol turns up nobody; it is then ticked again
    from the top, which runs `SeekOrFind` before leading resumes.
+
+#### Leading a leg
+
+`FollowRoute` hands Nav2 several checkpoints in one `NavigateThroughPoses` goal
+and lets it drive through them without stopping. `geometry.route_poses()`
+orients every waypoint along the route, so the robot passes each one already
+pointing where it is about to go, and the last one faces the target beyond the
+route. How long a leg is comes from `pacing.route_leg()` — as far as the
+look-back pacing allows, so the robot never plans past a check-in it is about to
+owe, and never further than `route_lookahead` checkpoints.
+
+Checkpoints count as driven past by distance (`checkpoint_reached_distance`)
+rather than by Nav2's own arrival, so `Dog_current_checkpoint` moves along while
+the robot drives through and does not depend on which Nav2 behaviour tree is
+loaded. A leg is cut short — with SUCCESS, not FAILURE — when the human has been
+out of sight or trailing for `check_in_grace` seconds together: stopping the
+drive is not a failure of it, and the check-in that comes next is due by exactly
+the same measurements.
+
+#### Pacing the look backs
+
+`behaviours/pacing.py` holds the rule and imports nothing, so it can be read and
+tested on its own. A look back is due when
+
+* the human has not been seen at all, or not for `visibility_time_threshold`
+  seconds;
+* they are further away than `Dog_following_max_threshold`;
+* `check_in_every_checkpoints` checkpoints have been driven since the last one;
+* `check_in_interval` seconds have passed since the last one.
+
+The first three are reasons to look back *now*; the last two are the habit.
+Either counter set to `0` switches that half of the habit off. The clock starts
+the first time `DogCheckInDue` is asked rather than when the constants load,
+because leading begins with the robot face to face with its human.
+
+#### Looking back, and being lost
+
+`GlanceBack` is the check-in, and it is a different movement from a search. It
+runs at `glance_spin_speed`, slower than either scan, for two reasons at once: a
+slow turn reads as looking rather than casting about, and it gives the camera
+detector time to find a person the robot sweeps past — turning fast past
+somebody and declaring them missing is exactly how a following human gets
+treated as a lost one. It has two phases: turn onto the bearing of the place the
+human was last seen (or back down the route towards the checkpoint the pair came
+from, if they have never been seen), and then, only if nobody is in sight from
+there, a slow `+1, -2, +2, -1` sweep of `glance_sweep` either side that ends
+facing the middle again.
+
+Only its FAILURE starts the recovery patrol. The robot does not go hunting
+through the building for somebody it has not properly looked for yet, and a
+human who is merely two metres behind is fetched rather than searched for.
 
 ### `LED_tree.py` logic
 
@@ -334,7 +444,10 @@ so a run is described by one file.
 | Rotation profile  | `turn_max_speed`, `turn_accel`, `turn_decel_gain`, `turn_min_speed`, `turn_tolerance_deg`, `facing_epsilon_deg`   | `SmoothTurner`, `signed_rotation`                |
 | Turning           | `turn_timeout`, `turn_nav2_wait`, `turn_target_timeout`, `turn_corrections`, `attention_turn_step_deg`            | `InPlaceTurn`, `TurnToward`, `RelativeTurnPattern` |
 | Scanning          | `scan_spin_speed`, `scan_timeout`; `full_scan_spin_speed`, `full_scan_timeout`, `full_scan_revolutions`           | `FindPeople`; `Spin360`                          |
-| Approaching       | `approach_target_timeout`, `approach_goal_timeout`, `route_step_distance`                                         | `Approach`                                       |
+| Looking back      | `glance_spin_speed`, `glance_timeout`, `glance_sweep_deg`                                                        | `GlanceBack`                                     |
+| Check-in pacing   | `check_in_every_checkpoints`, `check_in_interval`, `check_in_grace`, `check_in_catch_up_timeout`                 | `DogCheckInDue`, `FollowRoute`, `DogWaitForCatchUp` |
+| Approaching       | `approach_target_timeout`, `approach_goal_timeout`, `route_step_distance`, `nav_goal_retries`                    | `Approach`                                       |
+| Leading a leg     | `route_lookahead`, `checkpoint_reached_distance`, `route_turn_min_deg`                                           | `FollowRoute`, the dog tree's checkpoint turn    |
 | Getting them back | `resume_passed_margin`, `recover_retries`                                                                         | `DogResumeLeading`, the dog tree's `Retry`       |
 | Pacing            | `thank_delay`, `show_turn_delay`                                                                                  | the dog tree's `ConfiguredTimer`s                |
 | Accessory poses   | `neck_seek_pos`, `neck_level_pos`, `gripper_left_neutral`, `gripper_right_neutral`                                | `AccessoryCommander`                             |

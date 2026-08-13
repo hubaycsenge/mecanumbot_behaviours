@@ -69,12 +69,46 @@ TUNABLE_DEFAULTS = {
     "full_scan_spin_speed": 0.3,
     "full_scan_timeout": 45.0,
     "full_scan_revolutions": 1.0,
+    # --- looking back at the human while leading -------------------------------
+    # The check-in turn is slower than either scan: it reads as looking rather
+    # than casting about, and a person the robot sweeps past slowly is a person
+    # the camera detector gets a chance to find.
+    "glance_spin_speed": 0.4,
+    "glance_timeout": 20.0,
+    # How far either side of the human's last known place the look-around
+    # sweeps when they are not where they were.
+    "glance_sweep": math.radians(25.0),
+    # How the look backs are paced: one every so many checkpoints and one every
+    # so many seconds, whichever falls due first. Either set to 0 switches that
+    # half off; both at 0 means the robot only looks back when something about
+    # the human says it should.
+    "check_in_every_checkpoints": 2,
+    "check_in_interval": 20.0,
+    # How long the human has to be out of sight or trailing before a leg of the
+    # route is cut short for it. Somebody stepping behind a pillar is still
+    # following.
+    "check_in_grace": 2.0,
+    # How long the robot waits for a trailing human before it walks back to
+    # them and asks for their attention again.
+    "check_in_catch_up_timeout": 6.0,
     # --- driving to something with nav2 ---------------------------------------
     "approach_target_timeout": 3.0,
     "approach_goal_timeout": 10.0,
     # How far the robot drives towards a route target in one goal. The human
     # equivalent is `robot_approach_distance`, which is an experiment parameter.
     "route_step_distance": 1.0,
+    # How many route checkpoints one waypoint goal may cover. Longer legs mean
+    # fewer interruptions of the drive; the look-back pacing shortens a leg that
+    # would run past a check-in anyway.
+    "route_lookahead": 3,
+    # How close counts as having driven past a route checkpoint.
+    "checkpoint_reached_distance": 0.5,
+    # Under this, the robot sets off down a leg without turning to face it
+    # first: a bend of a few degrees is the navigation stack's to drive out, and
+    # stopping to rotate for it only breaks the movement up.
+    "route_turn_min": math.radians(30.0),
+    # Times a dropped nav2 goal is sent again before the behaviour gives up.
+    "nav_goal_retries": 3,
     # --- getting the human back -----------------------------------------------
     # How far past a checkpoint (as a fraction of the stretch to the next one)
     # the human has to be before that stretch counts as walked.
@@ -98,10 +132,18 @@ ANGLE_PARAMS = {
     "turn_tolerance_deg": "turn_tolerance",
     "facing_epsilon_deg": "facing_epsilon",
     "attention_turn_step_deg": "attention_turn_step",
+    "glance_sweep_deg": "glance_sweep",
+    "route_turn_min_deg": "route_turn_min",
 }
 
 # Tunables that are counts rather than measurements.
-INTEGER_TUNABLES = ("turn_corrections", "recover_retries")
+INTEGER_TUNABLES = (
+    "turn_corrections",
+    "recover_retries",
+    "check_in_every_checkpoints",
+    "route_lookahead",
+    "nav_goal_retries",
+)
 
 PARAM_KEYS = tuple(TUNABLE_DEFAULTS)
 

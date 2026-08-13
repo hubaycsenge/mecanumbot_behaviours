@@ -69,6 +69,30 @@ bottom_up_tree_node:
     full_scan_timeout: 45.0
     full_scan_revolutions: 1.0
 
+    # ----- Looking back while leading (dog condition) ----------------------
+    # The check-in turn onto the human's last known place. Slower than either
+    # scan above: it reads as looking rather than casting about, and a person
+    # the robot sweeps past slowly is a person the detector gets to find.
+    glance_spin_speed: 0.4
+    glance_timeout: 20.0
+    # How far either side of that place the look-around sweeps when the human
+    # is not where they were. The sweep is +1, -2, +2, -1 of it, so it ends
+    # facing the middle again.
+    glance_sweep_deg: 25.0
+    # Pacing: a look back every so many checkpoints and every so many seconds,
+    # whichever falls due first, plus straight away whenever the human goes out
+    # of sight or drops further than Dog_following_max_threshold. Either
+    # counter at 0 switches that half off.
+    check_in_every_checkpoints: 2
+    check_in_interval: 20.0
+    # How long the human has to be out of sight or trailing before a leg of the
+    # route is cut short for it -- somebody stepping behind a pillar is still
+    # following.
+    check_in_grace: 2.0
+    # How long the robot waits for a trailing human before walking back to them
+    # and asking for their attention again.
+    check_in_catch_up_timeout: 6.0
+
     # ----- Approaching with nav2 -------------------------------------------
     approach_target_timeout: 3.0
     # How long nav2 gets to report our goal at all before Approach gives up.
@@ -77,6 +101,18 @@ bottom_up_tree_node:
     # equivalent is `robot_approach_distance` above, which is an experiment
     # parameter rather than a tunable.
     route_step_distance: 1.0
+    # How many route checkpoints one NavigateThroughPoses goal may cover.
+    # Longer legs mean fewer interruptions of the drive; the look-back pacing
+    # shortens a leg that would otherwise run past a check-in.
+    route_lookahead: 3
+    # How close counts as having driven past a route checkpoint.
+    checkpoint_reached_distance: 0.5
+    # Under this, the robot sets off down a leg without turning to face it
+    # first: a bend of a few degrees is Nav2's to drive out, and stopping to
+    # rotate for it only breaks the movement up.
+    route_turn_min_deg: 30.0
+    # Times a dropped nav2 goal is sent again before the behaviour gives up.
+    nav_goal_retries: 3
 
     # ----- Getting the human back ------------------------------------------
     # How far past a checkpoint the human has to be, as a fraction of the
