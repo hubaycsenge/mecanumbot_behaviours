@@ -1,4 +1,5 @@
-"""LED leading behaviour: same route, signalled with light patterns.
+"""
+LED leading behaviour: same route, signalled with light patterns.
 
 This is the non-animal comparison condition, so the neck is left alone
 (`head=None` on every turn): the camera keeps the lifted tilt the parameter
@@ -9,16 +10,17 @@ import py_trees
 
 from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import (
+    LED_SCRIPTS,
     ConstantParamsToBlackboard,
 )
-from mecanumbot_leading_behaviour.behaviours.movement_managers import (
+from mecanumbot_leading_behaviour.behaviours.route_behaviours import (
     Approach,
     CheckRobotHasBall,
     CheckSubjectTargetSuccess,
     FindPeople,
     TurnToward,
 )
-from mecanumbot_leading_behaviour.behaviours.targets import (
+from mecanumbot_movement_behaviours.targets import (
     LAST_CHECKPOINT,
     SUBJECT,
     TARGET,
@@ -89,7 +91,11 @@ def create_root(yaml_path=None):
     root = py_trees.composites.Sequence("ROOT", memory=True)
     root.add_children(
         [
-            ConstantParamsToBlackboard(name="LoadConstantParams", yaml_path=yaml_path),
+            ConstantParamsToBlackboard(
+                name="LoadConstantParams",
+                yaml_path=yaml_path,
+                scripts=LED_SCRIPTS,
+            ),
             seek_or_find,
             TurnToward(name="TurnTowardSubject", target_type=SUBJECT, head=None),
             LEDBehaviourSequence("LCatchO", "catch_attention"),

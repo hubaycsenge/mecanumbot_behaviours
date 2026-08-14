@@ -1,4 +1,5 @@
-"""Control condition: drive the route with no signalling at all.
+"""
+Control condition: drive the route with no signalling at all.
 
 Start -> target, no gestures, no LEDs, and the neck is left where the parameter
 loader parked it (`head=None` on the turns).
@@ -9,11 +10,11 @@ import py_trees
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import (
     ConstantParamsToBlackboard,
 )
-from mecanumbot_leading_behaviour.behaviours.movement_managers import (
+from mecanumbot_leading_behaviour.behaviours.route_behaviours import (
     Approach,
     TurnToward,
 )
-from mecanumbot_leading_behaviour.behaviours.targets import (
+from mecanumbot_movement_behaviours.targets import (
     LAST_CHECKPOINT,
     START,
     TARGET,
@@ -38,7 +39,11 @@ def create_root(yaml_path=None):
     root = py_trees.composites.Sequence("ROOT", memory=True)
     root.add_children(
         [
-            ConstantParamsToBlackboard(name="LoadConstantParams", yaml_path=yaml_path),
+            ConstantParamsToBlackboard(
+                name="LoadConstantParams",
+                yaml_path=yaml_path,
+                scripts=(),
+            ),
             TurnToward(name="TurnTowardStart", target_type=START, head=None),
             Approach(name="ApproachStart", target_type=START),
             TurnToward(name="TurnTowardTarget", target_type=TARGET, head=None),

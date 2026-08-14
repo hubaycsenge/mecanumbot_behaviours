@@ -4,7 +4,7 @@ import py_trees
 
 from mecanumbot_msgs.srv import SetLedStatus
 
-from mecanumbot_leading_behaviour.behaviours.ros_interfaces import duration
+from mecanumbot_movement_behaviours.ros_interfaces import duration
 
 LED_SERVICE = "/mecanumbot/set_led_status"
 
@@ -21,7 +21,8 @@ LED_KEYS = {
 
 
 class LEDBehaviourSequence(py_trees.behaviour.Behaviour):
-    """Play one timed LED pattern sequence from the blackboard.
+    """
+    Play one timed LED pattern sequence from the blackboard.
 
     Each pattern is a `SetLedStatus` service call; the next one is only sent
     after the previous call returned and its hold time elapsed.

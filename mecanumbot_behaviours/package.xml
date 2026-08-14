@@ -9,6 +9,12 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <exec_depend>mecanumbot_bt_config</exec_depend>
+  <exec_depend>mecanumbot_movement_behaviours</exec_depend>
+  <exec_depend>mecanumbot_leading_behaviour</exec_depend>
+  <exec_depend>mecanumbot_demo_behaviours</exec_depend>
+  <exec_depend>mecanumbot_ostensive_behaviour</exec_depend>
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 

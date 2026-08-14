@@ -13,11 +13,12 @@ from mecanumbot_demo_behaviours.behaviours.movement_managers import (
 from mecanumbot_demo_behaviours.behaviours.blackboard_managers import (
     MapWaypointsToBlackboard,
 )
-from mecanumbot_leading_behaviour.behaviours.constants import TUNABLE_DEFAULTS
+from mecanumbot_bt_config.tree_runner import RUNTIME_DEFAULTS
 
 
 def get_map_name():
-    """`--map_name`, else the `demo_map_name` default.
+    """
+    `--map_name`, else the `demo_map_name` default.
 
     This tree loads no constants YAML -- it has no route, no gestures and no
     thresholds to read -- so the map it patrols is named on the command line
@@ -95,8 +96,8 @@ def main():
     )
 
     # Setup and tick the tree at the library's standard rate
-    ros_tree.setup(timeout=float(TUNABLE_DEFAULTS["setup_timeout"]))
-    ros_tree.tick_tock(period_ms=float(TUNABLE_DEFAULTS["tick_period_ms"]))
+    ros_tree.setup(timeout=float(RUNTIME_DEFAULTS["setup_timeout"]))
+    ros_tree.tick_tock(period_ms=float(RUNTIME_DEFAULTS["tick_period_ms"]))
 
     rclpy.spin(ros_tree.node)
     rclpy.shutdown()

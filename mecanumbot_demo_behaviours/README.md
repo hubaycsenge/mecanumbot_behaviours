@@ -67,12 +67,16 @@ executable tree nodes.
 | `GetNextWaypoint`   | `hide_and_seek` — cycles through the blackboard `waypoints` list, writing each in turn to `patrol_goal`.                                                                         |
 
 The module re-exports `Approach`, `TurnToward`, `RelativeTurnPattern`,
-`CheckRobotAtLastCheckpoint`, `CheckRobotHasBall`, `CheckSubjectTargetSuccess`, the
-`pose_to_goal` / `calculate_facing_orientation` helpers and the `STATUS_*` constants
-from `mecanumbot_leading_behaviour`.
+`CheckRobotAtLastCheckpoint`, `CheckRobotHasBall` and `CheckSubjectTargetSuccess`
+from `mecanumbot_leading_behaviour.behaviours.route_behaviours` — the versions
+bound to that experiment's key spellings, because the demo trees load its
+constants files — plus the `pose_to_goal` / `calculate_facing_orientation`
+helpers and the `STATUS_*` constants from `mecanumbot_movement_behaviours`.
 
-It also declares `DEMO_DEFAULTS`, the demo trees' own tunables. They are read off
-the blackboard exactly the way the leading package's are — from whichever
+It also declares `DEMO_DEFAULTS`, the demo trees' own tunables, which
+`wander_between_people` hands to the loader so an undeclared one keeps its
+packaged value. They are read off the blackboard exactly the way the movement
+package's are — from whichever
 constants YAML the tree loaded, falling back to the value in `DEMO_DEFAULTS` when
 that file does not mention them — so nothing has to be edited in Python to
 retune a demo. They are separate from the leading keys on purpose: wandering up
@@ -90,15 +94,15 @@ further away.
 
 This package's `config/*.yaml` declare all five, but note that the demo trees
 fall back to the **leading** package's constants file, so the values there apply
-only when `YAML_PATH` points at one of these. The leading package's own tunables
+only when `YAML_PATH` points at one of these. The shared tunables
 (`sight_timeout`, `scan_spin_speed`, the turn profile, …) may be set in the same
-file; they are listed in `mecanumbot_leading_behaviour/README.md`.
+file; they are listed in `mecanumbot_movement_behaviours/README.md`.
 
 ### `behaviours/blackboard_managers.py`
 
 | Behaviour                    | Role                                                                                                                                                                                         |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ConstantParamsToBlackboard` | Re-exported from `mecanumbot_leading_behaviour` — there is one loader, not a copy of one.                                                                                                    |
+| `ConstantParamsToBlackboard` | Re-exported from `mecanumbot_leading_behaviour` — there is one loader, not a copy of one. `wander_between_people` passes it `defaults=(DEMO_DEFAULTS,)` and the LED scripts it plays.        |
 | `DistanceToBlackboard`       | Local copy of the robot/subject/target distance calculator.                                                                                                                                  |
 | `MapWaypointsToBlackboard`   | Loads `<map>_waypoints.yaml` from `mecanumbot_description/maps/<map>/`, generating it with `utils/map_generate.py` if it does not exist yet, and writes the waypoint list to the blackboard. |
 
@@ -172,7 +176,8 @@ the blackboard.
 ## Configuration model
 
 `config/*.yaml` uses the same schema as `mecanumbot_leading_behaviour` — see that
-package's README for the full key list. Only the LED sequence keys and the general
+package's README for the full key list, and `mecanumbot_bt_config/README.md` for
+how a constants file is read. Only the LED sequence keys and the general
 thresholds matter for the demo trees.
 
 ## Run examples

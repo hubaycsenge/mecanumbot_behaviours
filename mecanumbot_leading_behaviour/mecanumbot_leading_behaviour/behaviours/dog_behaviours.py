@@ -2,18 +2,18 @@
 
 import py_trees
 
-from mecanumbot_leading_behaviour.behaviours.constants import (
+from mecanumbot_leading_behaviour.behaviours.defaults import (
     constant,
     register_param_keys,
     resolve,
 )
-from mecanumbot_leading_behaviour.behaviours.geometry import (
+from mecanumbot_movement_behaviours.geometry import (
     closest_checkpoint_index,
     distance_xy,
     route_progress,
 )
-from mecanumbot_leading_behaviour.behaviours.pacing import check_in_due
-from mecanumbot_leading_behaviour.behaviours.ros_interfaces import (
+from mecanumbot_movement_behaviours.pacing import check_in_due
+from mecanumbot_movement_behaviours.ros_interfaces import (
     AccessoryCommander,
     FollowedSubjectTracker,
     HEAD_SEEK,
@@ -94,7 +94,8 @@ class DogBehaviourSequence(py_trees.behaviour.Behaviour):
 
 
 class DogCheckFollowing(py_trees.behaviour.Behaviour):
-    """The dog looking over its shoulder: is the human still coming along?
+    """
+    Look over the shoulder: is the human still coming along.
 
     FAILURE (which sends the tree into recovery) when the human dropped further
     behind than `Dog_following_max_threshold`, or when their pose went stale
@@ -164,7 +165,8 @@ class DogCheckFollowing(py_trees.behaviour.Behaviour):
 
 
 class DogCheckInDue(py_trees.behaviour.Behaviour):
-    """Decide whether it is time to look back for the human.
+    """
+    Decide whether it is time to look back for the human.
 
     SUCCESS when a look back is due, FAILURE while leading may simply carry on.
     The tree wraps it in an inverter so that "not due" is the branch that lets
@@ -238,7 +240,8 @@ class DogCheckInDue(py_trees.behaviour.Behaviour):
 
 
 class DogWaitForCatchUp(py_trees.behaviour.Behaviour):
-    """Stand still, head up, and give a lagging human a moment to catch up.
+    """
+    Stand still, head up, and give a lagging human a moment to catch up.
 
     A dog that has looked back and found its human trailing waits for them
     before it does anything else, and only goes back to fetch them when waiting
@@ -301,7 +304,8 @@ class DogWaitForCatchUp(py_trees.behaviour.Behaviour):
 
 
 class DogResumeLeading(py_trees.behaviour.Behaviour):
-    """Pick the checkpoint to lead to now that the human has been found again.
+    """
+    Pick the checkpoint to lead to now that the human has been found again.
 
     Take the checkpoint nearest the robot and ask whether the human is already
     past it: if they are, that stretch of the route is walked and leading

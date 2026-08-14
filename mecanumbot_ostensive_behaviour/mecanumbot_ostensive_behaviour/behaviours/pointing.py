@@ -25,7 +25,7 @@ import math
 import py_trees
 from geometry_msgs.msg import Pose
 
-from mecanumbot_leading_behaviour.behaviours.geometry import quaternion_from_yaw
+from mecanumbot_movement_behaviours.geometry import quaternion_from_yaw
 
 from mecanumbot_ostensive_behaviour.behaviours.blackboard_managers import (
     register_param_keys,

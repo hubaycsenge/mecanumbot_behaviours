@@ -9,9 +9,10 @@ from mecanumbot_demo_behaviours.behaviours.movement_managers import (
 )
 from mecanumbot_leading_behaviour.behaviours.LED_behaviours import LEDBehaviourSequence
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import (
+    LED_SCRIPTS,
     ConstantParamsToBlackboard,
 )
-from mecanumbot_leading_behaviour.behaviours.constants import file_constant
+from mecanumbot_leading_behaviour.behaviours.defaults import file_constant
 from mecanumbot_leading_behaviour.tree_nodes.tree_common import build_params
 from ament_index_python.packages import get_package_share_directory
 
@@ -44,7 +45,10 @@ def create_root(yaml_path=None):
     if yaml_path is None:
         yaml_path = get_yaml_path()
     params_loader = ConstantParamsToBlackboard(
-        name="LoadConstantParams", yaml_path=yaml_path
+        name="LoadConstantParams",
+        yaml_path=yaml_path,
+        scripts=LED_SCRIPTS,
+        defaults=(DEMO_DEFAULTS,),
     )
     LED_catch_attention = LEDBehaviourSequence("LCatch", "catch_attention")
 

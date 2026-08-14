@@ -1,128 +1,91 @@
 """
 Loading the ostensive constants and owning the shared interaction state.
 
-The YAML schema is flat -- one block of scalars, no gesture or LED scripts --
-because the ostensive condition signals with movement rather than with the timed
-colour and neck sequences the leading conditions use. The only sequence here is
-the acknowledgement nod.
+The loading itself is `mecanumbot_bt_config`'s and knows no key names: it writes
+whatever the YAML declares, turns a `_deg` parameter into radians under the name
+without the suffix, and fills in a packaged default for anything left out. This
+module only says what the file cannot say about itself.
 
-Angles are declared in the YAML in degrees, because that is how anybody tuning a
-field of view or a deadband thinks about them, and are written to the blackboard
-in radians under the name without the `_deg` suffix. No behaviour converts an
-angle a second time.
+Nearly every constant here is **required**: the ostensive schema is flat -- one
+block of scalars, no gesture or LED scripts, because this condition signals with
+movement rather than with the timed colour and neck sequences the leading
+conditions use -- and every one of those scalars is the experiment rather than a
+tuning of it. `OSTENSIVE_PARAMS` is therefore both the list the file must
+declare and the list a behaviour registers to read.
 
-The file also sets the handful of `mecanumbot_leading_behaviour` tunables this
-tree exercises -- it borrows that package's scanning and turning behaviours, and
-they read their constants off the blackboard under fixed names. Declaring them
-here under those same names is what puts the ostensive condition's turn speeds
-and head poses in the ostensive file, instead of leaving them to the leading
-package's defaults. Anything not declared falls back to those defaults, so this
-file only has to mention what it actually means to set.
+The file may also set the `mecanumbot_movement_behaviours` tunables this tree
+exercises -- it borrows that package's scanning and turning behaviours, and they
+read their constants off the blackboard under fixed names. Setting them here
+under those same names is what puts the ostensive condition's turn speeds and
+head poses in the ostensive file. Anything it does not mention keeps that
+package's default, so the file only has to carry what it actually means to set.
 """
-
-import math
 
 import py_trees
 
-from mecanumbot_leading_behaviour.behaviours.constants import (
-    TUNABLE_DEFAULTS as SHARED_DEFAULTS,
-    load_params,
+from mecanumbot_bt_config.blackboard import ParamsToBlackboard
+from mecanumbot_bt_config.tree_runner import RUNTIME_DEFAULTS
+from mecanumbot_movement_behaviours.defaults import (
+    MOVEMENT_DEFAULTS,
+    configure_accessories,
 )
-from mecanumbot_leading_behaviour.behaviours.ros_interfaces import AccessoryCommander
 
-# Every tree in this package registers under this node name, and the YAML is
-# nested under the same key -- the convention the leading package established.
-YAML_ROOT_KEYS = ("ostensive_bt_node", "ros__parameters")
-
-# Straight through as floats.
-SCALAR_PARAMS = (
+# Every constant the ostensive tree acts on, under the name it reaches the
+# blackboard as -- so an angle appears here without the `_deg` the YAML spells
+# it with. All of them are required: the tree has no sensible stand-in for a
+# field of view or a dwell time it was not told.
+OSTENSIVE_PARAMS = (
+    # seeing people at all
     "detection_timeout",
+    "camera_hfov",
+    # a bid for attention
+    "attention_signal_mode",
     "attention_dwell",
     "attention_timeout",
     "wrist_above_shoulder_margin",
     "wave_window",
     "wave_min_amplitude",
+    "wave_min_reversals",
+    # holding on to whoever made it
     "target_max_image_jump",
+    "target_bearing_tolerance",
     "track_loss_timeout",
     "focus_turn_speed",
+    "focus_tolerance",
     "focus_timeout",
+    # reading where they point
     "cue_min_extension",
     "cue_full_extension",
     "cue_min_lateral",
+    "cue_stability",
     "cue_dwell",
     "cue_timeout",
     "cue_distance",
     "cue_goal_timeout",
+    # the acknowledgement nod
+    "ack_neck_seq",
+    "ack_neck_times",
 )
 
-# Tunables owned by `mecanumbot_leading_behaviour` that this file may set, under
-# exactly the blackboard names that package's behaviours read. Optional: a
-# missing one keeps the value in that package's `TUNABLE_DEFAULTS`.
-SHARED_SCALARS = (
-    # the tree runner, read from the file rather than from the blackboard
-    "tick_period_ms",
-    "setup_timeout",
-    # FindPeople, the look-around when nobody is there to be addressed
-    "sight_timeout",
-    "scan_spin_speed",
-    "scan_timeout",
-    # the SmoothTurner profile behind every in-place turn, including the
-    # re-centring ones (whose top speed is `focus_turn_speed` above)
-    "turn_max_speed",
-    "turn_accel",
-    "turn_decel_gain",
-    "turn_min_speed",
-    "turn_timeout",
-    "turn_nav2_wait",
-    # the neck and gripper poses the nod moves between
-    "neck_seek_pos",
-    "neck_level_pos",
-    "gripper_left_neutral",
-    "gripper_right_neutral",
-)
+# The one constant with a default, because it describes how the robot is built
+# rather than how the experiment is run. `mirror_image_x` says the camera hands
+# over a mirrored view of the room, which reflects every direction read off the
+# image; see `keypoints.mirror_joints`.
+OSTENSIVE_DEFAULTS = {"mirror_image_x": True}
 
-# Shared tunables declared in degrees, under the same rule as ANGLE_PARAMS.
-SHARED_ANGLE_PARAMS = {
-    "turn_tolerance_deg": "turn_tolerance",
-    "facing_epsilon_deg": "facing_epsilon",
+LOADED_DEFAULTS = (RUNTIME_DEFAULTS, MOVEMENT_DEFAULTS, OSTENSIVE_DEFAULTS)
+
+PARAM_KEYS = OSTENSIVE_PARAMS + tuple(OSTENSIVE_DEFAULTS)
+
+# Interaction state, seeded so no behaviour has to test whether a key exists
+# yet, and cleared on every entry so an exchange interrupted halfway through
+# does not resume against a stale addressee. `search_spin_sign` belongs to the
+# movement package's `InPlaceTurn`, which the turning behaviours here inherit.
+RUN_STATE = {
+    "ostensive_target": None,
+    "ostensive_cue": None,
+    "search_spin_sign": 0,
 }
-
-INTEGER_PARAMS = ("wave_min_reversals",)
-
-STRING_PARAMS = ("attention_signal_mode",)
-
-# Optional, with the default that applies to the robot as it is currently built.
-# `mirror_image_x` says the camera hands over a mirrored view of the room, which
-# reflects every direction read off the image; see `keypoints.mirror_joints`.
-BOOL_PARAMS = {"mirror_image_x": True}
-
-# YAML name in degrees -> blackboard name in radians.
-ANGLE_PARAMS = {
-    "camera_hfov_deg": "camera_hfov",
-    "target_bearing_tolerance_deg": "target_bearing_tolerance",
-    "focus_tolerance_deg": "focus_tolerance",
-    "cue_stability_deg": "cue_stability",
-}
-
-LIST_PARAMS = ("ack_neck_seq", "ack_neck_times")
-
-# Interaction state, seeded so no behaviour has to test whether a key exists yet.
-# `search_spin_sign` belongs to the leading package's `InPlaceTurn`, which the
-# turning behaviours here inherit from.
-STATE_KEYS = ("ostensive_target", "ostensive_cue", "search_spin_sign")
-
-PARAM_KEYS = (
-    SCALAR_PARAMS
-    + INTEGER_PARAMS
-    + STRING_PARAMS
-    + LIST_PARAMS
-    + tuple(BOOL_PARAMS)
-    + tuple(ANGLE_PARAMS.values())
-)
-
-# Written to the blackboard as well, but read there by the leading package's
-# behaviours through its own `register_param_keys`, not by anything here.
-SHARED_KEYS = SHARED_SCALARS + tuple(SHARED_ANGLE_PARAMS.values())
 
 
 def register_param_keys(blackboard):
@@ -131,113 +94,53 @@ def register_param_keys(blackboard):
         blackboard.register_key(key=key, access=py_trees.common.Access.READ)
 
 
-class OstensiveParamsToBlackboard(py_trees.behaviour.Behaviour):
-    """
-    Load the ostensive constants onto the blackboard and clear the interaction state.
+def check_nod(node, blackboard, values):
+    """Warn rather than fail when the acknowledgement nod does not agree with itself."""
+    positions = values["ack_neck_seq"]
+    times = values["ack_neck_times"]
+    if len(positions) != len(times):
+        node.get_logger().warn(
+            f"ack_neck_seq has {len(positions)} entries but ack_neck_times has "
+            f"{len(times)}; the nod will stop at the shorter one"
+        )
+    # The nod leaves the head wherever its last step put it, and the rest of the
+    # exchange expects the seeking pose. Both being in this file, the two can be
+    # checked against each other.
+    seek = values["neck_seek_pos"]
+    if positions and abs(float(positions[-1]) - seek) > 1e-3:
+        node.get_logger().warn(
+            f"the nod ends at n_pos={positions[-1]}, not at the seeking pose "
+            f"neck_seek_pos={seek}; the head will stay there"
+        )
 
-    Loading happens in `setup`, so the constants are there before any other
-    behaviour is ticked. Clearing happens in `initialise`, so restarting the
-    tree also drops whoever it was talking to -- an exchange interrupted halfway
-    through should not resume against a stale addressee.
-    """
+
+def report_mirroring(node, blackboard, values):
+    """Log how the camera image is read, which is the constant that hides a mirror bug."""
+    # Worth a line of its own: set the wrong way round it produces a robot that
+    # turns and drives to the mirror image of where it was told, with nothing
+    # else looking wrong.
+    node.get_logger().info(
+        "the camera image is treated as "
+        + (
+            "mirrored -- every image column is reflected before it is used"
+            if values["mirror_image_x"]
+            else "not mirrored"
+        )
+    )
+
+
+class OstensiveParamsToBlackboard(ParamsToBlackboard):
+    """Load the ostensive constants onto the blackboard and clear the interaction state."""
 
     def __init__(self, name, yaml_path):
-        super().__init__(name=name)
-        self.yaml_path = yaml_path
-        self.blackboard = self.attach_blackboard_client(name=name)
-        for key in PARAM_KEYS + SHARED_KEYS + STATE_KEYS:
-            self.blackboard.register_key(key=key, access=py_trees.common.Access.WRITE)
-
-    def setup(self, **kwargs):
-        """Read the YAML and write every constant to the blackboard."""
-        self.node = kwargs["node"]
-        params = load_params(self.yaml_path, YAML_ROOT_KEYS)
-
-        for key in SCALAR_PARAMS:
-            setattr(self.blackboard, key, float(params[key]))
-        for key in INTEGER_PARAMS:
-            setattr(self.blackboard, key, int(params[key]))
-        for key in STRING_PARAMS:
-            setattr(self.blackboard, key, str(params[key]))
-        for key, default in BOOL_PARAMS.items():
-            setattr(self.blackboard, key, bool(params.get(key, default)))
-        for key in LIST_PARAMS:
-            setattr(self.blackboard, key, [float(entry) for entry in params[key]])
-        for yaml_key, blackboard_key in ANGLE_PARAMS.items():
-            setattr(
-                self.blackboard, blackboard_key, math.radians(float(params[yaml_key]))
-            )
-
-        self._write_shared(params)
-        self._check_nod()
-        self.feedback_message = "constants loaded"
-        self.node.get_logger().info(
-            f"{self.name}: constants loaded from {self.yaml_path}"
+        super().__init__(
+            name=name,
+            yaml_path=yaml_path,
+            defaults=LOADED_DEFAULTS,
+            required=OSTENSIVE_PARAMS,
+            state=RUN_STATE,
+            on_loaded=(configure_accessories, check_nod, report_mirroring),
         )
-        # Worth a line of its own in the log: it is the one constant that, set
-        # the wrong way round, produces a robot that turns and drives to the
-        # mirror image of where it was told, with nothing else looking wrong.
-        self.node.get_logger().info(
-            f"{self.name}: the camera image is treated as "
-            + (
-                "mirrored -- every image column is reflected before it is used"
-                if self.blackboard.mirror_image_x
-                else "not mirrored"
-            )
-        )
-        return True
-
-    def initialise(self):
-        """Start the run with nobody addressed and no cue read."""
-        self.blackboard.ostensive_target = None
-        self.blackboard.ostensive_cue = None
-        self.blackboard.search_spin_sign = 0
-
-    def update(self):
-        """Return SUCCESS -- the work was done in setup and initialise."""
-        return py_trees.common.Status.SUCCESS
-
-    # --- internals ------------------------------------------------------------
-
-    def _write_shared(self, params):
-        """Write the leading library's tunables, defaulting the undeclared ones."""
-        for key in SHARED_SCALARS:
-            setattr(self.blackboard, key, float(params.get(key, SHARED_DEFAULTS[key])))
-        for yaml_key, blackboard_key in SHARED_ANGLE_PARAMS.items():
-            default = math.degrees(SHARED_DEFAULTS[blackboard_key])
-            setattr(
-                self.blackboard,
-                blackboard_key,
-                math.radians(float(params.get(yaml_key, default))),
-            )
-
-        # The head poses belong to the commander rather than to any one
-        # behaviour; the nod in `acknowledge.py` moves the same neck.
-        AccessoryCommander.configure(
-            seek_pos=self.blackboard.neck_seek_pos,
-            level_pos=self.blackboard.neck_level_pos,
-            gripper_left=self.blackboard.gripper_left_neutral,
-            gripper_right=self.blackboard.gripper_right_neutral,
-        )
-
-    def _check_nod(self):
-        """Warn rather than fail when the nod does not agree with itself."""
-        positions = self.blackboard.ack_neck_seq
-        times = self.blackboard.ack_neck_times
-        if len(positions) != len(times):
-            self.node.get_logger().warn(
-                f"{self.name}: ack_neck_seq has {len(positions)} entries but "
-                f"ack_neck_times has {len(times)}; the nod will stop at the shorter one"
-            )
-        # The nod leaves the head wherever its last step put it, and the rest of
-        # the exchange expects the seeking pose. Now that both are in this file,
-        # the two can be checked against each other.
-        seek = self.blackboard.neck_seek_pos
-        if positions and abs(positions[-1] - seek) > 1e-3:
-            self.node.get_logger().warn(
-                f"{self.name}: the nod ends at n_pos={positions[-1]}, not at the "
-                f"seeking pose neck_seek_pos={seek}; the head will stay there"
-            )
 
 
 class ClearTargetLock(py_trees.behaviour.Behaviour):

@@ -1,13 +1,16 @@
-"""What "the target" means for a behaviour, resolved against the blackboard.
+"""
+What "the target" means for a behaviour, resolved against the blackboard.
 
 `TurnToward` and `Approach` both take a `target_type`; this module is the single
-definition of what each type points at, and of the head pose / turn direction
-that goes with it.
+definition of what each type points at, and of the head pose that goes with it.
+Which blackboard key a type reads is a `KeyMap` field rather than a name written
+down here -- see `keys.py` for why.
 """
 
 import py_trees
 
-from mecanumbot_leading_behaviour.behaviours.ros_interfaces import HEAD_LEVEL, HEAD_SEEK
+from mecanumbot_movement_behaviours.keys import DEFAULT_KEYS
+from mecanumbot_movement_behaviours.ros_interfaces import HEAD_LEVEL, HEAD_SEEK
 
 SUBJECT = "subject"
 START = "start"
@@ -18,25 +21,27 @@ LAST_CHECKPOINT = "last_checkpoint"
 
 TARGET_TYPES = (SUBJECT, START, TARGET, CHECKPOINT, PATROL, LAST_CHECKPOINT)
 
-# Blackboard keys a behaviour needs to resolve any target type.
-_TARGET_KEYS = (
+# KeyMap fields a behaviour needs to resolve any target type.
+TARGET_FIELDS = (
     "target_position",
     "start_position",
-    "Dog_checkpoints",
+    "checkpoints",
     "patrol_checkpoints",
-    "Dog_current_checkpoint",
+    "current_checkpoint",
     "patrol_current_checkpoint",
 )
 
 
-def register_target_keys(blackboard):
+def register_target_keys(blackboard, keys=DEFAULT_KEYS):
     """Give a blackboard client read access to every target-related key."""
-    for key in _TARGET_KEYS:
-        blackboard.register_key(key=key, access=py_trees.common.Access.READ)
+    keys.register(blackboard, py_trees.common.Access.READ, *TARGET_FIELDS)
 
 
-def resolve_target_position(blackboard, target_type, subject_position=None):
-    """Position [geometry_msgs/Point-like] a target type points at, or None.
+def resolve_target_position(
+    blackboard, target_type, subject_position=None, keys=DEFAULT_KEYS
+):
+    """
+    Position [geometry_msgs/Point-like] a target type points at, or None.
 
     Human targets come from the caller (`subject_position`) because their source
     is a live detection rather than the blackboard.
@@ -44,18 +49,21 @@ def resolve_target_position(blackboard, target_type, subject_position=None):
     if target_type == SUBJECT:
         return subject_position
     if target_type == START:
-        return blackboard.start_position
+        return blackboard.get(keys.start_position)
     if target_type == TARGET:
-        return blackboard.target_position
+        return blackboard.get(keys.target_position)
     if target_type == LAST_CHECKPOINT:
-        return blackboard.Dog_checkpoints[-1]
+        checkpoints = blackboard.get(keys.checkpoints)
+        return checkpoints[-1] if checkpoints else None
     if target_type == CHECKPOINT:
         return _checkpoint(
-            blackboard.Dog_checkpoints, blackboard.Dog_current_checkpoint
+            blackboard.get(keys.checkpoints),
+            blackboard.get(keys.current_checkpoint),
         )
     if target_type == PATROL:
         return _checkpoint(
-            blackboard.patrol_checkpoints, blackboard.patrol_current_checkpoint
+            blackboard.get(keys.patrol_checkpoints),
+            blackboard.get(keys.patrol_current_checkpoint),
         )
     raise ValueError(
         f"unknown target_type '{target_type}', expected one of {TARGET_TYPES}"
@@ -63,7 +71,7 @@ def resolve_target_position(blackboard, target_type, subject_position=None):
 
 
 def is_human(target_type):
-    """True for target types that are a person rather than a place on the route."""
+    """Say whether a target type is a person rather than a place on the route."""
     return target_type == SUBJECT
 
 

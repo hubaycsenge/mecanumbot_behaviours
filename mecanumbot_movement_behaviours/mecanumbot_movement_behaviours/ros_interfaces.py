@@ -1,4 +1,5 @@
-"""Small ROS helper objects the behaviours own instead of re-implementing.
+"""
+Small ROS helper objects the behaviours own instead of re-implementing.
 
 Every leading behaviour used to create its own subscriptions, its own QoS
 profile and its own copy of the nav2 goal-status bookkeeping. The helpers here
@@ -18,7 +19,7 @@ from std_msgs.msg import Bool
 
 from mecanumbot_msgs.msg import AccessMotorCmd
 
-from mecanumbot_leading_behaviour.behaviours.geometry import yaw_from_quaternion
+from mecanumbot_movement_behaviours.geometry import yaw_from_quaternion
 
 # --- topics -----------------------------------------------------------------
 AMCL_TOPIC = "/amcl_pose"
@@ -78,7 +79,7 @@ HEAD_LEVEL = "level"
 
 
 def amcl_qos():
-    """QoS profile matching the AMCL pose publisher."""
+    """Build the QoS profile that matches the AMCL pose publisher."""
     return QoSProfile(
         depth=10,
         reliability=ReliabilityPolicy.RELIABLE,
@@ -176,7 +177,8 @@ class SubjectPoseTracker:
 
 
 class FollowedSubjectTracker:
-    """Where the human being led is, and how long ago that was known.
+    """
+    Where the human being led is, and how long ago that was known.
 
     `/mecanumbot/subject_pose` is the better answer of the two -- it is one
     tracked person rather than whoever happened to be detected -- but it is not
@@ -226,7 +228,8 @@ class BallTracker:
 
 
 class Nav2GoalMonitor:
-    """Publishes `/goal_pose` goals and follows their outcome.
+    """
+    Publishes `/goal_pose` goals and follows their outcome.
 
     Nav2 does not tell us the goal id of a pose we published, so a goal is
     matched by taking the newest entry in the action status array that is not
@@ -277,7 +280,7 @@ class Nav2GoalMonitor:
         self._publisher.publish(goal)
 
     def busy(self):
-        """True while nav2 is executing some goal (ours or a leftover one)."""
+        """Report whether nav2 is executing some goal (ours or a leftover one)."""
         return any(
             status.status == STATUS_EXECUTING
             for status in self._statuses + self._route_statuses
@@ -289,7 +292,8 @@ class Nav2GoalMonitor:
         return (self.node.get_clock().now() - self._send_time).nanoseconds / 1e9
 
     def status(self):
-        """Status of our goal, or None while nav2 has not reported it yet.
+        """
+        Status of our goal, or None while nav2 has not reported it yet.
 
         The last known status is kept, so a goal that scrolls out of the status
         array does not look like it disappeared.
@@ -322,7 +326,8 @@ class Nav2GoalMonitor:
 
 
 class Nav2Navigator:
-    """One nav2 navigation goal at a time, sent as an action.
+    """
+    One nav2 navigation goal at a time, sent as an action.
 
     A goal pose published on `/goal_pose` is a message shouted into the dark:
     nav2 never says which goal id it became, so the outcome has to be guessed
@@ -359,7 +364,7 @@ class Nav2Navigator:
         self.feedback = None
 
     def server_ready(self):
-        """True once the nav2 action server is up."""
+        """Report whether the nav2 action server is up."""
         return self._client.server_is_ready()
 
     @property
@@ -489,7 +494,8 @@ class VelocityCommander:
 
 
 class AccessoryCommander:
-    """Neck (camera tilt) and gripper commands.
+    """
+    Neck (camera tilt) and gripper commands.
 
     The poses are class state, like the last commanded neck position, because
     there is only one robot: every behaviour that builds a commander means the
@@ -530,7 +536,8 @@ class AccessoryCommander:
         AccessoryCommander._last_neck_pos = cmd.n_pos
 
     def look(self, where):
-        """Move the head to a named pose, skipping redundant commands.
+        """
+        Move the head to a named pose, skipping redundant commands.
 
         `HEAD_SEEK` lifts the head (contact seeking + better people detection),
         `HEAD_LEVEL` returns it to the neutral driving gaze.

@@ -1,301 +1,183 @@
 """
-Behaviours that put configuration and live measurements on the blackboard.
+Loading a leading constants file, and the live measurements that go with it.
 
-The constants themselves -- which tunables exist, what they default to, how the
-YAML is read -- live in `constants.py`; this module is what writes them onto the
-blackboard, alongside the experiment parameters and the runtime state.
+The loading itself is `mecanumbot_bt_config`'s and knows no key names: it writes
+whatever the YAML declares, turns `_deg` into radians and the structured strings
+into `Point`, `SetLedStatus` and `AccessMotorCmd` messages, and fills in the
+packaged default for anything the file leaves out. What is declared *here* is
+only what a constants file cannot say about itself:
+
+* which keys are the experiment and so may not be missing (`defaults.REQUIRED`
+  plus the signalling scripts of whichever condition is running);
+* what the checkpoint list means -- the first entry is where the run starts, the
+  last is where the human should end up, and the rest is the route the robot
+  drives;
+* which keys are the run's own state rather than configuration, so restarting
+  the tree starts them over.
 """
 
-import ast
-import math
-
 import py_trees
-from geometry_msgs.msg import Point
 
-from mecanumbot_msgs.msg import AccessMotorCmd
+from mecanumbot_bt_config.blackboard import ConfiguredTimer as _ConfiguredTimer
+from mecanumbot_bt_config.blackboard import ParamsToBlackboard
 from mecanumbot_msgs.srv import SetLedStatus
-
-from mecanumbot_leading_behaviour.behaviours.constants import (  # noqa: F401  (re-export)
-    ANGLE_PARAMS,
-    INTEGER_TUNABLES,
-    PARAM_KEYS,
-    TUNABLE_DEFAULTS,
-    YAML_ROOT_KEYS,
-    constant,
-    file_constant,
-    load_params,
-    register_param_keys,
-    resolve,
-)
-from mecanumbot_leading_behaviour.behaviours.geometry import distance_xy
-from mecanumbot_leading_behaviour.behaviours.ros_interfaces import (
+from mecanumbot_movement_behaviours.defaults import configure_accessories
+from mecanumbot_movement_behaviours.geometry import distance_xy
+from mecanumbot_movement_behaviours.ros_interfaces import (
     AccessoryCommander,
     HEAD_SEEK,
     RobotPoseTracker,
     SubjectPoseTracker,
 )
-from mecanumbot_leading_behaviour.behaviours.searching import SEARCH_BACKWARDS
+from mecanumbot_movement_behaviours.routes import SEARCH_BACKWARDS
+
+from mecanumbot_leading_behaviour.behaviours.defaults import (
+    LOADED_DEFAULTS,
+    REQUIRED,
+    TUNABLES,
+)
 
 LED_SERVICE = "/mecanumbot/set_led_status"
 
+# The signalling scripts, as pairs of "the steps" and "how long each one lasts".
+# A tree that signals declares the ones it plays; a tree that does not (the
+# control condition) declares none, and its constants file need not carry them.
+LED_SCRIPTS = (
+    "LED_indicate_target",
+    "LED_indicate_close_target",
+    "LED_catch_attention",
+    "LED_thank",
+)
 
-def parse_led(entry):
-    """`"{'fl': {'color': .., 'mode': ..}, ...}"` -> SetLedStatus request."""
-    corners = ast.literal_eval(entry)
-    request = SetLedStatus.Request()
-    request.fl_color, request.fl_mode = corners["fl"]["color"], corners["fl"]["mode"]
-    request.fr_color, request.fr_mode = corners["fr"]["color"], corners["fr"]["mode"]
-    request.bl_color, request.bl_mode = corners["bl"]["color"], corners["bl"]["mode"]
-    request.br_color, request.br_mode = corners["br"]["color"], corners["br"]["mode"]
-    return request
-
-
-def parse_gesture(entry):
-    """`"{'n_pos': .., 'gl_pos': .., 'gr_pos': ..}"` -> AccessMotorCmd."""
-    positions = ast.literal_eval(entry)
-    cmd = AccessMotorCmd()
-    cmd.n_pos = float(positions["n_pos"])
-    cmd.gl_pos = float(positions["gl_pos"])
-    cmd.gr_pos = float(positions["gr_pos"])
-    return cmd
+GESTURE_SCRIPTS = (
+    "Dog_indicate_target",
+    "Dog_catch_attention",
+    "Dog_thank",
+)
 
 
-def parse_checkpoint(entry):
-    """`"{'X': .., 'Y': .., 'Z': ..}"` -> Point."""
-    coordinates = ast.literal_eval(entry)
-    point = Point()
-    point.x = coordinates["X"]
-    point.y = coordinates["Y"]
-    point.z = coordinates["Z"]
-    return point
+def script_keys(*scripts):
+    """`("LED_thank",)` -> `("LED_thank_seq", "LED_thank_times")`."""
+    return tuple(f"{script}_{part}" for script in scripts for part in ("seq", "times"))
 
 
-class ConstantParamsToBlackboard(py_trees.behaviour.Behaviour):
-    """Load the YAML constants onto the blackboard and set the robot's start state.
+# Written by `split_route` rather than read from the file, so the loader has to
+# be told to claim them.
+ROUTE_KEYS = (
+    "start_position",
+    "target_position",
+    "Dog_current_checkpoint",
+    "Dog_max_checkpoint",
+    "patrol_checkpoints",
+)
 
-    The checkpoint list is split up: the first entry is `start_position`, the last
-    is `target_position` (where the human should end up), and the entries in
-    between -- plus the first -- stay in `Dog_checkpoints` as the route the robot
-    drives. `patrol_checkpoints` is the same list, walked separately when the
-    robot has lost its human and is searching for them.
+# The run's own state, seeded every time the loader is entered.
+RUN_STATE = {
+    "patrol_current_checkpoint": 0,
+    "patrol_direction": SEARCH_BACKWARDS,
+    "patrol_initialized": False,
+    # Handedness of the last turn made while looking for a person; the turns
+    # back to the route unwind it. 0 until the robot has turned at all.
+    "search_spin_sign": 0,
+    # Pacing of the look backs: checkpoints driven since the last one, and when
+    # it was. 0.0 means "not started yet" -- `DogCheckInDue` starts the clock
+    # the first time it is asked, which is when leading begins rather than when
+    # this file is read.
+    "check_in_checkpoints_since": 0,
+    "check_in_last_time": 0.0,
+    "last_distance": 200.0,
+}
 
-    Keys written:
 
-    * thresholds: `robot_closeness_threshold`, `robot_approach_distance`,
-      `target_reached_threshold`, `visibility_time_threshold`,
-      `Dog_following_max_threshold`, `Dog_max_wander_allowed`, `init_delay`
-    * route: `Dog_checkpoints`, `Dog_current_checkpoint`, `Dog_max_checkpoint`,
-      `start_position`, `target_position`
-    * search state: `patrol_checkpoints`, `patrol_current_checkpoint`,
-      `patrol_direction`, `patrol_initialized`, `search_spin_sign`
-    * signalling scripts: `LED_*_seq` / `_times`, `Dog_*_seq` / `_times`
-    * tunables: every key of `TUNABLE_DEFAULTS`, defaulted when the YAML file
-      does not declare it
+def split_route(node, blackboard, values):
+    """
+    Read the checkpoint list as a route with a start and an end.
+
+    The first entry is where the run starts, the last is where the human should
+    end up, and the entries in between -- plus the first -- are the route the
+    robot drives. `patrol_checkpoints` is that same list, walked separately when
+    the robot has lost its human and is searching for them.
+    """
+    checkpoints = list(values["Dog_checkpoints"])
+    route = checkpoints[:-1]
+
+    blackboard.start_position = checkpoints[0]
+    blackboard.target_position = checkpoints[-1]
+    blackboard.Dog_checkpoints = route
+    blackboard.Dog_current_checkpoint = 0
+    blackboard.Dog_max_checkpoint = len(route) - 1
+    blackboard.patrol_checkpoints = list(route)
+
+    node.get_logger().info(
+        f"{len(route)} route checkpoints: "
+        f"{[(round(cp.x, 2), round(cp.y, 2)) for cp in route]}"
+    )
+
+
+class ConstantParamsToBlackboard(ParamsToBlackboard):
+    """
+    Load the leading constants onto the blackboard and set the robot's start state.
+
+    `scripts` names the signalling sequences the tree that loads this actually
+    plays, and they are required of the constants file: a condition that signals
+    with LEDs and finds no LED sequence has nothing to signal with. The control
+    condition passes none.
+
+    `defaults` and `required` extend the two declarations rather than replacing
+    them, for a package that builds on these trees with constants of its own --
+    `mecanumbot_demo_behaviours` does.
     """
 
-    SCALAR_PARAMS = (
-        "init_delay",
-        "robot_closeness_threshold",
-        "robot_approach_distance",
-        "target_reached_threshold",
-        "visibility_time_threshold",
-        "Dog_following_max_threshold",
-    )
-
-    LED_SCRIPTS = (
-        "LED_indicate_target",
-        "LED_indicate_close_target",
-        "LED_catch_attention",
-        "LED_thank",
-    )
-
-    GESTURE_SCRIPTS = (
-        "Dog_indicate_target",
-        "Dog_catch_attention",
-        "Dog_thank",
-    )
-
-    ROUTE_KEYS = (
-        "Dog_checkpoints",
-        "Dog_current_checkpoint",
-        "Dog_max_checkpoint",
-        "start_position",
-        "target_position",
-    )
-
-    SEARCH_STATE_KEYS = (
-        "patrol_checkpoints",
-        "patrol_current_checkpoint",
-        "patrol_direction",
-        "patrol_initialized",
-        "search_spin_sign",
-        "check_in_checkpoints_since",
-        "check_in_last_time",
-    )
-
-    def __init__(self, name, yaml_path):
-        super().__init__(name=name)
-        self.yaml_path = yaml_path
-        self.blackboard = self.attach_blackboard_client(name=name)
-
-        for key in (
-            self.SCALAR_PARAMS
-            + self.ROUTE_KEYS
-            + self.SEARCH_STATE_KEYS
-            + PARAM_KEYS
-            + ("Dog_max_wander_allowed", "LED_start_setting", "last_distance")
-        ):
-            self.blackboard.register_key(key=key, access=py_trees.common.Access.WRITE)
-
-        for script in self.LED_SCRIPTS + self.GESTURE_SCRIPTS:
-            self.blackboard.register_key(
-                key=f"{script}_seq", access=py_trees.common.Access.WRITE
-            )
-            self.blackboard.register_key(
-                key=f"{script}_times", access=py_trees.common.Access.WRITE
-            )
+    def __init__(
+        self,
+        name,
+        yaml_path,
+        scripts=LED_SCRIPTS + GESTURE_SCRIPTS,
+        defaults=(),
+        required=(),
+    ):
+        self.scripts = tuple(scripts)
+        super().__init__(
+            name=name,
+            yaml_path=yaml_path,
+            defaults=LOADED_DEFAULTS + tuple(defaults),
+            required=(
+                REQUIRED
+                + ("LED_start_setting",)
+                + script_keys(*self.scripts)
+                + tuple(required)
+            ),
+            state=RUN_STATE,
+            on_loaded=(configure_accessories, split_route),
+            extra_keys=ROUTE_KEYS,
+        )
 
     def setup(self, **kwargs):
-        self.node = kwargs["node"]
+        """Load the constants, then take the handles the start state needs."""
+        loaded = super().setup(**kwargs)
         self.accessories = AccessoryCommander(self.node)
         self.led_client = self.node.create_client(SetLedStatus, LED_SERVICE)
-
-        params = load_params(self.yaml_path)
-        self._write_thresholds(params)
-        self._write_tunables(params)
-        self._write_scripts(params)
-        self._write_route(params)
-        self._write_search_state()
-
-        self.feedback_message = "constants loaded"
-        self.node.get_logger().info(
-            f"{self.name}: constants loaded from {self.yaml_path}"
-        )
-        return True
+        return loaded
 
     def initialise(self):
-        self.led_client.call_async(self.blackboard.LED_start_setting)
+        """Seed the run state, put the LEDs in their start setting, lift the head."""
+        super().initialise()
+        self.led_client.call_async(_one(self.blackboard.LED_start_setting))
         # Start with the head lifted: ready to greet, and the pose detector sees
         # whole people rather than just their knees.
         self.accessories.look(HEAD_SEEK)
 
-    def update(self):
-        return py_trees.common.Status.SUCCESS
 
-    # --- internals ----------------------------------------------------------
-
-    def _write_thresholds(self, params):
-        for key in self.SCALAR_PARAMS:
-            setattr(self.blackboard, key, float(params[key]))
-        self.blackboard.Dog_max_wander_allowed = params["Dog_max_wander_allowed"]
-        self.blackboard.last_distance = 200.0
-
-    def _write_tunables(self, params):
-        """Write every tunable, filling in the packaged default for missing ones."""
-        missing = []
-        for yaml_key, blackboard_key in ANGLE_PARAMS.items():
-            default = math.degrees(TUNABLE_DEFAULTS[blackboard_key])
-            if yaml_key not in params:
-                missing.append(yaml_key)
-            setattr(
-                self.blackboard,
-                blackboard_key,
-                math.radians(float(params.get(yaml_key, default))),
-            )
-
-        for key, default in TUNABLE_DEFAULTS.items():
-            if key in ANGLE_PARAMS.values():
-                continue
-            if key not in params:
-                missing.append(key)
-            value = params.get(key, default)
-            setattr(
-                self.blackboard,
-                key,
-                int(value) if key in INTEGER_TUNABLES else float(value),
-            )
-
-        # The neck and gripper poses belong to the commander rather than to any
-        # one behaviour, so they are handed over once here instead of being
-        # threaded through every constructor that creates one.
-        AccessoryCommander.configure(
-            seek_pos=self.blackboard.neck_seek_pos,
-            level_pos=self.blackboard.neck_level_pos,
-            gripper_left=self.blackboard.gripper_left_neutral,
-            gripper_right=self.blackboard.gripper_right_neutral,
-        )
-
-        if missing:
-            self.node.get_logger().info(
-                f"{self.name}: {len(missing)} tunable(s) not in the YAML, using the "
-                f"packaged defaults: {', '.join(sorted(missing))}"
-            )
-
-    def _write_scripts(self, params):
-        self.blackboard.LED_start_setting = parse_led(params["LED_start_setting"][0])
-        for script in self.LED_SCRIPTS:
-            setattr(
-                self.blackboard,
-                f"{script}_seq",
-                [parse_led(entry) for entry in params[f"{script}_seq"]],
-            )
-            setattr(self.blackboard, f"{script}_times", params[f"{script}_times"])
-        for script in self.GESTURE_SCRIPTS:
-            setattr(
-                self.blackboard,
-                f"{script}_seq",
-                [parse_gesture(entry) for entry in params[f"{script}_seq"]],
-            )
-            setattr(self.blackboard, f"{script}_times", params[f"{script}_times"])
-
-    def _write_route(self, params):
-        checkpoints = [parse_checkpoint(entry) for entry in params["Dog_checkpoints"]]
-        self.blackboard.start_position = checkpoints[0]
-        self.blackboard.target_position = checkpoints[-1]
-        self.blackboard.Dog_checkpoints = checkpoints[:-1]
-        self.blackboard.Dog_current_checkpoint = 0
-        self.blackboard.Dog_max_checkpoint = len(self.blackboard.Dog_checkpoints) - 1
-        self.node.get_logger().info(
-            f"{self.name}: {len(self.blackboard.Dog_checkpoints)} route checkpoints: "
-            f"{[(round(cp.x, 2), round(cp.y, 2)) for cp in self.blackboard.Dog_checkpoints]}"
-        )
-
-    def _write_search_state(self):
-        self.blackboard.patrol_checkpoints = list(self.blackboard.Dog_checkpoints)
-        self.blackboard.patrol_current_checkpoint = 0
-        self.blackboard.patrol_direction = SEARCH_BACKWARDS
-        self.blackboard.patrol_initialized = False
-        # Handedness of the last turn made while looking for a person; the turns
-        # back to the route unwind it. 0 until the robot has turned at all.
-        self.blackboard.search_spin_sign = 0
-        # Pacing of the dog tree's look backs: checkpoints driven since the last
-        # one, and when it was. 0.0 means "not started yet" -- `DogCheckInDue`
-        # starts the clock the first time it is asked, which is when leading
-        # begins rather than when this file is read.
-        self.blackboard.check_in_checkpoints_since = 0
-        self.blackboard.check_in_last_time = 0.0
+def _one(setting):
+    """Take the single entry out of a one-entry sequence, or pass a value through."""
+    return setting[0] if isinstance(setting, list) else setting
 
 
-class ConfiguredTimer(py_trees.timers.Timer):
-    """
-    A `py_trees` timer whose duration is a blackboard constant.
-
-    `py_trees.timers.Timer` takes its duration at construction, which is while
-    the tree is being built and therefore before any YAML has been read. This
-    subclass looks the duration up when the timer starts instead, so a pause
-    between two gestures is configured in the same file as the gestures.
-    """
+class ConfiguredTimer(_ConfiguredTimer):
+    """A timer whose duration is one of this package's constants."""
 
     def __init__(self, name, key):
-        super().__init__(name=name, duration=0.0)
-        self.key = key
-        self.blackboard = self.attach_blackboard_client(name=name)
-        self.blackboard.register_key(key=key, access=py_trees.common.Access.READ)
-
-    def initialise(self):
-        """Take the duration from the blackboard, then start the timer."""
-        self.duration = float(constant(self.blackboard, self.key))
-        super().initialise()
+        super().__init__(name=name, key=key, tunables=TUNABLES)
 
 
 class DistanceToBlackboard(py_trees.behaviour.Behaviour):

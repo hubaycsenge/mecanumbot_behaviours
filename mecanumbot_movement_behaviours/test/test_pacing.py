@@ -1,16 +1,16 @@
 """
-Tests for the leading pacing rules.
+Tests for the look-back pacing rules.
 
-`behaviours/pacing.py` imports nothing, so this runs without a ROS graph and
+`pacing.py` imports nothing, so this runs without a ROS graph and
 without the workspace sourced:
 
-    cd src/mecanumbot_behaviours/mecanumbot_leading_behaviour
+    cd src/mecanumbot_behaviours/mecanumbot_movement_behaviours
     PYTHONPATH=. python3 -m pytest test/test_pacing.py
 """
 
 import pytest
 
-from mecanumbot_leading_behaviour.behaviours.pacing import (
+from mecanumbot_movement_behaviours.pacing import (
     check_in_due,
     checkpoint_budget,
     route_leg,
@@ -167,7 +167,7 @@ class TestRoutePoses:
         import math
 
         route = self._route()
-        from mecanumbot_leading_behaviour.behaviours.geometry import route_poses
+        from mecanumbot_movement_behaviours.geometry import route_poses
 
         poses = route_poses(route, [0, 1, 2])
         assert [round(p.position.x, 3) for p in poses] == [0.0, 1.0, 2.0]
@@ -181,7 +181,7 @@ class TestRoutePoses:
 
         route = self._route()
         from geometry_msgs.msg import Point
-        from mecanumbot_leading_behaviour.behaviours.geometry import route_poses
+        from mecanumbot_movement_behaviours.geometry import route_poses
 
         target = Point()
         target.x, target.y = 2.0, 5.0
@@ -192,7 +192,7 @@ class TestRoutePoses:
         import math
 
         route = self._route()
-        from mecanumbot_leading_behaviour.behaviours.geometry import route_poses
+        from mecanumbot_movement_behaviours.geometry import route_poses
 
         poses = route_poses(route, [3])
         assert self._yaw(poses[0]) == pytest.approx(math.pi / 2.0)

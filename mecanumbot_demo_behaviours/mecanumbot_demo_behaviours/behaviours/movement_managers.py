@@ -7,29 +7,33 @@ from geometry_msgs.msg import PoseArray, PoseStamped, PoseWithCovarianceStamped,
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from rclpy.time import Time
 
-from mecanumbot_leading_behaviour.behaviours.constants import (
-    TUNABLE_DEFAULTS as SHARED_DEFAULTS,
+from mecanumbot_movement_behaviours.defaults import (
+    MOVEMENT_DEFAULTS as SHARED_DEFAULTS,
     register_param_keys,
     resolve,
 )
-from mecanumbot_leading_behaviour.behaviours.movement_managers import (
+from mecanumbot_movement_behaviours.geometry import (  # noqa: F401  (re-export)
+    calculate_facing_orientation,
+    normalize_angle,
+    pose_to_goal,
+    yaw_from_quaternion,
+)
+from mecanumbot_movement_behaviours.ros_interfaces import (
+    STATUS_ABORTED,
+    STATUS_ACCEPTED,
+    STATUS_CANCELED,
+    STATUS_CANCELING,
+    STATUS_EXECUTING,
+    STATUS_SUCCEEDED,
+    STATUS_UNKNOWN,
+)
+from mecanumbot_leading_behaviour.behaviours.route_behaviours import (  # noqa: F401  (re-export)
     Approach,
     CheckRobotAtLastCheckpoint,
     CheckRobotHasBall,
     CheckSubjectTargetSuccess,
     RelativeTurnPattern,
     TurnToward,
-    calculate_facing_orientation,
-    normalize_angle,
-    pose_to_goal,
-    yaw_from_quaternion,
-    STATUS_ABORTED,
-    STATUS_ACCEPTED,
-    STATUS_CANCELING,
-    STATUS_CANCELED,
-    STATUS_EXECUTING,
-    STATUS_SUCCEEDED,
-    STATUS_UNKNOWN,
 )
 
 
@@ -139,7 +143,8 @@ class GetNextWaypoint(py_trees.behaviour.Behaviour):
 
 
 class FindPeople(py_trees.behaviour.Behaviour):
-    """Spin in place until a fresh people_fusion message is received.
+    """
+    Spin in place until a fresh people_fusion message is received.
 
     The spin speed is `demo_spin_speed` and the detection age `sight_timeout`,
     both taken from the constants YAML the tree loaded.
@@ -209,7 +214,8 @@ class FindPeople(py_trees.behaviour.Behaviour):
 
 
 class GoToRandomPerson(py_trees.behaviour.Behaviour):
-    """Select a fresh person at random from people_fusion and navigate toward them.
+    """
+    Select a fresh person at random from people_fusion and navigate toward them.
 
     `demo_sight_timeout` is how old a detection may be and still be walked to --
     longer than the leading trees' `sight_timeout`, because here a person who was

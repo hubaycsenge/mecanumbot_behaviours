@@ -3,8 +3,9 @@
 `py_trees_ros` behaviour-tree package for Mecanumbot leading experiments.
 
 It coordinates Nav2 navigation goals, accessory gestures, and LED service calls to
-guide a human subject toward checkpoints. This package also holds the reusable
-behaviour library that `mecanumbot_demo_behaviours` imports.
+guide a human subject toward checkpoints. The movement behaviours it is built
+out of live in `mecanumbot_movement_behaviours` and the constants loader in
+`mecanumbot_bt_config`; what is here is the leading experiment itself.
 
 ## Executable nodes
 
@@ -21,7 +22,9 @@ registers the same ROS node name regardless of which executable was started.
 ## Node interfaces
 
 The ROS interfaces are created inside the BT behaviour classes and used by the
-executable tree nodes.
+executable tree nodes. Most of them belong to `mecanumbot_movement_behaviours`,
+whose README documents them too; they are repeated here because these are the
+interfaces a running leading tree has.
 
 ### Publishers
 
@@ -66,165 +69,74 @@ goal has an identity, a result and a cancel (see *Navigating by action* below).
 
 ## Behaviour library
 
-The library is split by concern; `behaviours/movement_managers.py` re-exports
-everything, so `from ...behaviours.movement_managers import X` keeps working
-(that is what `mecanumbot_demo_behaviours` imports).
+The reusable half of what used to live here has moved out, so this package is
+the leading *experiment* and nothing else:
 
-| Module                 | Contents                                                                                          |
-| ---------------------- | ------------------------------------------------------------------------------------------------- |
-| `constants.py`         | The tunables: what every behaviour used to hard-code, their defaults, and how the YAML is read.  |
-| `geometry.py`          | Pure geometry: angles, bearings, `signed_rotation`, `pose_to_goal`, `route_poses`, checkpoint lookups, `route_progress`. |
-| `pacing.py`            | When the dog looks back and how far it drives between two look backs. Imports nothing — the decision logic on its own. |
-| `ros_interfaces.py`    | Topic names, QoS, pose/people/ball trackers, the Nav2 action navigators, velocity and neck commanders. |
-| `targets.py`           | What a `target_type` points at, and the head pose / turn direction that goes with it.             |
-| `turning.py`           | `SmoothTurner` plus the in-place turning behaviours.                                              |
-| `searching.py`         | `WaitForPerson`, `ManageSearchCheckpoint` — the lost-human patrol.                                |
-| `movement_managers.py` | `Approach`, `FollowRoute`, the condition checks, and the re-exports above.                        |
+| Package | Holds |
+| --- | --- |
+| `mecanumbot_movement_behaviours` | `Approach`, `FollowRoute`, every turn and scan, the patrol, the Nav2 navigators, the trackers, the geometry and the pacing rules. Its README documents them, including the ROS interfaces listed above. |
+| `mecanumbot_bt_config` | Reading a constants YAML onto the blackboard, and spinning a tree on it. |
 
-| Behaviour                    | Role                                                                                                                                                |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Approach`                   | Navigates to a target through Nav2; `mode="exact"` drives to the point, `mode="fixed_distance"` steps `robot_approach_distance` closer.             |
+What is left in `behaviours/` is this experiment:
 
-**How close a goal gets.** `Approach` never aims at its target itself, it aims
-short of it — at `robot_closeness_threshold` for a human and
-`route_stop_distance` for a place on the route. The two are separate numbers
-because they answer different questions. The human one is measured from
-`base_link` to the *detected person centre*, and the footprint reaches 0.2875 m
-ahead of `base_link`, so the bumper stops that much nearer than the number
-says: at `0.75` it ends 0.46 m from the point the detector reported, which is
-about 0.25 m of air in front of a real person. Set it under about 0.5 m and the
-robot touches them, however correctly the threshold is applied.
+| Module | Contents |
+| --- | --- |
+| `keys.py` | `LEADING_KEYS` — that these files call the route `Dog_checkpoints`. |
+| `defaults.py` | The four tunables that are about this experiment rather than about moving, the merged `Tunables`, and `REQUIRED`: what a constants file may not leave out. |
+| `route_behaviours.py` | The movement behaviours bound to `LEADING_KEYS`, plus the ones that need no binding re-exported. **The trees import their movement from here.** |
+| `blackboard_managers.py` | `ConstantParamsToBlackboard`, `ConfiguredTimer`, `DistanceToBlackboard`. |
+| `dog_behaviours.py` | The gesture sequence player and the following/check-in/resume decisions. |
+| `LED_behaviours.py` | The LED pattern sequence player. |
 
-| `FollowRoute`                | Leads one leg of the route — several checkpoints in a single `NavigateThroughPoses` goal, cut short when the human stops following.                 |
-| `TurnToward`                 | Rotates in place to face a `subject` / `target` / `start` / `checkpoint` / `patrol` / `last_checkpoint`, in a chosen direction (see below).         |
-| `GlanceBack`                 | The dog's look over the shoulder: a slow turn onto the human's last known place, then a slow sweep around it. FAILURE is what starts the patrol.    |
-| `RelativeTurnPattern`        | Attention-getting wiggle: alternating turns that end on the starting heading, beginning in the direction of the last search turn.                   |
-| `ScanSpin`                   | Spins in place looking for people, head lifted; `FindPeople` (spin until somebody is seen) and `Spin360` (one full scan) are configured subclasses. |
-| `WaitForPerson`              | Interrupt half of the lost-recovery parallel: waits with a lifted head, and records whether the person turned up ahead of or behind the robot.      |
-| `ManageSearchCheckpoint`     | Walks the patrol index along the route, reversing at either end.                                                                                    |
-| `DogCheckInDue`              | SUCCESS when a look back is due — the pacing measured against `pacing.check_in_due()`.                                                              |
-| `DogWaitForCatchUp`          | Stands still, head up, while a trailing human catches up; FAILURE after `check_in_catch_up_timeout` sends the robot back to fetch them.             |
-| `DogResumeLeading`           | After a search: leads on from the checkpoint nearest the robot, or the one after it when the human has already walked past it.                      |
-| `CheckSubjectTargetSuccess`  | SUCCESS when the subject is within `target_reached_threshold` of the target.                                                                        |
-| `CheckRobotHasBall`          | SUCCESS while `/mecanumbot/has_object` is true.                                                                                                     |
-| `CheckRobotAtLastCheckpoint` | SUCCESS when `Dog_current_checkpoint >= Dog_max_checkpoint`.                                                                                        |
+| Behaviour | Role |
+| --- | --- |
+| `DogBehaviourSequence` | Plays one timed accessory-gesture sequence from the blackboard. |
+| `DogCheckFollowing` | Verifies the subject is within `Dog_following_max_threshold` — asked both after a check-in glance and after a recovery patrol, to decide whether the robot has to go back to them at all. |
+| `DogCheckInDue` | SUCCESS when a look back is due — the pacing measured against `pacing.check_in_due()`. |
+| `DogWaitForCatchUp` | Stands still, head up, while a trailing human catches up; FAILURE after `check_in_catch_up_timeout` sends the robot back to fetch them. |
+| `DogResumeLeading` | After a search: leads on from the checkpoint nearest the robot, or the one after it when the human has already walked past it. |
+| `LEDBehaviourSequence` | Plays one timed LED pattern sequence from the blackboard. |
 
-### Navigating by action
+`LEDBehaviourSequence(name, mode)` and `DogBehaviourSequence(name, mode)` step
+through a sequence taken from the blackboard. Supported modes:
 
-Every drive is a Nav2 action goal. A pose published on `/goal_pose` is a message
-shouted into the dark: Nav2 never says which goal id it became, so the outcome
-had to be guessed from the newest entry of the status array, and there was no
-way to take the goal back. `Nav2PoseNavigator` and `Nav2RouteNavigator` wrap
-`NavigateToPose` and `NavigateThroughPoses`, which give all three — the goal
-handle identifies the goal, the result says how it ended, and `cancel()` stops
-it. Everything is asynchronous: callbacks land between ticks on the same
-executor, a behaviour only reads `status()` during its tick, and nothing waits.
-
-Cancelling is what makes the leading seamless. A drive is cancelled the moment
-the behaviour that owns it stops, so the turn that comes next has `/cmd_vel` to
-itself instead of waiting `turn_nav2_wait` seconds for Nav2 to notice it is
-finished, and `FollowRoute` can stop a leg mid-way when the human drops behind.
-
-`Nav2GoalMonitor` stays for `mecanumbot_ostensive_behaviour`, which still
-publishes goal poses, and for `busy()` — "is Nav2 driving right now", which a
-turn asks before it takes `/cmd_vel`, and which is a question about the status
-topics rather than about a goal of our own.
-
-### Turning: smoothness and direction
-
-In-place rotations do **not** go through Nav2. `SmoothTurner` drives `/cmd_vel`
-with a profile that ramps up under an acceleration limit and eases out
-proportionally to the angle left, and it tracks progress on AMCL yaw,
-dead-reckoning from the commanded speed between pose updates. The profile comes
-from the constants YAML — `turn_max_speed`, `turn_accel`, `turn_decel_gain`,
-`turn_min_speed`, `turn_tolerance_deg` (keep them inside the Nav2 controller's
-`max_vel_theta` / `max_angular_accel`) — and a call site may still override any
-of them for one behaviour by passing the `SmoothTurner` keyword.
-
-Owning the rotation is what makes the direction selectable. `TurnToward` takes
-`direction`:
-
-| `direction`  | Meaning                                                                                                                                                 |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `"shortest"` | Short way round. Default for human targets, and asked for explicitly on the dog tree's turn to the next checkpoint.                                     |
-| `"unwind"`   | Opposite to the last search turn — back the way the robot came. Default for route targets.                                                              |
-| `"repeat"`   | Same handedness as the last search turn.                                                                                                                |
-
-Any turn or scan that looks for a human stores its handedness in the
-`search_spin_sign` blackboard key (`+1` counterclockwise, `-1` clockwise), so a
-glance back over the right shoulder can be answered over the left — retracing
-the rotation instead of carrying on around, taking the long way when it has to.
-
-That is a gesture, so it is applied where the robot is dealing with the human:
-`RelativeTurnPattern` starts its wiggle in the direction of the last glance, and
-`TurnToward(TARGET)` unwinds it when pointing the target out. The dog tree's turn
-to the next checkpoint overrides the route-target default with
-`direction="shortest"` — a checkpoint is somewhere to drive to, and unwinding
-there only made the robot swing the long way before setting off.
-
-Because rotation bypasses Nav2, the local costmap does not supervise it; that was
-already true of the old search spins, and only in-place rotation is affected.
-
-### Head (neck) poses
-
-`n_pos` is the neck-mounted camera tilt (`2.0 … 8.6`, larger looks further up).
-Two named poses, set from the YAML and held on `AccessoryCommander` — they are
-class state, because there is only one head, and the parameter loader hands them
-over once with `AccessoryCommander.configure()` before any tree is ticked:
-
-| YAML key         | Value | Used when                                                                                                                                                    |
-| ---------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `neck_seek_pos`  | `7.0` | The robot is looking for or at a human: reads as seeking contact, and gives YOLO26n-pose a full-body view instead of a pair of knees, which it often misses. |
-| `neck_level_pos` | `6.0` | The robot is driving its route or pointing at the target.                                                                                                    |
-
-`gripper_left_neutral` / `gripper_right_neutral` (`6.83` / `3.36`) are the
-gripper positions any command that does not name its own uses; the gesture
-sequences move between the same values.
-
-Behaviours pick the pose from their target type (`head="seek"` / `"level"`), so
-the head stays lifted for the whole seeking phase rather than flicking up for a
-moment. `head=None` leaves the neck untouched — the LED and control trees pass
-that so their comparison conditions carry no head gestures at all.
+| Mode | Blackboard keys used |
+| --- | --- |
+| `catch_attention` | `LED_catch_attention_seq` / `_times`, `Dog_catch_attention_seq` / `_times` |
+| `indicate_target` | `LED_indicate_target_seq` / `_times`, `Dog_indicate_target_seq` / `_times` |
+| `indicate_close_target` | `LED_indicate_close_target_seq` / `_times` (LED only) |
+| `thank` | `LED_thank_seq` / `_times`, `Dog_thank_seq` / `_times` |
 
 ### `behaviours/blackboard_managers.py`
 
-| Behaviour                    | Role                                                                                                                     |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `ConstantParamsToBlackboard` | Loads the YAML constants, parses LED/gesture/checkpoint entries into message objects, and applies the start LED setting. |
-| `ConfiguredTimer`            | A `py_trees` timer whose duration is a blackboard key, looked up when the timer starts rather than when the tree is built. |
-| `DistanceToBlackboard`       | Computes robot–subject, robot–target and subject–target distances plus their threshold flags.                            |
+| Behaviour | Role |
+| --- | --- |
+| `ConstantParamsToBlackboard` | Loads the YAML constants, reads the checkpoint list as a route, and applies the start LED setting. |
+| `ConfiguredTimer` | A `py_trees` timer whose duration is a blackboard key, looked up when the timer starts rather than when the tree is built. |
+| `DistanceToBlackboard` | Computes robot-subject, robot-target and subject-target distances plus their threshold flags. |
 
-`ConstantParamsToBlackboard` reads the YAML under the fixed
-`bottom_up_tree_node: ros__parameters:` key, splits `Dog_checkpoints` so the first
-entry becomes `start_position` and the last becomes `target_position`, and leaves the
-remainder as the checkpoint list. It also seeds the runtime state the other
-behaviours expect, so nothing has to guess whether a key exists yet:
+The loading itself is `mecanumbot_bt_config`'s `ParamsToBlackboard`, which knows
+no key names at all — it writes whatever the file declares. What this subclass
+adds is the three things a constants file cannot say about itself:
 
-| Key                                              | Meaning                                                                       |
-| ------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `Dog_current_checkpoint` / `Dog_max_checkpoint`   | Progress along the route the robot leads.                                     |
-| `patrol_checkpoints` / `patrol_current_checkpoint` | Separate index used while searching for a lost human.                        |
-| `patrol_direction`                               | `+1` search forwards along the route, `-1` backwards (set by `WaitForPerson`). |
-| `patrol_initialized`                             | `False` makes the next patrol snap to the nearest checkpoint.                  |
-| `search_spin_sign`                               | Handedness of the last turn made to look at a human; route turns unwind it.    |
-| `last_distance`                                  | Most recent robot–human distance from `DogCheckFollowing`.                     |
+* **what is required.** `defaults.REQUIRED` plus the signalling scripts of the
+  condition being run: each tree passes `scripts=` naming the sequences it
+  actually plays, so the control condition's file needs no LED sequences while
+  the LED condition's would fail without them;
+* **what the checkpoint list means.** The first entry becomes `start_position`,
+  the last becomes `target_position`, and the rest — the first included — is the
+  route in `Dog_checkpoints`, copied to `patrol_checkpoints` for the search;
+* **what is state rather than configuration.** Seeded on every entry, so nothing
+  has to guess whether a key exists yet:
 
-### `behaviours/LED_behaviours.py` and `behaviours/dog_behaviours.py`
-
-`LEDBehaviourSequence(name, mode)` and `DogBehaviourSequence(name, mode)` step through
-a timed sequence taken from the blackboard. Supported modes:
-
-| Mode                    | Blackboard keys used                                                       |
-| ----------------------- | -------------------------------------------------------------------------- |
-| `catch_attention`       | `LED_catch_attention_seq` / `_times`, `Dog_catch_attention_seq` / `_times` |
-| `indicate_target`       | `LED_indicate_target_seq` / `_times`, `Dog_indicate_target_seq` / `_times` |
-| `indicate_close_target` | `LED_indicate_close_target_seq` / `_times` (LED only)                      |
-| `thank`                 | `LED_thank_seq` / `_times`, `Dog_thank_seq` / `_times`                     |
-
-`dog_behaviours.py` also provides `DogCheckFollowing` (verifies the subject is within
-`Dog_following_max_threshold` — asked both after a check-in glance and after a recovery
-patrol, to decide whether the robot has to go back to them at all) and
-`DogResumeLeading` (picks the checkpoint leading carries on from after a search).
+| Key | Meaning |
+| --- | --- |
+| `Dog_current_checkpoint` / `Dog_max_checkpoint` | Progress along the route the robot leads. |
+| `patrol_checkpoints` / `patrol_current_checkpoint` | Separate index used while searching for a lost human. |
+| `patrol_direction` | `+1` search forwards along the route, `-1` backwards (set by `WaitForPerson`). |
+| `patrol_initialized` | `False` makes the next patrol snap to the nearest checkpoint. |
+| `search_spin_sign` | Handedness of the last turn made to look at a human; route turns unwind it. |
+| `last_distance` | Most recent robot-human distance from `DogCheckFollowing`. |
 
 ## Launch files
 
@@ -247,24 +159,21 @@ started by the launch file — run it with `ros2 run`.
 | Path                                       | Role                                                                                                                    |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
 | `mecanumbot_leading_behaviour/tree_nodes/` | Top-level BT compositions and executable entry points.                                                                  |
-| `mecanumbot_leading_behaviour/behaviours/` | Reusable BT leaf behaviours (movement, LED, dog gestures, blackboard loaders).                                          |
-| `mecanumbot_leading_behaviour/tree_nodes/tree_common.py` | YAML resolution, the shared recovery branch, and the tree runner used by all four executables. |
+| `mecanumbot_leading_behaviour/behaviours/` | This experiment's leaf behaviours (LED, dog gestures, its constants loader) and its bindings of the shared movement library. |
+| `mecanumbot_leading_behaviour/tree_nodes/tree_common.py` | The package and node names, and the shared recovery branch, on top of `mecanumbot_bt_config.tree_runner`. |
+| `mecanumbot_leading_behaviour/tools/route_check.py` | `check_route`: plans every hop of the configured route against the live costmap, without running a tree. |
 | `launch/`                                  | Runtime launcher with condition-based node selection.                                                                   |
 | `config/`                                  | Behaviour constants and sequences in YAML (`behaviour_setting_constants.yaml`, `Eto_behaviour_setting_constants.yaml`). |
 | `resource/`                                | ROS package resource marker.                                                                                            |
-| `test/`                                    | `test_pacing.py` plus the package lint tests.                                                                           |
+| `test/`                                    | The package lint tests. |
 
 ## Tests
 
-`test/test_pacing.py` covers the leading pacing rules — when a look back falls
-due, how long a leg may be, and the waypoint poses a leg is sent as. The pacing
-rules import nothing, so most of it runs against a bare interpreter; the three
-`route_poses` tests need `geometry_msgs` and skip without it.
+This package has no unit tests of its own any more: `test_pacing.py` moved to
+`mecanumbot_movement_behaviours` with the rules it covers.
 
 ```bash
-cd src/mecanumbot_behaviours/mecanumbot_leading_behaviour
-PYTHONPATH=.:$PYTHONPATH python3 -m pytest test/test_pacing.py -v
-colcon test --packages-select mecanumbot_leading_behaviour   # from the workspace root
+colcon test --packages-select mecanumbot_leading_behaviour   # lint only
 ```
 
 ## BT logic
@@ -430,9 +339,11 @@ human who is merely two metres behind is fetched rather than searched for.
 
 ## Configuration model
 
-Both `config/*.yaml` files use the same schema, nested under
-`bottom_up_tree_node: ros__parameters:`. Sequence entries are strings holding Python
-dict literals, parsed with `ast.literal_eval`.
+Both `config/*.yaml` files use the same schema. They are nested under
+`bottom_up_tree_node: ros__parameters:`, though nothing depends on that name any
+more — `mecanumbot_bt_config` reads the root key off the file. Sequence entries
+are strings holding Python dict literals, decoded into messages by the keys
+inside them.
 
 There are two kinds of key, and they behave differently when one is missing.
 
@@ -451,19 +362,27 @@ each step in seconds. LED entries are `{fl,fr,bl,br}` dicts of `color`/`mode` va
 gesture entries are `{n_pos, gl_pos, gr_pos}` dicts; checkpoints are `{X, Y, Z}` dicts.
 
 These describe the run, so a file that omits one fails to load rather than
-having a distance invented for it.
+having a distance invented for it — they are `defaults.REQUIRED` plus the
+signalling scripts of the condition being run. Which scripts those are is the
+tree's `scripts=` argument, so the control condition needs none of them.
 
-### Tunables — optional, defaulted from `behaviours/constants.py`
+### Tunables — optional, defaulted in Python
 
 Everything the behaviour library used to carry as a constructor default or a
 module constant. Declaring one in the YAML changes it everywhere; omitting it
-keeps the value in `TUNABLE_DEFAULTS`, which is what lets a constants file
-written before a key existed still load. The shipped files declare all of them,
-so a run is described by one file.
+keeps the packaged default, which is what lets a constants file written before a
+key existed still load. The shipped files declare all of them, so a run is
+described by one file.
+
+The defaults live with the behaviours that read them —
+`mecanumbot_movement_behaviours.defaults.MOVEMENT_DEFAULTS` for the movement
+ones, `behaviours/defaults.py` for the four that are about this experiment, and
+`mecanumbot_bt_config.tree_runner.RUNTIME_DEFAULTS` for the two the tree runner
+settles before the first tick.
 
 | Group             | Keys                                                                                                              | Read by                                          |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| Tree runtime      | `tick_period_ms`, `setup_timeout`                                                                                 | `tree_common.run_tree`                           |
+| Tree runtime      | `tick_period_ms`, `setup_timeout`                                                                                 | `bt_config.tree_runner.run_tree`                 |
 | Seeing people     | `sight_timeout`                                                                                                   | every behaviour that watches `people_fusion`     |
 | Rotation profile  | `turn_max_speed`, `turn_accel`, `turn_decel_gain`, `turn_min_speed`, `turn_tolerance_deg`, `facing_epsilon_deg`   | `SmoothTurner`, `signed_rotation`                |
 | Turning           | `turn_timeout`, `turn_nav2_wait`, `turn_target_timeout`, `turn_corrections`, `attention_turn_step_deg`            | `InPlaceTurn`, `TurnToward`, `RelativeTurnPattern` |
@@ -483,21 +402,25 @@ in **radians** under the name without it — the convention
 How a tunable reaches the code:
 
 * behaviours register the keys in `__init__` and read them in `setup()`, through
-  `constants.constant()` / `constants.resolve()`. `setup()` runs depth-first in
-  tree order and `ConstantParamsToBlackboard` is the first leaf, so the values
-  are on the blackboard before anything else asks for them;
+  their package's `constant()` / `resolve()`. `setup()` runs depth-first in tree
+  order and `ConstantParamsToBlackboard` is the first leaf, so the values are on
+  the blackboard before anything else asks for them;
 * a constructor argument left at `None` means "take the configured value", and
   passing a number still wins — the YAML is the default for every turn in the
   tree, not a ceiling on what one turn may be;
 * the handful settled while the tree is still being *built* — `tick_period_ms`,
   `setup_timeout`, `recover_retries` — come from the file through
-  `tree_common.build_params()` / `constants.file_constant()`, because no
+  `tree_common.build_params()` / `defaults.file_constant()`, because no
   blackboard exists yet. Timer durations avoid this with `ConfiguredTimer`,
   which looks its duration up when it starts.
 
-`mecanumbot_ostensive_behaviour` borrows this package's scanning and turning
-behaviours and declares the subset of these keys it uses in its own constants
-file, under the same names.
+Angles are the loader's business, not this package's: any key whose name ends in
+`_deg` reaches the blackboard in radians under the name without it, so no list
+of which keys are angles exists anywhere.
+
+`mecanumbot_ostensive_behaviour` borrows the same scanning and turning behaviours
+and declares the subset of the movement keys it uses in its own constants file,
+under the same names.
 
 ## Run examples
 
