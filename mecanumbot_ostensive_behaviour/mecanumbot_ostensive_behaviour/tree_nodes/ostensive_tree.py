@@ -30,7 +30,7 @@ blackboard during its own `setup()`.
 
 import py_trees
 
-from mecanumbot_leading_behaviour.behaviours.turning import FindPeople
+from mecanumbot_movement_behaviours.turning import FindPeople
 
 from mecanumbot_ostensive_behaviour.behaviours.acknowledge import NodAcknowledge
 from mecanumbot_ostensive_behaviour.behaviours.attention import WaitForAttentionSignal

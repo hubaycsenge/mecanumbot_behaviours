@@ -26,6 +26,7 @@ setup(
             "doglike_leading_bt_node = mecanumbot_leading_behaviour.tree_nodes.dog_tree:main",
             "LED_leading_bt_node = mecanumbot_leading_behaviour.tree_nodes.LED_tree:main",
             "bottom_up_tree_node = mecanumbot_leading_behaviour.tree_nodes.bottom_up_tree:main",
+            "check_route = mecanumbot_leading_behaviour.tools.route_check:main",
         ],
     },
 )

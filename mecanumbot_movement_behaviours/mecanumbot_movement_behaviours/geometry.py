@@ -1,4 +1,5 @@
-"""Pose, angle and checkpoint helpers shared by all leading behaviours.
+"""
+Pose, angle and checkpoint helpers shared by all leading behaviours.
 
 Everything here is pure geometry: no ROS communication, no py_trees. Keeping it
 in one place means the behaviours only contain their decision logic.
@@ -51,7 +52,8 @@ def calculate_facing_orientation(robot_pose, target_position):
 def signed_rotation(
     current_yaw, desired_yaw, preferred_sign=None, epsilon=FACING_EPSILON
 ):
-    """Rotation [rad] that turns `current_yaw` into `desired_yaw`.
+    """
+    Rotation [rad] that turns `current_yaw` into `desired_yaw`.
 
     Without a preference the shortest way round is taken. With `preferred_sign`
     (`COUNTERCLOCKWISE` / `CLOCKWISE`) the turn always goes that way round,
@@ -87,7 +89,8 @@ def closest_checkpoint_index(checkpoints, x, y):
 
 
 def route_progress(checkpoints, position):
-    """How far along the checkpoint polyline `position` lies, as a float index.
+    """
+    How far along the checkpoint polyline `position` lies, as a float index.
 
     `2.0` sits exactly on checkpoint 2 and `2.4` four tenths of the way from
     checkpoint 2 towards checkpoint 3, so comparing a progress value against a
@@ -108,7 +111,8 @@ def route_progress(checkpoints, position):
 
 
 def path_progress_sign(checkpoints, robot_position, other_position):
-    """Is `other_position` further along the checkpoint path than the robot?
+    """
+    Say whether `other_position` is further along the path than the robot.
 
     Returns `1` when it lies ahead (towards the target) and `-1` when it lies
     behind or level with the robot. Used to decide which way along the route a
@@ -133,7 +137,8 @@ def _projection_fraction(start, end, position):
 
 
 def route_poses(checkpoints, indices, look_beyond=None):
-    """Goal poses for a run through `indices` of the checkpoint list.
+    """
+    Goal poses for a run through `indices` of the checkpoint list.
 
     Each pose sits on its checkpoint and faces the next point of the route, so a
     robot handed the whole leg at once arrives at every waypoint already
@@ -164,7 +169,8 @@ def route_poses(checkpoints, indices, look_beyond=None):
 def pose_to_goal(
     object_position, robot_pose, stop_threshold=0.3, mode="exact", go_threshold=1.0
 ):
-    """Nav2 goal pose towards `object_position`, always facing it.
+    """
+    Nav2 goal pose towards `object_position`, always facing it.
 
     `mode="exact"` aims for the object minus `stop_threshold`, `mode="fixed_distance"`
     only steps `go_threshold` along the way (unless the remaining distance is

@@ -26,7 +26,7 @@ import math
 
 import py_trees
 
-from mecanumbot_leading_behaviour.behaviours.turning import InPlaceTurn
+from mecanumbot_movement_behaviours.turning import InPlaceTurn
 
 from mecanumbot_ostensive_behaviour.behaviours.blackboard_managers import (
     register_param_keys,

@@ -1,4 +1,5 @@
-"""In-place turning behaviours with a velocity profile and a chosen direction.
+"""
+In-place turning behaviours with a velocity profile and a chosen direction.
 
 All rotations run on `/cmd_vel` through `SmoothTurner` rather than as nav2
 rotate-in-place goals. Two reasons:
@@ -18,19 +19,20 @@ import math
 
 import py_trees
 
-from mecanumbot_leading_behaviour.behaviours.constants import (
+from mecanumbot_movement_behaviours.defaults import (
     constant,
     register_param_keys,
     resolve,
 )
-from mecanumbot_leading_behaviour.behaviours.geometry import (
+from mecanumbot_movement_behaviours.geometry import (
     COUNTERCLOCKWISE,
     bearing_to,
     normalize_angle,
     signed_rotation,
 )
-from mecanumbot_leading_behaviour.behaviours.pacing import sweep_pattern
-from mecanumbot_leading_behaviour.behaviours.ros_interfaces import (
+from mecanumbot_movement_behaviours.keys import DEFAULT_KEYS
+from mecanumbot_movement_behaviours.pacing import sweep_pattern
+from mecanumbot_movement_behaviours.ros_interfaces import (
     AccessoryCommander,
     HEAD_SEEK,
     Nav2GoalMonitor,
@@ -39,17 +41,13 @@ from mecanumbot_leading_behaviour.behaviours.ros_interfaces import (
     VelocityCommander,
     now_seconds,
 )
-from mecanumbot_leading_behaviour.behaviours.targets import (
+from mecanumbot_movement_behaviours.targets import (
     SUBJECT,
     default_head_pose,
     is_human,
     register_target_keys,
     resolve_target_position,
 )
-
-# Blackboard key holding the handedness (+1 counterclockwise / -1 clockwise) of
-# the rotation the robot last used while looking for a human.
-SPIN_SIGN_KEY = "search_spin_sign"
 
 # `direction` options of TurnToward.
 SHORTEST = "shortest"
@@ -68,7 +66,8 @@ TURNER_PARAMS = {
 
 
 class SmoothTurner:
-    """Velocity-profiled in-place rotation by a signed angle.
+    """
+    Velocity-profiled in-place rotation by a signed angle.
 
     Progress is measured on AMCL yaw and dead-reckoned from the commanded speed
     between pose updates, so a slow localisation update rate does not stall the
@@ -180,7 +179,8 @@ class SmoothTurner:
 
 
 class InPlaceTurn(py_trees.behaviour.Behaviour):
-    """Shared scaffolding for the rotating behaviours.
+    """
+    Shared scaffolding for the rotating behaviours.
 
     Subclasses decide *what* to turn by; this class owns the ROS handles, the
     velocity profile, the head pose, the nav2 hand-over and the exit ramp.
@@ -189,19 +189,26 @@ class InPlaceTurn(py_trees.behaviour.Behaviour):
     value". A caller may still pass a number, which wins -- the constants are
     the default for every turn in the tree, not a ceiling on what one turn is
     allowed to be.
+
+    `keys` is the spelling of the blackboard keys this behaviour reads; a
+    package that names them differently binds its own map on `KEYS` in a
+    subclass rather than passing one at every call site.
     """
 
-    def __init__(self, name, head=None, timeout=None, nav2_wait=None, **turner_kwargs):
+    KEYS = DEFAULT_KEYS
+
+    def __init__(
+        self, name, head=None, timeout=None, nav2_wait=None, keys=None, **turner_kwargs
+    ):
         super().__init__(name)
         self.head = head
         self.timeout = timeout
         self.nav2_wait = nav2_wait
+        self.keys = keys or self.KEYS
         self._turner_kwargs = turner_kwargs
 
         self.blackboard = self.attach_blackboard_client(name=name)
-        self.blackboard.register_key(
-            key=SPIN_SIGN_KEY, access=py_trees.common.Access.WRITE
-        )
+        self.keys.register(self.blackboard, py_trees.common.Access.WRITE, "spin_sign")
         register_param_keys(self.blackboard)
 
     def setup(self, **kwargs):
@@ -238,7 +245,8 @@ class InPlaceTurn(py_trees.behaviour.Behaviour):
         return (self.node.get_clock().now() - self._start_time).nanoseconds / 1e9
 
     def nav2_handed_over(self):
-        """True once nav2 stopped driving, so `/cmd_vel` is ours to command.
+        """
+        Wait for nav2 to stop driving, so `/cmd_vel` is ours to command.
 
         A goal that never finishes must not block the tree forever, so after
         `nav2_wait` seconds the turn goes ahead anyway.
@@ -268,14 +276,15 @@ class InPlaceTurn(py_trees.behaviour.Behaviour):
     def record_spin_sign(self, rotation):
         """Remember which way round the robot turned to look at a human."""
         if rotation:
-            self.blackboard.search_spin_sign = (
-                COUNTERCLOCKWISE if rotation > 0.0 else -COUNTERCLOCKWISE
+            self.blackboard.set(
+                self.keys.spin_sign,
+                COUNTERCLOCKWISE if rotation > 0.0 else -COUNTERCLOCKWISE,
             )
 
     def last_spin_sign(self):
         """Handedness of the last search turn, 0 if the robot has not turned yet."""
         try:
-            return self.blackboard.search_spin_sign or 0
+            return self.blackboard.get(self.keys.spin_sign) or 0
         except (AttributeError, KeyError):
             return 0
 
@@ -288,7 +297,8 @@ class InPlaceTurn(py_trees.behaviour.Behaviour):
 
 
 class TurnToward(InPlaceTurn):
-    """Turn in place until the robot faces a target.
+    """
+    Turn in place until the robot faces a target.
 
     `direction` picks which way round:
 
@@ -337,7 +347,7 @@ class TurnToward(InPlaceTurn):
         self.sight_timeout = sight_timeout
         self.min_rotation = min_rotation
         self.min_rotation_key = min_rotation_key
-        register_target_keys(self.blackboard)
+        register_target_keys(self.blackboard, self.keys)
 
     def setup(self, **kwargs):
         super().setup(**kwargs)
@@ -410,6 +420,7 @@ class TurnToward(InPlaceTurn):
             self.blackboard,
             self.target_type,
             subject_position=None if subject_pose is None else subject_pose.position,
+            keys=self.keys,
         )
 
     def _start_turn(self):
@@ -462,7 +473,8 @@ class TurnToward(InPlaceTurn):
 
 
 class RelativeTurnPattern(InPlaceTurn):
-    """Attention-getting wiggle that ends on the heading it started from.
+    """
+    Attention-getting wiggle that ends on the heading it started from.
 
     The first step continues the handedness of the last search turn, so the
     wiggle flows out of that motion instead of reversing abruptly.
@@ -519,7 +531,8 @@ class RelativeTurnPattern(InPlaceTurn):
 
 
 class ScanSpin(InPlaceTurn):
-    """Spin in place looking for people, head lifted for the whole scan.
+    """
+    Spin in place looking for people, head lifted for the whole scan.
 
     The spin direction defaults to whichever way is shorter towards the last
     place a person was seen, and is stored on the blackboard so the turn back to
@@ -659,7 +672,8 @@ class FindPeople(ScanSpin):
 
 
 class Spin360(ScanSpin):
-    """A full scanning revolution, configured by the `full_scan_*` constants.
+    """
+    A full scanning revolution, configured by the `full_scan_*` constants.
 
     Detections are not acted on here: this runs inside the recovery parallel
     where `WaitForPerson` is the branch that reacts to seeing somebody. It is
@@ -681,7 +695,8 @@ class Spin360(ScanSpin):
 
 
 class GlanceBack(InPlaceTurn):
-    """The look over the shoulder: turn to where the human was, and check.
+    """
+    The look over the shoulder: turn to where the human was, and check.
 
     This is the dog's check-in, and it is a different movement from a search.
     It goes at `glance_spin_speed`, slower than either scan, for two reasons at
@@ -723,12 +738,12 @@ class GlanceBack(InPlaceTurn):
         self.spin_speed = spin_speed
         self.sweep_angle = sweep_angle
         self.sight_timeout = sight_timeout
-        register_target_keys(self.blackboard)
-        self.blackboard.register_key(
-            key="check_in_checkpoints_since", access=py_trees.common.Access.WRITE
-        )
-        self.blackboard.register_key(
-            key="check_in_last_time", access=py_trees.common.Access.WRITE
+        register_target_keys(self.blackboard, self.keys)
+        self.keys.register(
+            self.blackboard,
+            py_trees.common.Access.WRITE,
+            "checkpoints_since",
+            "last_check_in",
         )
 
     def setup(self, **kwargs):
@@ -763,8 +778,8 @@ class GlanceBack(InPlaceTurn):
             py_trees.common.Status.SUCCESS,
             py_trees.common.Status.FAILURE,
         ):
-            self.blackboard.check_in_checkpoints_since = 0
-            self.blackboard.check_in_last_time = now_seconds(self.node)
+            self.blackboard.set(self.keys.checkpoints_since, 0)
+            self.blackboard.set(self.keys.last_check_in, now_seconds(self.node))
 
     def update(self):
         if self._exit_status is not None:
@@ -832,8 +847,8 @@ class GlanceBack(InPlaceTurn):
         return normalize_angle(self.pose.yaw + math.pi)
 
     def _checkpoint_behind(self):
-        checkpoints = self.blackboard.Dog_checkpoints
-        index = int(self.blackboard.Dog_current_checkpoint) - 1
+        checkpoints = self.blackboard.get(self.keys.checkpoints)
+        index = int(self.blackboard.get(self.keys.current_checkpoint)) - 1
         if checkpoints and 0 <= index < len(checkpoints):
             return checkpoints[index]
         return None

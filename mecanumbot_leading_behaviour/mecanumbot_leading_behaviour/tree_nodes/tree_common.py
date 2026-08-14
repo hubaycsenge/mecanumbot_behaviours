@@ -1,76 +1,48 @@
-"""Scaffolding shared by the executable behaviour trees.
+"""
+Scaffolding shared by the executable leading trees.
 
-Every tree needs the same three things: find its YAML, build a lost-human
-recovery branch, and spin. They live here so the tree files only contain the
-behaviour composition that makes each condition different.
+Finding the constants file and spinning the tree are `mecanumbot_bt_config`'s
+job; what is left here is what belongs to *these* trees -- the package their
+constants are packaged in, the node name they register under, and the lost-human
+recovery branch every one of them builds.
 """
 
-import argparse
-import os
-
 import py_trees
-import py_trees_ros
-import rclpy
-from ament_index_python.packages import get_package_share_directory
 
-from mecanumbot_leading_behaviour.behaviours.constants import (
-    file_constant,
-    load_params,
-)
-from mecanumbot_leading_behaviour.behaviours.movement_managers import Approach
-from mecanumbot_leading_behaviour.behaviours.searching import (
+from mecanumbot_bt_config import tree_runner
+from mecanumbot_movement_behaviours.targets import PATROL
+from mecanumbot_movement_behaviours.turning import Spin360
+
+from mecanumbot_leading_behaviour.behaviours.route_behaviours import (
+    Approach,
     ManageSearchCheckpoint,
     WaitForPerson,
 )
-from mecanumbot_leading_behaviour.behaviours.targets import PATROL
-from mecanumbot_leading_behaviour.behaviours.turning import Spin360
 
 PACKAGE_NAME = "mecanumbot_leading_behaviour"
 
-# All trees register under this node name because it is also the root key the
-# constants YAML files are nested under.
+# All trees register under this node name, which is also the root key the
+# constants files happen to be nested under -- though nothing depends on the two
+# matching any more, because the loader reads the root key off the file.
 NODE_NAME = "bottom_up_tree_node"
-
-
-def build_params(yaml_path):
-    """
-    Read the constants file for the values needed while building the tree.
-
-    The tick period, the setup timeout and a decorator's retry count are all
-    settled before the first tick, which is before `ConstantParamsToBlackboard`
-    has run, so they come from the file rather than from the blackboard. A file
-    that cannot be read is not fatal here -- the loader behaviour will report it
-    properly a moment later, and until then the packaged defaults apply.
-    """
-    try:
-        return load_params(yaml_path)
-    except Exception as error:  # unreadable, malformed, or missing the root key
-        print(f"[tree_common] could not pre-read {yaml_path} ({error}); using defaults")
-        return {}
 
 
 def resolve_yaml_path(tree_name, default_filename):
     """`--yaml_path`, else `YAML_PATH` / `BEHAVIOUR_YAML_PATH`, else the packaged file."""
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--yaml_path", type=str, default=None)
-    parsed, _ = parser.parse_known_args()
-    yaml_path = (
-        parsed.yaml_path or os.getenv("YAML_PATH") or os.getenv("BEHAVIOUR_YAML_PATH")
-    )
-    if yaml_path:
-        print(f"[{tree_name}] Using YAML_PATH: {yaml_path}")
-        return yaml_path
+    return tree_runner.resolve_yaml_path(tree_name, PACKAGE_NAME, default_filename)
 
-    fallback = os.path.join(
-        get_package_share_directory(PACKAGE_NAME), "config", default_filename
-    )
-    print(f"[{tree_name}] YAML_PATH unset, fallback to: {fallback}")
-    return fallback
+
+def build_params(yaml_path):
+    """Read the constants file for the values needed while building the tree."""
+    return tree_runner.build_params(yaml_path)
 
 
 def create_recover_lost_sequence(ID=""):
-    """Search the route for a human who stopped following.
-    scan a full circle, step to the next search checkpoint, drive there, repeat.
+    """
+    Search the route for a human who stopped following.
+
+    Scan a full circle, step to the next search checkpoint, drive there,
+    repeat.
     The parallel ends the moment somebody is spotted.
     """
     patrol = py_trees.composites.Sequence(name=ID + "SearchSequence", memory=True)
@@ -99,23 +71,17 @@ def create_recover_lost_sequence(ID=""):
 
 def run_tree(create_root, tree_name, default_yaml, args=None, tick_period_ms=None):
     """
-    Build, set up and spin one behaviour tree.
+    Build, set up and spin one leading tree.
 
     `tick_period_ms` defaults to the constants file's `tick_period_ms`; passing
     one overrides it.
     """
-    rclpy.init(args=args)
-
-    yaml_path = resolve_yaml_path(tree_name, default_yaml)
-    params = build_params(yaml_path)
-    if tick_period_ms is None:
-        tick_period_ms = file_constant(params, "tick_period_ms")
-
-    tree_node = py_trees_ros.trees.BehaviourTree(root=create_root(yaml_path=yaml_path))
-    tree_node.setup(
-        timeout=float(file_constant(params, "setup_timeout")), node_name=NODE_NAME
+    tree_runner.run_tree(
+        create_root,
+        tree_name,
+        PACKAGE_NAME,
+        NODE_NAME,
+        default_yaml,
+        args=args,
+        tick_period_ms=tick_period_ms,
     )
-    print(f"Starting {tree_name} behaviour tree using YAML: {yaml_path}")
-
-    tree_node.tick_tock(period_ms=float(tick_period_ms))
-    rclpy.spin(tree_node.node)

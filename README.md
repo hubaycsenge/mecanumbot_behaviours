@@ -2,17 +2,29 @@
 
 ROS 2 repository for high-level behaviour orchestration on Mecanumbot, built on
 `py_trees` / `py_trees_ros`. The trees do not drive the wheels directly for
-navigation — they publish Nav2 goals on `/goal_pose` and watch
-`/navigate_to_pose/_action/status`, and use `/cmd_vel` only for in-place spins.
+navigation — the leading trees send Nav2 goals through its actions and the
+ostensive tree publishes them on `/goal_pose`; `/cmd_vel` is used only for
+in-place spins.
+
+The repository is split into **library** packages and **experiment** packages. A
+library package holds behaviour that any experiment could want; an experiment
+package holds the trees, the constants and the one condition it is about.
 
 ## Packages in this repository
 
-| Package                        | Type                         | Purpose                                                                                                 |
-| ------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `mecanumbot_behaviours`          | Meta package (`ament_cmake`) | Groups the behaviour packages for build/release. No executable nodes.                                   |
-| `mecanumbot_leading_behaviour`   | Python package               | Behaviour trees for the leading / attention-guidance experiments. Holds the reusable behaviour library. |
-| `mecanumbot_demo_behaviours`     | Python package               | Demo trees (wander between people, hide and seek) that reuse the leading package's behaviours.          |
-| `mecanumbot_ostensive_behaviour` | Python package               | The ostensive condition: a person bids for attention by gesture, the robot commits to them and follows their pointing cue. Also reuses the leading library. |
+| Package | Kind | Purpose |
+| --- | --- | --- |
+| `mecanumbot_behaviours` | Meta package (`ament_cmake`) | Groups the behaviour packages for build/release. No executable nodes. |
+| `mecanumbot_bt_config` | Library | Constants YAML → blackboard, and the tree runner. Knows no key names: it takes them from the file. |
+| `mecanumbot_movement_behaviours` | Library | Turning, approaching, driving a route and searching it, plus the Nav2 navigators, trackers and geometry every tree needs. |
+| `mecanumbot_leading_behaviour` | Experiment | Behaviour trees for the leading / attention-guidance conditions, their LED and gesture signalling, and their constants. |
+| `mecanumbot_demo_behaviours` | Experiment | Demo trees (wander between people, hide and seek). |
+| `mecanumbot_ostensive_behaviour` | Experiment | The ostensive condition: a person bids for attention by gesture, the robot commits to them and follows their pointing cue. |
+
+Dependencies run one way: experiments depend on libraries, and
+`mecanumbot_movement_behaviours` on `mecanumbot_bt_config`. One experiment
+depends on another, deliberately: the demo trees run against the leading
+experiment's constants files, so they reuse its loader and its LED sequences.
 
 ## Node overview
 
@@ -23,6 +35,12 @@ navigation — they publish Nav2 goals on `/goal_pose` and watch
 | Nodes        | None                        |
 | Launch files | None                        |
 | Role         | Dependency aggregation only |
+
+### `mecanumbot_bt_config` and `mecanumbot_movement_behaviours` (libraries)
+
+No nodes and no launch files. See their READMEs — `mecanumbot_bt_config` for the
+configuration model, `mecanumbot_movement_behaviours` for every movement
+behaviour and the ROS interfaces they create.
 
 ### `mecanumbot_leading_behaviour`
 
@@ -82,8 +100,10 @@ Every number a tree acts on comes from a constants YAML and reaches the
 behaviours through the py_trees blackboard. There is nothing to edit in Python
 to retune a run.
 
-`mecanumbot_leading_behaviour/behaviours/constants.py` is the single definition
-of what may be tuned, split into two kinds:
+`mecanumbot_bt_config` reads the file and writes every key it declares onto the
+blackboard, taking the names from the file rather than from a schema — so adding
+a constant is one line in one place. What a file *cannot* say about itself is
+declared by the tree that loads it, and there are two kinds of key:
 
 * **experiment parameters** — the distances, the route, the LED and gesture
   scripts. Required: a file that omits one fails to load rather than having a
@@ -92,20 +112,31 @@ of what may be tuned, split into two kinds:
   pacing delays, head poses. Optional: omitting one keeps the packaged default,
   which is what lets a constants file written before a key existed still load.
 
+The defaults live with the behaviours that read them —
+`mecanumbot_movement_behaviours/defaults.py` for the movement ones, each
+experiment package's `behaviours/defaults.py` for its own — because a default is
+a statement about a behaviour, not about a file format.
+
 Angles are declared in degrees with a `_deg` suffix and reach the blackboard in
-radians under the name without it. `mecanumbot_ostensive_behaviour` and
-`mecanumbot_demo_behaviours` build on the same mechanism — the ostensive files
-set the subset of the leading tunables their tree exercises, and the demo trees
-add a handful of `demo_*` keys of their own. Each package's README lists its
-keys; the mechanism itself is documented in
-`mecanumbot_leading_behaviour/README.md` under "Configuration model".
+radians under the name without it; the loader converts any key spelled that way,
+so no list of which keys are angles exists anywhere. The same goes for the
+structured strings (`{X,Y,Z}`, `{fl,fr,bl,br}`, `{n_pos,gl_pos,gr_pos}`), which
+are decoded into messages by the keys inside them.
+
+`mecanumbot_ostensive_behaviour` and `mecanumbot_demo_behaviours` build on the
+same mechanism — the ostensive files set the subset of the movement tunables
+their tree exercises, and the demo trees add a handful of `demo_*` keys of their
+own. Each package's README lists its keys; the mechanism itself is documented in
+`mecanumbot_bt_config/README.md`.
 
 ## Repository structure
 
 | Path                            | Function                                                                               |
 | ------------------------------- | -------------------------------------------------------------------------------------- |
 | `mecanumbot_behaviours/`          | Meta package (`CMakeLists.txt`, `package.xml`) with no runtime node logic.             |
-| `mecanumbot_leading_behaviour/`   | Behaviour library, tree nodes, launch and config.                                      |
+| `mecanumbot_bt_config/`           | The constants loader and the tree runner. No nodes, no config of its own.              |
+| `mecanumbot_movement_behaviours/` | The movement behaviour library and the pacing tests. No nodes.                         |
+| `mecanumbot_leading_behaviour/`   | Leading tree nodes, their signalling behaviours, launch, config and the route checker. |
 | `mecanumbot_demo_behaviours/`     | Demo trees and their own movement/blackboard behaviours plus a map waypoint generator. |
 | `mecanumbot_ostensive_behaviour/` | Ostensive tree, its gesture-decoding library and the unit tests for it.                |
 
@@ -138,22 +169,22 @@ instead.
 
 ## Dependencies
 
-All three Python packages need `py_trees`, `py_trees_ros`, `rclpy`,
-`geometry_msgs`, `action_msgs`, `nav2_msgs` and `mecanumbot_msgs` at runtime, and
-both `mecanumbot_demo_behaviours` and `mecanumbot_ostensive_behaviour` import
-directly from `mecanumbot_leading_behaviour`. `utils/map_generate.py` in the demo
-package additionally needs `opencv-python` and `mecanumbot_description` (for the
-map files).
+All five Python packages need `py_trees`, `py_trees_ros`, `rclpy`,
+`geometry_msgs`, `action_msgs`, `nav2_msgs` and `mecanumbot_msgs` at runtime,
+except `mecanumbot_bt_config`, which needs only `python3-yaml`, `py_trees` and
+`ament_index_python` (its message decoders are optional and skip themselves
+without ROS). `utils/map_generate.py` in the demo package additionally needs
+`opencv-python` and `mecanumbot_description` (for the map files).
 
-`mecanumbot_leading_behaviour` and `mecanumbot_demo_behaviours` declare only their
-lint test dependencies — the packages build regardless, but `rosdep` will not
-install the runtime requirements for them.
-`mecanumbot_ostensive_behaviour` declares its dependencies properly, so `rosdep`
-does cover that one.
+`py_trees` and `py_trees_ros` are pip/apt installs that `rosdep` will not fetch
+for the packages that do not name them; see the workspace `CLAUDE.md`.
 
 ## Build
 
 ```bash
-colcon build --symlink-install --packages-select mecanumbot_behaviours mecanumbot_leading_behaviour mecanumbot_demo_behaviours mecanumbot_ostensive_behaviour
+colcon build --symlink-install --packages-select \
+  mecanumbot_bt_config mecanumbot_movement_behaviours \
+  mecanumbot_leading_behaviour mecanumbot_demo_behaviours \
+  mecanumbot_ostensive_behaviour mecanumbot_behaviours
 source install/setup.bash
 ```

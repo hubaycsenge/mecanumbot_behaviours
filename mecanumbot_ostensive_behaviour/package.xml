@@ -18,7 +18,8 @@
   <exec_depend>mecanumbot_msgs</exec_depend>
   <!-- The behaviour library this package builds on: SmoothTurner / InPlaceTurn,
        the nav2 goal monitor, the pose and people trackers, the neck commander. -->
-  <exec_depend>mecanumbot_leading_behaviour</exec_depend>
+  <exec_depend>mecanumbot_bt_config</exec_depend>
+  <exec_depend>mecanumbot_movement_behaviours</exec_depend>
   <exec_depend>py_trees</exec_depend>
   <exec_depend>py_trees_ros</exec_depend>
   <exec_depend>python3-yaml</exec_depend>

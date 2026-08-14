@@ -134,10 +134,10 @@ tuples, no graph and no camera.
 | `FollowDirectionCue` | Sends the cued goal through nav2 and follows it to completion. |
 | `ClearTargetLock` | Releases the addressee. Used both to end an exchange and to absorb a failed one. |
 
-Reused unchanged from `mecanumbot_leading_behaviour`: `InPlaceTurn` and
+Reused unchanged from `mecanumbot_movement_behaviours`: `InPlaceTurn` and
 `SmoothTurner` (which `KeepTargetInFocus` inherits from), `FindPeople`,
 `RobotPoseTracker`, `PeopleTracker`, `Nav2GoalMonitor`, `AccessoryCommander` and
-`quaternion_from_yaw`.
+`quaternion_from_yaw`. The constants loader is `mecanumbot_bt_config`'s.
 
 ## Sign conventions
 
@@ -321,12 +321,12 @@ name without the `_deg` suffix. No behaviour converts an angle twice.
 
 ### Borrowed tunables
 
-This tree uses `mecanumbot_leading_behaviour`'s `FindPeople` to look around and
+This tree uses `mecanumbot_movement_behaviours`' `FindPeople` to look around and
 its `InPlaceTurn`/`SmoothTurner` to re-centre, and those read their constants off
 the blackboard under fixed names. The constants files declare that subset under
 exactly those names, so the ostensive condition's turns are described in the
 ostensive file rather than inherited silently. Every one is optional — omit it
-and the leading package's own default applies.
+and that package's own default applies.
 
 | Group | Parameter | Default | Meaning |
 | --- | --- | --- | --- |
@@ -337,13 +337,20 @@ and the leading package's own default applies.
 | | `turn_timeout`, `turn_nav2_wait` | `20.0`, `2.0` | Bound the look-around and how long a turn waits for nav2 to release `/cmd_vel`. |
 | Accessories | `neck_seek_pos`, `neck_level_pos`, `gripper_left_neutral`, `gripper_right_neutral` | `7.0`, `6.0`, `6.83`, `3.36` | Handed to `AccessoryCommander` by the loader; the nod moves between them. |
 
-The full list, and how a tunable reaches the code, is in
-`mecanumbot_leading_behaviour/README.md` under "Configuration model".
+The full list is in `mecanumbot_movement_behaviours/README.md`; how a constants
+file is read at all is in `mecanumbot_bt_config/README.md`.
+
+Everything else in `config/*.yaml` is **required**: the ostensive schema is flat,
+and every scalar in it is the experiment rather than a tuning of it, so a file
+that omits one fails to load rather than having a field of view invented for it.
+`behaviours/blackboard_managers.OSTENSIVE_PARAMS` is that list, and is also what
+a behaviour registers to read.
 
 ## Build and run
 
 ```bash
-colcon build --symlink-install --packages-select mecanumbot_ostensive_behaviour
+colcon build --symlink-install --packages-select \
+  mecanumbot_bt_config mecanumbot_movement_behaviours mecanumbot_ostensive_behaviour
 source install/setup.bash
 ```
 

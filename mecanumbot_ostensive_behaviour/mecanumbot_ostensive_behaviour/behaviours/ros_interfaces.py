@@ -3,7 +3,7 @@ The one subscription this package adds on top of the leading behaviour library.
 
 Everything else the ostensive tree needs -- the AMCL pose, the fused people, the
 nav2 goal monitor, the velocity and neck commanders -- already exists in
-`mecanumbot_leading_behaviour.behaviours.ros_interfaces` and is re-exported at
+`mecanumbot_movement_behaviours.ros_interfaces` and is re-exported at
 the bottom of this module so the behaviours have a single import to reach for.
 
 What is new is `cam_people_detections`. The fused `people_fusion` poses say
@@ -21,7 +21,7 @@ the direction cue all follow from the same reflected pose.
 from mecanumbot_msgs.msg import CamPersonDetectionArray
 from rclpy.time import Time
 
-from mecanumbot_leading_behaviour.behaviours.ros_interfaces import (  # noqa: F401  (re-export)
+from mecanumbot_movement_behaviours.ros_interfaces import (  # noqa: F401  (re-export)
     AccessoryCommander,
     GOAL_ACTIVE_STATUSES,
     HEAD_SEEK,

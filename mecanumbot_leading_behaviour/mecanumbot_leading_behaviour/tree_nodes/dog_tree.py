@@ -1,4 +1,5 @@
-"""Dog-inspired leading behaviour.
+"""
+Dog-inspired leading behaviour.
 
 The robot leads a human from the start of the route to the target the way a dog
 leads a person: it walks a stretch, looks back to check it is still being
@@ -47,10 +48,11 @@ Two habits from the older tree carry the gestures:
 import py_trees
 
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import (
+    GESTURE_SCRIPTS,
     ConfiguredTimer,
     ConstantParamsToBlackboard,
 )
-from mecanumbot_leading_behaviour.behaviours.constants import file_constant
+from mecanumbot_leading_behaviour.behaviours.defaults import file_constant
 from mecanumbot_leading_behaviour.behaviours.dog_behaviours import (
     DogBehaviourSequence,
     DogCheckFollowing,
@@ -58,7 +60,7 @@ from mecanumbot_leading_behaviour.behaviours.dog_behaviours import (
     DogResumeLeading,
     DogWaitForCatchUp,
 )
-from mecanumbot_leading_behaviour.behaviours.movement_managers import (
+from mecanumbot_leading_behaviour.behaviours.route_behaviours import (
     Approach,
     CheckRobotHasBall,
     CheckSubjectTargetSuccess,
@@ -67,8 +69,8 @@ from mecanumbot_leading_behaviour.behaviours.movement_managers import (
     RelativeTurnPattern,
     TurnToward,
 )
-from mecanumbot_leading_behaviour.behaviours.targets import CHECKPOINT, SUBJECT, TARGET
-from mecanumbot_leading_behaviour.behaviours.turning import SHORTEST
+from mecanumbot_movement_behaviours.targets import CHECKPOINT, SUBJECT, TARGET
+from mecanumbot_movement_behaviours.turning import SHORTEST
 from mecanumbot_leading_behaviour.tree_nodes.tree_common import (
     build_params,
     create_recover_lost_sequence,
@@ -101,7 +103,8 @@ def create_seek_attention(ID):
 
 
 def create_check_in(ID="Lead"):
-    """Look back for the human, and deal with what the look back found.
+    """
+    Look back for the human, and deal with what the look back found.
 
     The whole branch is skipped while no check-in is due, which is what keeps
     the robot walking instead of turning round every checkpoint. When one is
@@ -319,7 +322,11 @@ def create_root(yaml_path=None):
     root = py_trees.composites.Sequence("ROOT", memory=True)
     root.add_children(
         [
-            ConstantParamsToBlackboard(name="LoadConstantParams", yaml_path=yaml_path),
+            ConstantParamsToBlackboard(
+                name="LoadConstantParams",
+                yaml_path=yaml_path,
+                scripts=GESTURE_SCRIPTS,
+            ),
             seek_or_find,
             py_trees.decorators.Repeat("ShowOrLeadLoop", show_or_lead, num_success=-1),
         ]
