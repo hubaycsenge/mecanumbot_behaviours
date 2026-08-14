@@ -39,8 +39,8 @@ than a guess.
 **`_deg` means degrees.** A parameter whose name ends in `_deg` reaches the
 blackboard in radians under the name without the suffix, because an angle is
 tuned in degrees and used in radians. No list of which parameters are angles
-exists anywhere: `glance_sweep_deg: 25.0` in the file is `glance_sweep` on the
-blackboard, and a package's default for it is written `math.radians(25.0)`.
+exists anywhere: `route_turn_min_deg: 30.0` in the file is `route_turn_min` on
+the blackboard, and a package's default for it is written `math.radians(30.0)`.
 
 **Structure is decoded by shape.** ROS parameter files cannot nest under a
 single key, so the constants files write a structure out as a Python literal in

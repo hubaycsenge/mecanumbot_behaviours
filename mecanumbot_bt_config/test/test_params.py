@@ -125,8 +125,8 @@ def test_an_undeclared_angle_keeps_its_default():
 
 
 def test_blackboard_key_strips_only_the_suffix():
-    assert blackboard_key("glance_sweep_deg") == "glance_sweep"
-    assert blackboard_key("glance_sweep") == "glance_sweep"
+    assert blackboard_key("route_turn_min_deg") == "route_turn_min"
+    assert blackboard_key("route_turn_min") == "route_turn_min"
 
 
 # --- defaults and types -----------------------------------------------------

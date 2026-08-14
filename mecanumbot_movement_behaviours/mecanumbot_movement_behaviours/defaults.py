@@ -58,10 +58,15 @@ MOVEMENT_DEFAULTS = {
     # than casting about, and a person the robot sweeps past slowly is a person
     # the camera detector gets a chance to find.
     "glance_spin_speed": 0.4,
-    "glance_timeout": 20.0,
-    # How far either side of the human's last known place the look-around
-    # sweeps when they are not where they were.
-    "glance_sweep": math.radians(25.0),
+    # Long enough for a whole revolution at `glance_spin_speed` with room to
+    # spare: timing out mid-spin is a FAILURE, and a check-in that runs out of
+    # clock rather than out of places to look sends the tree off to the patrol
+    # as if the human were lost.
+    "glance_timeout": 30.0,
+    # How far the check-in turns before it gives up on finding the human. A
+    # whole turn: they may have stepped off the route rather than merely
+    # dropped behind, and the spin ends the moment they are seen anyway.
+    "glance_revolutions": 1.0,
     # How the look backs are paced: one every so many checkpoints and one every
     # so many seconds, whichever falls due first. Either set to 0 switches that
     # half off; both at 0 means the robot only looks back when something about

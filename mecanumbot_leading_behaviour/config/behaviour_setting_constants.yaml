@@ -74,15 +74,18 @@ bottom_up_tree_node:
     full_scan_revolutions: 1.0
 
     # ----- Looking back while leading (dog condition) ----------------------
-    # The check-in turn onto the human's last known place. Slower than either
-    # scan above: it reads as looking rather than casting about, and a person
-    # the robot sweeps past slowly is a person the detector gets to find.
+    # The check-in turn, set off towards the human's last known place. Slower
+    # than either scan above: it reads as looking rather than casting about,
+    # and a person the robot sweeps past slowly is a person the detector gets
+    # to find.
     glance_spin_speed: 0.4
-    glance_timeout: 20.0
-    # How far either side of that place the look-around sweeps when the human
-    # is not where they were. The sweep is +1, -2, +2, -1 of it, so it ends
-    # facing the middle again.
-    glance_sweep_deg: 25.0
+    # Room for a whole revolution at that speed and then some -- a check-in
+    # that times out counts as a lost human and starts the patrol.
+    glance_timeout: 30.0
+    # How far the check-in turns before it gives up. A whole turn: the human
+    # may have stepped off the route rather than merely dropped behind, and
+    # the spin stops the moment they are seen anyway.
+    glance_revolutions: 1.0
     # Pacing: a look back every so many checkpoints and every so many seconds,
     # whichever falls due first, plus straight away whenever the human goes out
     # of sight or drops further than Dog_following_max_threshold. Either

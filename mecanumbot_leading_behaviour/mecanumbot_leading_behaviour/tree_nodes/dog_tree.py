@@ -20,11 +20,13 @@ look round, and it does not ignore its person for the whole walk either.
   `pacing.check_in_due()`: every couple of checkpoints, every so many seconds,
   and immediately when the human goes quiet or drops behind. Between those, the
   robot just leads.
-* **The look back is a slow turn onto the human's last known place**
-  (`GlanceBack`), not a search spin: slow enough to read as looking, and slow
-  enough for the detector to find somebody the robot sweeps past. Only when that
-  turn and its sweep find nobody is the human treated as lost, and only then
-  does the recovery patrol start.
+* **The look back is a slow full turn** (`GlanceBack`), not a search spin: slow
+  enough to read as looking, and slow enough for the detector to find somebody
+  the robot sweeps past. It sets off towards the human's last known place, so
+  they are usually found in the first part of it, but it carries on the whole
+  way round rather than assuming they are still where they were, and it stops
+  the moment somebody is seen. Only when a whole turn finds nobody is the human
+  treated as lost, and only then does the recovery patrol start.
 * **Not being followed is not the same as being lost.** Found but trailing: the
   robot waits a moment for them (`DogWaitForCatchUp`), and if they still do not
   come, walks back, faces them, wiggles and asks for their attention again

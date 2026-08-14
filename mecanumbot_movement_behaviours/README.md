@@ -34,7 +34,7 @@ created inside the behaviour classes, so a tree that uses one gets them.
 | `Approach` | Navigates to a target through Nav2; `mode="exact"` drives to the point, `mode="fixed_distance"` steps the approach distance closer. |
 | `FollowRoute` | Leads one leg of the route — several checkpoints in a single `NavigateThroughPoses` goal, cut short when the human stops following. |
 | `TurnToward` | Rotates in place to face a `subject` / `target` / `start` / `checkpoint` / `patrol` / `last_checkpoint`, in a chosen direction (see below). |
-| `GlanceBack` | The look over the shoulder: a slow turn onto the human's last known place, then a slow sweep around it. FAILURE is what starts the patrol. |
+| `GlanceBack` | The look over the shoulder: a slow full turn, set off towards the human's last known place and stopped by the first detection made during it. FAILURE is what starts the patrol. |
 | `RelativeTurnPattern` | Attention-getting wiggle: alternating turns that end on the starting heading, beginning in the direction of the last search turn. |
 | `ScanSpin` | Spins in place looking for people, head lifted; `FindPeople` (spin until somebody is seen) and `Spin360` (one full scan) are configured subclasses. |
 | `WaitForPerson` | Interrupt half of the lost-recovery parallel: waits with a lifted head, and records whether the person turned up ahead of or behind the robot. |

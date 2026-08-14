@@ -246,8 +246,9 @@ it does not ignore its person for the whole walk either.
        - `LeadCheckInIfDueSelector` (`create_check_in()`): `DogCheckInDue` under an
          inverter, so "not due" is the branch that lets the robot carry straight on
          driving. When one *is* due:
-         - `GlanceBack` turns slowly onto the human's last known place and sweeps
-           around it. FAILURE here — and only here — means the human is lost;
+         - `GlanceBack` turns slowly the whole way round, setting off towards the
+           human's last known place and stopping on the first person it sees.
+           FAILURE here — and only here — means the human is lost;
          - `DogCheckFollowing` then says whether they are close enough. If they are
            not: `DogWaitForCatchUp` stands still and gives them
            `check_in_catch_up_timeout` seconds, and only when that runs out does the
@@ -310,11 +311,25 @@ runs at `glance_spin_speed`, slower than either scan, for two reasons at once: a
 slow turn reads as looking rather than casting about, and it gives the camera
 detector time to find a person the robot sweeps past — turning fast past
 somebody and declaring them missing is exactly how a following human gets
-treated as a lost one. It has two phases: turn onto the bearing of the place the
-human was last seen (or back down the route towards the checkpoint the pair came
-from, if they have never been seen), and then, only if nobody is in sight from
-there, a slow `+1, -2, +2, -1` sweep of `glance_sweep` either side that ends
-facing the middle again.
+treated as a lost one. It has three phases: `glance_revolutions` full turns in
+place, set off towards the bearing of the place the human was last seen (or back
+down the route towards the checkpoint the pair came from, if they have never
+been seen) so that the shoulder the robot looks over first is the one they ought
+to be behind; a ramp-down the moment somebody is detected; and a short
+correction onto their bearing, so the check-in ends face to face however far
+round the spin had got — the LiDAR detector reports people well off to the side
+of where the camera points, and a check-in that ends looking past its human is
+not one.
+
+Turning the whole way round rather than only onto the last known bearing is what
+lets a human who has stepped off the route be found at all: the check-in no
+longer assumes they are still where they were. Only detections that arrive
+*after* the spin starts count, or somebody already visible when the check-in
+falls due — the human walking behind the robot, held by the LiDAR for the whole
+leg — would end the glance on its first tick and the robot would never look
+round at all. Running out of `glance_timeout` is a failure only while the robot
+is still spinning: once the human has been seen the check-in has its answer,
+whether or not there was time left to turn onto them.
 
 Only its FAILURE starts the recovery patrol. The robot does not go hunting
 through the building for somebody it has not properly looked for yet, and a
@@ -387,7 +402,7 @@ settles before the first tick.
 | Rotation profile  | `turn_max_speed`, `turn_accel`, `turn_decel_gain`, `turn_min_speed`, `turn_tolerance_deg`, `facing_epsilon_deg`   | `SmoothTurner`, `signed_rotation`                |
 | Turning           | `turn_timeout`, `turn_nav2_wait`, `turn_target_timeout`, `turn_corrections`, `attention_turn_step_deg`            | `InPlaceTurn`, `TurnToward`, `RelativeTurnPattern` |
 | Scanning          | `scan_spin_speed`, `scan_timeout`; `full_scan_spin_speed`, `full_scan_timeout`, `full_scan_revolutions`           | `FindPeople`; `Spin360`                          |
-| Looking back      | `glance_spin_speed`, `glance_timeout`, `glance_sweep_deg`                                                        | `GlanceBack`                                     |
+| Looking back      | `glance_spin_speed`, `glance_timeout`, `glance_revolutions`                                                      | `GlanceBack`                                     |
 | Check-in pacing   | `check_in_every_checkpoints`, `check_in_interval`, `check_in_grace`, `check_in_catch_up_timeout`                 | `DogCheckInDue`, `FollowRoute`, `DogWaitForCatchUp` |
 | Approaching       | `approach_target_timeout`, `approach_goal_timeout`, `route_step_distance`, `route_stop_distance`, `nav_goal_retries` | `Approach`                                  |
 | Leading a leg     | `route_lookahead`, `checkpoint_reached_distance`, `route_turn_min_deg`                                           | `FollowRoute`, the dog tree's checkpoint turn    |
