@@ -1,41 +1,53 @@
+# Leading-behaviour constants.
+#
+# Loaded by ConstantParamsToBlackboard (blackboard_managers.py) with a plain
+# yaml.safe_load, which descends bottom_up_tree_node -> ros__parameters and
+# then runs ast.literal_eval over every quoted entry below. Those entries are
+# Python dict literals stored as YAML strings and MUST stay quoted -- turning
+# one into a real YAML mapping breaks the tree at setup().
+#
+# Changes take effect the next time a behaviour tree starts, not live.
+#
+# LED  mode:  1 wave right, 2 wave left, 3 pulse, 4 solid,
+#             5 fast blink, 6 slow blink
+# LED  color: 0 black, 1 white, 2 green, 3 red,
+#             4 blue,  5 cyan,  6 pink,  7 yellow
+# Pose n_pos: neck tilt 2.0 .. 8.6   gl_pos/gr_pos: 1.6 .. 8.54
+#
+# Each *_times list supplies one delay per *_seq pattern. It may be longer
+# (surplus entries are ignored) but never shorter.
+
 bottom_up_tree_node:
   ros__parameters:
-    init_delay: 1.5
-    # Minimum approach distance, measured from base_link to the *detected
-    # person centre*. The footprint reaches 0.2875 m ahead of base_link, so the
-    # bumper stops 0.46 m short of that point and roughly 0.25 m clear of the
-    # person themselves. Anything under about 0.5 m here means contact.
-    robot_closeness_threshold: 0.75
-    target_reached_threshold: 0.75  # the critical distance of target and subject to tell if reached TODO: test optimum
-
-    visibility_time_threshold: 5 # time threshold of last incoming 'subject' data
-    robot_approach_distance : 1.0 #how much the robot should go at once in dog condition TODO: test optimum
-    Dog_following_max_threshold: 1.5 # maximum distance difference allowed to still consider following
-    Dog_max_wander_allowed: 1 # maximum allowed wander count before considering the subject lost
+    init_delay:                  1.5      # Delay before the tree starts acting [s]
+    robot_closeness_threshold:   0.75     # Minimum approach distance; below this the robot risks hitting the subject [m]
+    robot_approach_distance:     1.0      # How far the robot advances in one step [m]
+    target_reached_threshold:    0.75     # Distance between target and subject that counts as arrived [m]
+    visibility_time_threshold:   5.0      # Age of the last subject fix before it is stale [s]
+    Dog_following_max_threshold: 1.5      # Largest distance difference that still counts as following [m]
+    Dog_max_wander_allowed:      1        # Wander events tolerated before the subject is considered lost [count]
 
     # ======================================================================
     # Tunables. Every key below used to be a constructor default or a module
-    # constant in the behaviour library; the values here are those numbers.
-    # They are optional -- a file that omits one keeps the packaged default in
-    # `behaviours/constants.py` -- but the shipped files declare all of them so
-    # that a run is described by one file.
+    # constant in the behaviour library. A file that omits one keeps the
+    # packaged default in `behaviours/constants.py`.
     #
-    # Angles are in degrees and reach the blackboard in radians, under the same
-    # name without the `_deg` suffix.
+    # Angles are in degrees and reach the blackboard in radians, under the
+    # same name without the `_deg` suffix.
     # ======================================================================
 
-    # ----- Tree runtime ---------------------------------------------------
+    # ----- Tree runtime --------------------------------------------------------
     # Read from this file before the first tick, so they cannot come off the
     # blackboard like everything else does.
     tick_period_ms: 100.0
     setup_timeout: 15.0
 
-    # ----- Seeing people --------------------------------------------------
+    # ----- Seeing people -------------------------------------------------------
     # How fresh a people_fusion detection has to be to count as "somebody is
     # visible right now". Every behaviour that watches for people uses it.
     sight_timeout: 1.0
 
-    # ----- Rotation profile -----------------------------------------------
+    # ----- Rotation profile ----------------------------------------------------
     # SmoothTurner drives every in-place turn on /cmd_vel: it ramps up under
     # `turn_accel` and eases out proportionally to the angle left. Keep the
     # speed and acceleration inside the Nav2 controller's max_vel_theta /
@@ -49,7 +61,7 @@ bottom_up_tree_node:
     # turn at all, even when a turn direction was asked for.
     facing_epsilon_deg: 1.5
 
-    # ----- Turning behaviours ---------------------------------------------
+    # ----- Turning behaviours --------------------------------------------------
     turn_timeout: 20.0
     # How long a turn waits for nav2 to stop driving before it takes /cmd_vel
     # anyway, so an unfinished goal cannot block the tree for ever.
@@ -63,21 +75,22 @@ bottom_up_tree_node:
     # ends on the heading it started from.
     attention_turn_step_deg: 15.0
 
-    # ----- Scanning for people --------------------------------------------
+    # ----- Scanning for people -------------------------------------------------
     # The glance around: spin until somebody is seen, or give up.
     scan_spin_speed: 0.5
     scan_timeout: 10.0
-    # The recovery patrol's full revolution -- a search of the room rather than
-    # a glance, so it is slower and gets longer.
+    # The recovery patrol's full revolution -- a search of the room rather
+    # than a glance, so it is slower and gets longer.
     full_scan_spin_speed: 0.3
     full_scan_timeout: 45.0
     full_scan_revolutions: 1.0
+
 
     # ----- Looking back while leading (dog condition) ----------------------
     # The check-in turn, set off towards the human's last known place. Slower
     # than either scan above: it reads as looking rather than casting about,
     # and a person the robot sweeps past slowly is a person the detector gets
-    # to find.
+    # to find
     glance_spin_speed: 0.4
     # Room for a whole revolution at that speed and then some -- a check-in
     # that times out counts as a lost human and starts the patrol.
@@ -87,20 +100,20 @@ bottom_up_tree_node:
     # the spin stops the moment they are seen anyway.
     glance_revolutions: 1.0
     # Pacing: a look back every so many checkpoints and every so many seconds,
-    # whichever falls due first, plus straight away whenever the human goes out
-    # of sight or drops further than Dog_following_max_threshold. Either
+    # whichever falls due first, plus straight away whenever the human goes
+    # out of sight or drops further than Dog_following_max_threshold. Either
     # counter at 0 switches that half off.
     check_in_every_checkpoints: 2
     check_in_interval: 20.0
-    # How long the human has to be out of sight or trailing before a leg of the
-    # route is cut short for it -- somebody stepping behind a pillar is still
-    # following.
+    # How long the human has to be out of sight or trailing before a leg of
+    # the route is cut short for it -- somebody stepping behind a pillar is
+    # still following.
     check_in_grace: 2.0
-    # How long the robot waits for a trailing human before walking back to them
-    # and asking for their attention again.
+    # How long the robot waits for a trailing human before walking back to
+    # them and asking for their attention again.
     check_in_catch_up_timeout: 6.0
 
-    # ----- Approaching with nav2 -------------------------------------------
+    # ----- Approaching with nav2 -----------------------------------------------
     approach_target_timeout: 3.0
     # How long nav2 gets to report our goal at all before Approach gives up.
     approach_goal_timeout: 10.0
@@ -126,7 +139,7 @@ bottom_up_tree_node:
     # Times a dropped nav2 goal is sent again before the behaviour gives up.
     nav_goal_retries: 3
 
-    # ----- Getting the human back ------------------------------------------
+    # ----- Getting the human back ----------------------------------------------
     # How far past a checkpoint the human has to be, as a fraction of the
     # stretch to the next one, before that stretch counts as walked. Keeps
     # somebody standing right on a checkpoint from flipping the decision.
@@ -135,142 +148,129 @@ bottom_up_tree_node:
     # unwinds to the top.
     recover_retries: 3
 
-    # ----- Pacing of the signalling ----------------------------------------
-    thank_delay: 1.0        # after thanking, before carrying on
-    show_turn_delay: 2.0    # after asking for attention, before turning to the target
+    # ----- Pacing of the signalling --------------------------------------------
+    thank_delay: 1.0  # after thanking, before carrying on
+    show_turn_delay: 2.0  # after asking for attention, before turning to the target
 
-    # ----- Accessory poses --------------------------------------------------
+    # ----- Accessory poses -----------------------------------------------------
     # n_pos is the neck-mounted camera tilt (2.0 .. 8.6, larger looks further
     # up). The seeking pose does double duty: it reads as the robot seeking
     # contact, and it gives the pose detector whole bodies rather than knees.
     # The gesture sequences below move between these same values.
-    neck_seek_pos: 7.0
+    neck_seek_pos: 6.0
     neck_level_pos: 6.0
     gripper_left_neutral: 6.83
     gripper_right_neutral: 3.36
 
+    # Route. [0] is the start position, [-1] is the target.
     Dog_checkpoints:
-      - "{'X':0.452756, 'Y':-0.71344, 'Z':0.0 }"
-      - "{'X':-0.46960, 'Y':-0.64019, 'Z':0.0 }"
-      - "{'X':-1.27948, 'Y':-1.91089, 'Z':0.0 }"
-      - "{'X':-2.59768, 'Y':-3.46202, 'Z':0.0 }"
-      - "{'X':-3.51496, 'Y':-4.63466, 'Z':0.0 }"
-      - "{'X':-2.76527, 'Y':-6.12262, 'Z':0.0 }"
-      - "{'X':-2.07791,'Y': -6.67112,'Z':0.0 }"
-      - "{'X':0.189707, 'Y':-6.30414, 'Z':0.0 }"
-    LED_start_setting: 
-      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"
+      - "{'X':0.452756, 'Y':-0.71344, 'Z':0.0}"  # start
+      - "{'X':-0.4696, 'Y':-0.64019, 'Z':0.0}"  # waypoint 1
+      - "{'X':-1.27948, 'Y':-1.91089, 'Z':0.0}"  # waypoint 2
+      - "{'X':-2.59768, 'Y':-3.46202, 'Z':0.0}"  # waypoint 3
+      - "{'X':-3.51496, 'Y':-4.63466, 'Z':0.0}"  # waypoint 4
+      - "{'X':-2.76527, 'Y':-6.12262, 'Z':0.0}"  # waypoint 5
+      - "{'X':-2.07791, 'Y':-6.67112, 'Z':0.0}"  # waypoint 6
+      - "{'X':0.189707, 'Y':-6.30414, 'Z':0.0}"  # target
+
+    LED_start_setting:
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
 
     LED_indicate_target_seq:
-      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}" #white slow blink
-      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}" #white slow blink
-      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-     
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
+      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}"  # white slow blink
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
+      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}"  # white slow blink
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
     LED_indicate_target_times:
-      - 1 #black
-      - 3 #white
-      - 1 #black
-      - 3 #white
-      - 1 #black
-      - 3 #white
-      - 1 #black
+      - 1.0  # black solid
+      - 3.0  # white slow blink
+      - 1.0  # black solid
+      - 3.0  # white slow blink
+      - 1.0  # black solid
 
     LED_indicate_close_target_seq:
-      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':5, 'color':2},'fr':{'mode':5, 'color':2},'bl':{'mode':5, 'color':2},'br':{'mode':5, 'color':2}}" # yellow fast blink
-      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':5, 'color':2},'fr':{'mode':5, 'color':2},'bl':{'mode':5, 'color':2},'br':{'mode':5, 'color':2}}" # yellow fast blink
-      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':5, 'color':2},'fr':{'mode':5, 'color':2},'bl':{'mode':5, 'color':2},'br':{'mode':5, 'color':2}}" # yellow fast blink
-      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      
-
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
+      - "{'fl':{'mode':5, 'color':2},'fr':{'mode':5, 'color':2},'bl':{'mode':5, 'color':2},'br':{'mode':5, 'color':2}}"  # green fast blink
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
+      - "{'fl':{'mode':5, 'color':2},'fr':{'mode':5, 'color':2},'bl':{'mode':5, 'color':2},'br':{'mode':5, 'color':2}}"  # green fast blink
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
+      - "{'fl':{'mode':5, 'color':2},'fr':{'mode':5, 'color':2},'bl':{'mode':5, 'color':2},'br':{'mode':5, 'color':2}}"  # green fast blink
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
     LED_indicate_close_target_times:
-      - 1 #black
-      - 3 #yellow
-      - 1 #black
-      - 3 #yellow
-      - 1 #black
-      - 3 #yellow
-      - 1 #black
+      - 1.0  # black solid
+      - 3.0  # green fast blink
+      - 1.0  # black solid
+      - 3.0  # green fast blink
+      - 1.0  # black solid
+      - 3.0  # green fast blink
+      - 1.0  # black solid
 
     LED_catch_attention_seq:
-      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}" #white slow blink
-      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}" #white slow blink
-      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-    
+      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}"  # white slow blink
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
+      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}"  # white slow blink
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
     LED_catch_attention_times:
-        - 1.5 #white
-        - 0.5 #black
-        - 1.5 #white
-        - 0.5 #blackű
-      
-    LED_thank_seq:
-      - "{'fl':{'mode':6, 'color':6},'fr':{'mode':6, 'color':6},'bl':{'mode':6, 'color':6},'br':{'mode':6, 'color':6}}" #white slow blink
-      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}" #black fix
-      - "{'fl':{'mode':6, 'color':6},'fr':{'mode':6, 'color':6},'bl':{'mode':6, 'color':6},'br':{'mode':6, 'color':6}}" #white slow blink
-      - "{'fl':{'mode':1, 'color':0},'fr':{'mode':1, 'color':0},'bl':{'mode':1, 'color':0},'br':{'mode':1, 'color':0}}" #black fix
-    
-    LED_thank_times:
-        - 1.5 #white
-        - 0.5 #black
-        - 1.5 #white
-        - 0.5 #black
+      - 1.5  # white slow blink
+      - 0.5  # black solid
+      - 1.5  # white slow blink
+      - 0.5  # black solid
 
+    LED_thank_seq:
+      - "{'fl':{'mode':6, 'color':6},'fr':{'mode':6, 'color':6},'bl':{'mode':6, 'color':6},'br':{'mode':6, 'color':6}}"  # pink slow blink
+      - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
+      - "{'fl':{'mode':6, 'color':6},'fr':{'mode':6, 'color':6},'bl':{'mode':6, 'color':6},'br':{'mode':6, 'color':6}}"  # pink slow blink
+      - "{'fl':{'mode':1, 'color':0},'fr':{'mode':1, 'color':0},'bl':{'mode':1, 'color':0},'br':{'mode':1, 'color':0}}"  # black wave right
+    LED_thank_times:
+      - 1.5  # pink slow blink
+      - 0.5  # black solid
+      - 1.5  # pink slow blink
+      - 0.5  # black wave right
 
     Dog_indicate_target_seq:
-       - "{'n_pos':6.0,'gl_pos':3.19,'gr_pos':7.05}" #gripper open, look ahead
-       - "{'n_pos':6.0,'gl_pos':7.05,'gr_pos':3.19}" #gripper close, look ahead
-       - "{'n_pos':6.0,'gl_pos':3.19,'gr_pos':7.05}" #gripper open, look ahead
-       - "{'n_pos':6.0,'gl_pos':7.05,'gr_pos':3.19}" #gripper close, look ahead
-       - "{'n_pos':6.0,'gl_pos':3.19,'gr_pos':7.05}" #gripper open, look ahead
-       - "{'n_pos':6.0,'gl_pos':7.05,'gr_pos':3.19}" #gripper close, look ahead
-       - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
-  
+      - "{'n_pos':6.0,'gl_pos':3.19,'gr_pos':7.05}"  # gripper closed, look level
+      - "{'n_pos':6.0,'gl_pos':7.05,'gr_pos':3.19}"  # gripper open, look level
+      - "{'n_pos':6.0,'gl_pos':3.19,'gr_pos':7.05}"  # gripper closed, look level
+      - "{'n_pos':6.0,'gl_pos':7.05,'gr_pos':3.19}"  # gripper open, look level
+      - "{'n_pos':6.0,'gl_pos':3.19,'gr_pos':7.05}"  # gripper closed, look level
+      - "{'n_pos':6.0,'gl_pos':7.05,'gr_pos':3.19}"  # gripper open, look level
+      - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}"  # gripper open, look level
     Dog_indicate_target_times:
-        - 0.5
-        - 0.5
-        - 0.5
-        - 0.5
-        - 0.5
-        - 0.5
-        - 0.5
-        - 0.5
+      - 0.5  # gripper closed, look level
+      - 0.5  # gripper open, look level
+      - 0.5  # gripper closed, look level
+      - 0.5  # gripper open, look level
+      - 0.5  # gripper closed, look level
+      - 0.5  # gripper open, look level
+      - 0.5  # gripper open, look level
 
     Dog_catch_attention_seq:
-       - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
-       - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
-       - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
-       - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
-       - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
-       - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
-       
-    
+      - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}"  # gripper open, look level
+      - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}"  # gripper open, look level
+      - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}"  # gripper open, look level
+      - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}"  # gripper open, look level
+      - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}"  # gripper open, look level
+      - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}"  # gripper open, look level
     Dog_catch_attention_times:
-        - 0.25
-        - 0.25
-        - 0.25
-        - 0.25
-        - 0.25
-        - 0.25
-    
+      - 0.25  # gripper open, look level
+      - 0.25  # gripper open, look level
+      - 0.25  # gripper open, look level
+      - 0.25  # gripper open, look level
+      - 0.25  # gripper open, look level
+      - 0.25  # gripper open, look level
 
     Dog_thank_seq:
-       - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
-       - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
-       - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
-       - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
-       - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look ahead
-       - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}" #gripper to default, look up
-       
-    
+      - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}"  # gripper open, look level
+      - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}"  # gripper open, look level
+      - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}"  # gripper open, look level
+      - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}"  # gripper open, look level
+      - "{'n_pos':6.0,'gl_pos':6.83,'gr_pos':3.36}"  # gripper open, look level
+      - "{'n_pos':7.0,'gl_pos':6.83,'gr_pos':3.36}"  # gripper open, look level
     Dog_thank_times:
-        - 0.25
-        - 0.25
-        - 0.25
-        - 0.25
-        - 0.25
-        - 0.25
+      - 0.25  # gripper open, look level
+      - 0.25  # gripper open, look level
+      - 0.25  # gripper open, look level
+      - 0.25  # gripper open, look level
+      - 0.25  # gripper open, look level
+      - 0.25  # gripper open, look level
