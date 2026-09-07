@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mecanumbot_seek</name>
+  <version>0.0.0</version>
+  <description>
+    Seeking behaviour tree for Mecanumbot, modelled on Panksepp's SEEKING
+    circuit. The robot is told what to look for and where the Deep3R server last
+    saw it, then watches for the object while driving to where it was and
+    searching outwards from there; a sighting interrupts the search, and the
+    robot approaches and grips. A two-layer expectancy model decides how wide it
+    searches and when it gives up. It runs no detector of its own -- the target
+    comes from the server and the live detections from the perception stack.
+  </description>
+  <maintainer email="csengehubay@gmail.com">Csenge Hubay</maintainer>
+  <license>Apache License 2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <!-- The object hypotheses the server and the detector publish. A standard
+       type: a labelled pose with a confidence is exactly Detection3DArray. -->
+  <exec_depend>vision_msgs</exec_depend>
+  <exec_depend>mecanumbot_msgs</exec_depend>
+  <!-- The behaviour libraries this package builds on: Approach and its nav2
+       navigators, Spin360, the pose tracker, the accessory commander, and the
+       constants loader and tree runner. -->
+  <exec_depend>mecanumbot_bt_config</exec_depend>
+  <exec_depend>mecanumbot_movement_behaviours</exec_depend>
+  <!-- The launch file starts its map-agreement handler, so the point cloud's
+       keepouts apply in T2 as well as T1. Nothing here imports it. -->
+  <exec_depend>mecanumbot_custom_nav2</exec_depend>
+  <exec_depend>py_trees</exec_depend>
+  <exec_depend>py_trees_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

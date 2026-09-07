@@ -1,0 +1,293 @@
+# Constants for the seek behaviour tree in the LED_exp room (MecanumetoNet).
+#
+# Same schema as `seek_setting_constants.yaml`, which carries the full commentary
+# for every constant; only the values that depend on the room are different, and
+# each of those is marked. Everything else is copied so the two files can be
+# diffed against each other and the differences read off.
+#
+
+seek_bt_node:
+  ros__parameters:
+
+    # ==========================================================================
+    # The SEEKING circuit
+    # ==========================================================================
+    # Two coupled layers, after the discrete state-space engine of Szabo et al.
+    # (2011), whose parallel-circuit structure came from Panksepp in the first
+    # place. `arousal` is how hard the robot is seeking right now; `expectancy`
+    # is the slower layer -- how much it still believes this object is findable.
+    #
+    # This is NOT a reward-prediction error. Panksepp rejects that reduction
+    # explicitly, and expectancy here falls on *frustrative non-reward* -- the
+    # event of a sweep finding nothing -- never on a prediction being compared
+    # with an outcome. See mecanumbot_seek/seeking.py.
+
+    # Time constant of the short-term layer [s]. Long on purpose: this is
+    # Panksepp's "positive feedback that sustains arousal after the
+    # precipitating event has passed", and it is why the robot keeps working
+    # near where it glimpsed the object rather than losing interest the instant
+    # the detection drops out.
+    seek_arousal_tau: 8.0
+
+    # Time constant of the medium-term layer [s] -- Szabo's "mood". An order of
+    # magnitude slower, so it survives a minute of fruitless searching and still
+    # remembers the robot was told the object is here.
+    seek_expectancy_tau: 90.0
+
+    # How strongly sustained arousal feeds expectancy, per second. Small: a
+    # robot should not talk itself into believing an object is present merely by
+    # looking hard for it.
+    seek_expectancy_gain: 0.02
+
+    # SEEKING is never entirely off in a waking animal. This is the floor, and
+    # it is also the level undirected seeking runs at -- the T1 state, where the
+    # circuit "wants nothing in particular" and just wants to explore.
+    seek_baseline: 0.1
+
+    # What each event is worth to arousal. A sighting is the unconditional input
+    # and the strongest one; being told where the object was is a weaker,
+    # learned cue; arriving there is the anticipation peaking in the moment
+    # before the question is answered either way.
+    seek_sight_drive: 1.0
+    seek_cue_drive: 0.5
+    seek_arrival_drive: 0.6
+
+    # Frustrative non-reward: what one completed sweep that found nothing costs
+    # expectancy. At 0.25 against a starting 0.8, roughly three fruitless sweeps
+    # take the robot below the extinction threshold -- so a failed search is
+    # about three widening laps, not an indefinite one.
+    seek_non_reward_cost: 0.25
+
+    # Expectancy an episode starts with once the robot has been told where the
+    # object is. Deliberately not 1.0: the information came from a scan of a
+    # room that has since had people walking about in it.
+    seek_initial_expectancy: 0.8
+
+    # Below this, the episode is over -- the robot has stopped believing the
+    # object is findable. This is the *only* modelled reason a search ends; the
+    # timeouts below it are backstops.
+    seek_extinction_threshold: 0.15
+
+    # ==========================================================================
+    # What the drive is for
+    # ==========================================================================
+    # The two places the circuit changes what the robot does. Without these it
+    # would be an interesting number published on a topic.
+
+    # The search widens as expectancy falls, between these radii [m]. At full
+    # expectancy the rings stay tight around where the object was; extinguished,
+    # they reach the far side of the room.
+    # ROOM: the LED_exp space is smaller than AI_dept, so a search that
+    # reaches 6 m from the last known place would run into the walls on every
+    # sweep and spend the widening laps failing waypoints.
+    seek_search_radius_min: 1.2
+    seek_search_radius_max: 4.0
+
+    # Incentive salience: the confidence a detection needs to be acted on, at
+    # zero arousal and at full arousal. A strongly seeking robot accepts a
+    # weaker detection of the thing it is looking for -- which is why a first
+    # glimpse makes the second one easier to confirm. Bounded at both ends: a
+    # robot that will accept anything is not motivated, it is broken.
+    seek_detection_threshold_high: 0.7
+    seek_detection_threshold_low: 0.35
+
+    # ==========================================================================
+    # Seeing the object
+    # ==========================================================================
+    # How old a detection may be and still count as "in sight" [s].
+    seek_detection_timeout: 1.0
+
+    # How long the object has to be continuously visible before the robot
+    # commits to approaching it [s]. Short, but not zero: at the low detection
+    # threshold a strongly seeking robot runs at, a single frame is exactly what
+    # noise looks like, and abandoning a search leg for it is expensive.
+    seek_sighting_dwell: 0.4
+
+    # How long to wait for the server to name a target before giving up on the
+    # episode [s]. Generous -- the server has to localize the object in the T1
+    # point cloud and transform it into the map frame -- but not unbounded, so
+    # the robot does not stand still for ever waiting for an answer that is not
+    # coming.
+    seek_target_timeout: 120.0
+
+    # ==========================================================================
+    # Approaching and grasping        (REQUIRED -- these describe the robot)
+    # ==========================================================================
+    # Where the approach parks, measured to the object [m]. Far enough that the
+    # object is still in the camera's view, close enough that what remains is
+    # one short move into the grabbers.
+    seek_approach_stop: 0.55
+
+    # How long one approach may run before it is given up [s].
+    seek_approach_timeout: 60.0
+
+    # How close the object has to be before a grasp is attempted [m]. Must be
+    # below seek_approach_stop, or the approach parks further away than the
+    # grasp can reach; the loader warns if it is not.
+    seek_grasp_distance: 0.30
+
+    # Grabber positions. Open is the neutral pair the rest of the workspace
+    # uses; closed is a symmetric grip -- the left joint's axis is mirrored, so
+    # the two numbers are not equal but the grip is. Sized for the 0.07 m cubes
+    # in the simulator's fear-HRI scenarios, which fit the 0.116 m clear gap
+    # with room to close.
+    seek_gripper_open_left: 6.83
+    seek_gripper_open_right: 3.36
+    seek_gripper_closed_left: 5.2
+    seek_gripper_closed_right: 5.0
+
+    # How long the shafts get to move before the object sensor is believed [s].
+    seek_grasp_settle: 1.5
+
+    # How long after that to wait for /mecanumbot/has_object [s].
+    seek_grasp_confirm_timeout: 3.0
+
+    # ----- The grasp band (REQUIRED-adjacent: hardware, not taste) ------------
+    # The heights the grabbers can actually close on [m]. The shafts sit at
+    # z ~ 0.034 with a 0.116 m clear gap, and there is no lift DOF -- so an
+    # object outside this band cannot be had however close the robot gets.
+    #
+    # This is what turns the point cloud's z into a decision. From the lidar
+    # alone a mug on a table and a mug on the floor behind a chair are the same
+    # fact; with a height they are different things to tell a person.
+    seek_grasp_height_min: 0.03
+    seek_grasp_height_max: 0.15
+
+    # ==========================================================================
+    # Alerting somebody to an object the robot cannot have
+    # ==========================================================================
+    # An object found and not obtained is not a failed search -- the robot knows
+    # where the thing is, and should say so. It drives up to a person and
+    # alternates its orientation between them and the object.
+    #
+    # In dogs this is *showing*, and gaze alternation between a human and a
+    # referent is its core. This robot has no eyes but it has a neck and a body,
+    # and orienting is the functional analogue. Whether a person reads it that
+    # way is the thing to measure, not something to assume: the one piece of
+    # evidence in the thesis corpus on robot-produced ostension is negative.
+
+    # How long the robot looks for somebody to tell before publishing the alert
+    # unheard [s]. Not unbounded: an empty room is a normal outcome.
+    seek_alert_find_timeout: 30.0
+
+    # How long each orientation of the showing gesture is held [s]. Long enough
+    # for a person to follow where the robot is pointing itself, short enough
+    # that a whole gesture is not a minute long.
+    seek_show_hold: 1.2
+
+    # How many times it alternates object -> person. Read from this file before
+    # the tree is built, because `Repeat` wants its count at construction.
+    seek_show_alternations: 3
+
+    # How long one turn of the gesture may take [s]. Shorter than `turn_timeout`
+    # on purpose: a showing turn that takes twenty seconds has stopped reading
+    # as a gesture.
+    seek_show_turn_timeout: 15.0
+
+    # LED mode and colour for the alert. See mecanumbot_led's README:
+    # 5 = FAST_BLINK, 7 = YELLOW. Mode 0 leaves the LEDs alone entirely, which
+    # is what to set on a robot with no LED controller attached -- though the
+    # tree already skips the call when the service is not up.
+    seek_alert_led_mode: 5
+    seek_alert_led_color: 7
+
+    # ----- Approaching the person to tell (REQUIRED) --------------------------
+    # How close the robot may come to a *person*, and how far it closes in one
+    # approach [m]. The movement library's own spellings, and required for the
+    # same reason every other experiment here requires them: there is no
+    # defensible default for how close a robot may drive to somebody.
+    robot_closeness_threshold: 1.2
+    robot_approach_distance: 1.5
+
+    # ==========================================================================
+    # The expanding ring search
+    # ==========================================================================
+    # Radius of the first ring and how much each lap adds [m]. The rings are
+    # rebuilt out to seek_search_radius_* on every sweep, so these set the
+    # spacing between laps rather than how far the search goes.
+    # ROOM: tighter laps to match the smaller search radius, so the same
+    # number of sweeps still steps out to the far wall.
+    seek_ring_first: 1.2
+    seek_ring_step: 1.0
+
+    # How far apart the stops on a ring stand [m], and the bounds on how many
+    # there may be. The bounds matter: a tight ring still needs enough stops to
+    # see all the way round, and a wide one must not become a fifty-waypoint
+    # route the robot never finishes.
+    # ROOM: stops closer together, because in a smaller space the camera
+    # sees less of the room from each one.
+    seek_ring_spacing: 1.2
+    seek_ring_min_stops: 4
+    seek_ring_max_stops: 16
+
+    # How close counts as having visited a search waypoint [m]. Generous,
+    # because a waypoint is a place to look from and not a place to be, and
+    # driving past one on the way somewhere else is free progress.
+    seek_waypoint_reached: 0.6
+
+    # How long one waypoint may take before it is written off and the search
+    # moves on [s]. A waypoint inside a table is not worth retrying.
+    seek_waypoint_timeout: 25.0
+
+    # How long the whole search may run [s]. The backstop, not the mechanism --
+    # extinction is what is meant to end a search, and a run that ends here
+    # instead should be looked at.
+    # ROOM: a smaller space is searched out sooner.
+    seek_search_timeout: 420.0
+
+    # ==========================================================================
+    # Tunables of mecanumbot_movement_behaviours, whose approach, scan and
+    # turning behaviours this tree borrows. Declared here under exactly the
+    # names that package reads, so the seek condition's numbers live in the seek
+    # file rather than being inherited silently. Every one is optional: omit it
+    # and that package's own default applies.
+    # ==========================================================================
+
+    # ----- Tree runtime -------------------------------------------------------
+    # Read from this file before the first tick, so they cannot come off the
+    # blackboard like everything else does.
+    tick_period_ms: 100.0
+    setup_timeout: 15.0
+
+    # ----- Driving to where the object was ------------------------------------
+    # `SeekApproach` is the movement library's `Approach` bound to this
+    # package's key spelling, so it reads the library's own constants. The route
+    # numbers are the ones that apply, because the object's last known location
+    # is a place and not a person.
+    route_step_distance: 1.0
+    route_stop_distance: 0.45
+    approach_target_timeout: 3.0
+    approach_goal_timeout: 10.0
+    nav_goal_retries: 3
+
+    # ----- The scan at the remembered place -----------------------------------
+    # `SeekScan` is the library's `Spin360`, which reads the `full_scan_*`
+    # constants. Slower and longer than a glance: this is a search of the space
+    # around one point, and every frame the camera gets while turning is one the
+    # detector can find the object in.
+    full_scan_spin_speed: 0.3
+    full_scan_timeout: 45.0
+    full_scan_revolutions: 1.0
+
+    # ----- Rotation profile ---------------------------------------------------
+    # SmoothTurner drives the scan on /cmd_vel; nothing else in this tree turns
+    # in place, because every other movement is a nav2 goal.
+    turn_max_speed: 0.6
+    turn_accel: 0.8
+    turn_decel_gain: 1.6
+    turn_min_speed: 0.12
+    turn_tolerance_deg: 3.0
+    facing_epsilon_deg: 1.5
+    turn_timeout: 60.0
+    turn_nav2_wait: 2.0
+
+    # ----- Neck and gripper poses ---------------------------------------------
+    # The head stays level throughout: the thing being sought is an object on
+    # the floor, not a person's face, so the lifted "seeking" pose the social
+    # trees use would point the camera over the top of it. `neck_seek_pos` is
+    # declared only because the movement library's accessory commander is
+    # configured with both.
+    neck_seek_pos: 7.0
+    neck_level_pos: 6.0
+    gripper_left_neutral: 6.83
+    gripper_right_neutral: 3.36

@@ -20,6 +20,7 @@ package holds the trees, the constants and the one condition it is about.
 | `mecanumbot_leading_behaviour` | Experiment | Behaviour trees for the leading / attention-guidance conditions, their LED and gesture signalling, and their constants. |
 | `mecanumbot_demo_behaviours` | Experiment | Demo trees (wander between people, hide and seek). |
 | `mecanumbot_ostensive_behaviour` | Experiment | The ostensive condition: a person bids for attention by gesture, the robot commits to them and follows their pointing cue. |
+| `mecanumbot_seek` | Experiment | The seeking condition: the robot is told what to find and where the Deep3R server last saw it, then watches for it while searching where it was. Modelled on Panksepp's SEEKING circuit. An episode ends either with the object in the grabbers or with the robot going to **tell a person** it cannot reach it. |
 
 Dependencies run one way: experiments depend on libraries, and
 `mecanumbot_movement_behaviours` on `mecanumbot_bt_config`. One experiment
@@ -61,6 +62,45 @@ Provided executables:
 
 `tree_nodes/hide_and_seek.py` is present and complete but has no entry point in
 `setup.py`, so it is not installed as an executable.
+
+### `mecanumbot_seek`
+
+Provided executables:
+
+- `seek_bt_node` — `tree_nodes/seek_tree.py`
+
+The T2 half of the Deep3R seeking system (T1 is
+`mecanumbot_custom_nav2`'s autonomous exploration). Like the ostensive tree it
+registers under its own node name, and like it it runs no detector: the target
+comes from the server on `/mecanumbot/seek/target` and the live detections from
+the perception stack on `/mecanumbot/seek/detections`, both
+`vision_msgs/Detection3DArray`.
+
+Its distinguishing feature is a **modelled SEEKING circuit** — a two-layer
+expectancy model, after Panksepp via Szabó et al.'s state-space engine — that is
+wired into three decisions rather than merely reported: how weak a detection the
+robot will act on, how wide it searches, and when it gives up. It is deliberately
+*not* a reward-prediction error; see the package README for why that matters.
+
+The search branch and the watch branch run as one parallel with a
+`SuccessOnSelected` policy, which is what makes the robot break off its search
+mid-drive the moment it actually sees the thing.
+
+An episode has **two endings**, and the second is the HRI content. When the
+object is located but cannot be had -- it is on a table, in a recess, or behind
+something Nav2 could not route around -- the robot finds a person, drives up to
+them and alternates its orientation between them and the object. That is the
+dog *showing* gesture, with the neck standing in for the eyes; `TurnToward`
+supplies the head poses for free, lifting for the person and dropping for the
+object. The branch point is the object's **height**, which is the one number the
+2D map cannot supply and the point cloud can.
+
+It is apparatus for a question rather than an answer to one: the corpus's only
+evidence on robot-produced ostension is negative, and `SeekAlert` records how
+many alternations actually completed so a trial can be scored.
+
+`seeking.py`, `search_patterns.py` and `reachability.py` are ROS-free with 82
+unit tests that run without a ROS graph.
 
 ### `mecanumbot_ostensive_behaviour`
 
@@ -138,6 +178,7 @@ own. Each package's README lists its keys; the mechanism itself is documented in
 | `mecanumbot_movement_behaviours/` | The movement behaviour library and the pacing tests. No nodes.                         |
 | `mecanumbot_leading_behaviour/`   | Leading tree nodes, their signalling behaviours, launch, config and the route checker. |
 | `mecanumbot_demo_behaviours/`     | Demo trees and their own movement/blackboard behaviours plus a map waypoint generator. |
+| `mecanumbot_seek/`                | The seek tree, the SEEKING circuit, the ring search, the unreachable-object alert, launch and config. |
 | `mecanumbot_ostensive_behaviour/` | Ostensive tree, its gesture-decoding library and the unit tests for it.                |
 
 Each Python package additionally carries `resource/` (ROS 2 resource index marker)
