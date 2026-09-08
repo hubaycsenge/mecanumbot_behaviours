@@ -15,6 +15,7 @@
   <exec_depend>mecanumbot_demo_behaviours</exec_depend>
   <exec_depend>mecanumbot_ostensive_behaviour</exec_depend>
   <exec_depend>mecanumbot_seek</exec_depend>
+  <exec_depend>mecanumbot_fetch_behaviour</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

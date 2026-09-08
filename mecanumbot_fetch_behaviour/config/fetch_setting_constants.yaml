@@ -1,0 +1,217 @@
+# Constants for the fetch behaviour tree.
+#
+# The root key is the ROS node name the tree registers under, which is how every
+# constants file in this repository is organised. The loader finds the key in the
+# file rather than being told it, so the two only have to agree with each other.
+#
+# Angles would be given here in degrees with a `_deg` suffix and converted to
+# radians when they are loaded. Nothing in this tree is an angle: every direction
+# it cares about is a position in the map frame, and the neck tilts are the
+# accessory board's own units (about 2.0 to 8.6, larger looks further up) with no
+# calibration to radians.
+#
+# Two things worth keeping in mind while tuning. The `fetch_circle_*` block
+# describes **what the robot attends to while searching**, which is a design
+# choice about the behaviour rather than a number to optimise; and the
+# `fetch_grasp_height_*` band is **hardware**, not taste -- the grabbers are a
+# horizontal pincer with no lift.
+
+fetch_bt_node:
+  ros__parameters:
+
+    # ==========================================================================
+    # Seeing the ball
+    # ==========================================================================
+    # These read `/mecanumbot/ball_detections`, which mecanumbot_locate_detections
+    # publishes from the fetch detector's boxes. The class label has to match
+    # `ball.class_id` in that node's config -- it is the string a detection is
+    # matched on, because the numeric class id belongs to whichever model the
+    # camera happened to load.
+    fetch_ball_class: sports ball
+
+    # Confidence a detection needs before the robot acts on it. Flat, on
+    # purpose: mecanumbot_seek takes this threshold from its SEEKING circuit, so
+    # a strongly seeking robot accepts weaker evidence. This tree models no
+    # circuit (see fetch_tree.py for why fetch is PLAY and not SEEKING), so
+    # there is nothing for the threshold to vary with and pretending otherwise
+    # would be decoration.
+    fetch_detection_threshold: 0.4
+
+    # How old a detection may be and still count as "in sight" [s].
+    fetch_detection_timeout: 1.0
+
+    # How long the ball has to be continuously in sight before the robot
+    # abandons a search leg for it. One frame at this threshold is what noise
+    # looks like; four tenths of a second is not.
+    fetch_sighting_dwell: 0.4
+
+    # ==========================================================================
+    # The circling search
+    # ==========================================================================
+    # Widening circles around wherever the robot was standing when it started
+    # looking. A circle rather than a lawnmower sweep because the constraint is
+    # the camera's 60 degrees, not the floor: what matters is ending up pointed
+    # in every direction from a spread of places.
+
+    # Radius of the first circle, what each one adds, and how far out it goes [m].
+    fetch_circle_first: 1.2
+    fetch_circle_step: 1.2
+    fetch_circle_max: 4.8
+
+    # How far apart the stops on a circle stand [m], and the bounds on how many
+    # there may be. Six is the floor because a circle with three stops is a
+    # triangle the camera looks along the sides of.
+    fetch_circle_spacing: 1.2
+    fetch_circle_min_stops: 6
+    fetch_circle_max_stops: 16
+
+    # Which way the robot faces at each stop: tangent | inward | outward.
+    #
+    # This one is a research choice, not a tuning constant -- it is the answer
+    # to "what does the robot look at while it is searching", and an observer
+    # reads it as such. `tangent` faces the direction of travel, sweeping the
+    # camera over floor it has not looked at yet, which is right when the robot
+    # has no idea where the ball is. `inward` circles a place and stares at it,
+    # which is mecanumbot_seek's pattern and is right only when there is a
+    # remembered location to circle. `outward` searches the walls.
+    fetch_circle_facing: tangent
+
+    # How close counts as having visited a stop [m], and how long one may take
+    # before it is written off [s]. A stop nav2 cannot reach is inside a table;
+    # the lap has more places to be.
+    fetch_waypoint_reached: 0.5
+    fetch_waypoint_timeout: 20.0
+
+    # Whole laps of the pattern before the search gives up, and the backstop in
+    # seconds. Each lap starts again from the innermost circle rather than
+    # continuing outwards: this is a game with a person in it, and the ball that
+    # was not at the robot's feet a minute ago may well be there now because
+    # somebody threw it.
+    fetch_search_laps: 3
+    fetch_search_timeout: 300.0
+
+    # ==========================================================================
+    # The head sweep
+    # ==========================================================================
+    # The camera sits on a tilting neck at about 0.2 m with a vertical field of
+    # view of roughly 36 degrees, so at any one tilt it sees a band of floor and
+    # nothing else: down it sees from its own feet to a couple of metres, level
+    # it sees the far wall but not the floor in front of it. A ball outside the
+    # current band is invisible however good the detector is, so a search with a
+    # fixed head is a search for balls at one distance.
+    #
+    # This is also why `ball.range_source` in the perception layer is left on
+    # `size` rather than `ground_plane`: the tilt is moving, and nothing tells
+    # the fusion node what it currently is.
+    fetch_head_low: 3.0
+    fetch_head_high: 6.5
+    # Seconds for one down-and-up lap. Slow enough that the detector gets
+    # several frames in each band.
+    fetch_head_sweep_period: 6.0
+    # How often the neck is actually commanded [s]. The sweep is continuous --
+    # the position is a function of elapsed time -- but every command is a
+    # serial write to the accessory board and the tree ticks at 10 Hz.
+    fetch_head_command_interval: 0.3
+    # Where the head is held once the robot has committed to a ball: down, so
+    # the ball stays in frame as the robot closes and the box stays big enough
+    # to range from.
+    fetch_head_approach: 2.6
+
+    # ==========================================================================
+    # Approaching and gripping
+    # ==========================================================================
+    # Where the approach parks [m]. Far enough that the ball is still in the
+    # camera's view, close enough that the last move into the grabbers is short.
+    fetch_approach_stop: 0.45
+    fetch_approach_timeout: 45.0
+
+    # How close the ball has to be before the grab is attempted [m]. Must be
+    # below fetch_approach_stop, or the approach parks further away than the
+    # grab needs and every grab misses.
+    fetch_grasp_distance: 0.28
+
+    # The height band the grabbers can close on [m]. HARDWARE, not taste: the
+    # shafts sit at z ~ 0.034 with a 0.116 m clear gap and there is no lift, so
+    # a ball outside this band is one the robot cannot have however close it
+    # drives. This is what the located ball's z is for, and it is the difference
+    # between "the ball is on a table" and "the ball is not here".
+    fetch_grasp_height_min: 0.0
+    fetch_grasp_height_max: 0.12
+
+    # Gripper positions, how long the close takes to settle [s], and how long to
+    # wait for /mecanumbot/has_object to confirm it [s].
+    fetch_gripper_open_left: 6.83
+    fetch_gripper_open_right: 3.36
+    fetch_gripper_closed_left: 5.2
+    fetch_gripper_closed_right: 5.0
+    fetch_grasp_settle: 1.5
+    fetch_grasp_confirm_timeout: 3.0
+
+    # Attempts at approach-and-grab before the round is given up. A miss is
+    # cheap and common -- the ball rolls off the shafts as they close -- and
+    # what has to be repeated is the approach as well, because the ball has
+    # moved. Read from this file while the tree is being built, so it cannot
+    # come off the blackboard.
+    fetch_grasp_attempts: 3
+
+    # ==========================================================================
+    # Bringing it to somebody
+    # ==========================================================================
+    # How long the robot looks for a person to give the ball to [s].
+    fetch_find_person_timeout: 45.0
+
+    # How long it holds still facing them before opening the grabbers [s]. The
+    # handover pause: long enough for a person to register that the robot has
+    # stopped and is addressing them.
+    fetch_offer_hold: 2.0
+    # How long the turn onto the person may take [s]. Read from this file while
+    # the tree is being built.
+    fetch_offer_turn_timeout: 15.0
+    # How long the grabbers stay open before the robot moves off [s].
+    fetch_release_hold: 1.5
+
+    # Backing off after the release [m, s, m/s]. This is what makes the release
+    # read as giving rather than dropping -- the robot lets go and leaves the
+    # ball to the person. It is a nav2 goal, not a /cmd_vel reverse, so the
+    # local costmap still applies; nav2 may turn round rather than reverse,
+    # which is fine and arguably more legible.
+    fetch_withdraw_distance: 0.4
+    fetch_withdraw_timeout: 6.0
+    fetch_withdraw_speed: 0.12
+
+    # How long the robot waits after a handover before looking again [s]. The
+    # person has to have time to throw it.
+    fetch_rest: 5.0
+
+    # ==========================================================================
+    # The movement library's constants
+    # ==========================================================================
+    # How close the robot may come to a PERSON, and how close counts as having
+    # arrived [m]. Required: there is no defensible default for how close a
+    # robot may drive to somebody, and this tree drives at a person to hand them
+    # something. Same values as the seek tree's alert, for the same reason.
+    robot_closeness_threshold: 1.2
+    robot_approach_distance: 1.5
+
+    # How fresh a people_fusion detection has to be to count as "visible" [s].
+    sight_timeout: 1.0
+
+    # The scan that runs when nobody is already in view, when the robot is
+    # holding the ball and looking for someone to give it to.
+    scan_spin_speed: 0.5
+    scan_timeout: 30.0
+
+    # Neck poses the movement library's AccessoryCommander uses. `seek` is the
+    # lifted, socially-addressed pose the delivery ends on; `level` is the
+    # neutral driving gaze. The fetch tree's own fetch_head_* values are
+    # separate because they are a sweep, not a pose.
+    neck_seek_pos: 7.0
+    neck_level_pos: 6.0
+    gripper_left_neutral: 6.83
+    gripper_right_neutral: 3.36
+
+    # ==========================================================================
+    # Runtime
+    # ==========================================================================
+    tick_period_ms: 100.0
+    setup_timeout: 15.0

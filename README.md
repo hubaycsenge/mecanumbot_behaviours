@@ -21,6 +21,7 @@ package holds the trees, the constants and the one condition it is about.
 | `mecanumbot_demo_behaviours` | Experiment | Demo trees (wander between people, hide and seek). |
 | `mecanumbot_ostensive_behaviour` | Experiment | The ostensive condition: a person bids for attention by gesture, the robot commits to them and follows their pointing cue. |
 | `mecanumbot_seek` | Experiment | The seeking condition: the robot is told what to find and where the Deep3R server last saw it, then watches for it while searching where it was. Modelled on Panksepp's SEEKING circuit. An episode ends either with the object in the grabbers or with the robot going to **tell a person** it cannot reach it. |
+| `mecanumbot_fetch_behaviour` | Experiment | Playing fetch: circle and sweep the head to find a tennis ball, grip it, and take it to the first person in sight. Deliberately models **no** circuit — fetch is PLAY, not SEEKING. |
 
 Dependencies run one way: experiments depend on libraries, and
 `mecanumbot_movement_behaviours` on `mecanumbot_bt_config`. One experiment
@@ -102,6 +103,39 @@ many alternations actually completed so a trial can be scored.
 `seeking.py`, `search_patterns.py` and `reachability.py` are ROS-free with 82
 unit tests that run without a ROS graph.
 
+### `mecanumbot_fetch_behaviour`
+
+Provided executables:
+
+- `fetch_bt_node` — `tree_nodes/fetch_tree.py`
+
+Playing fetch with a person. Like the ostensive and seek trees it registers under
+its own node name and runs no detector: the ball comes from
+`/mecanumbot/ball_detections` (`vision_msgs/Detection3DArray`), which
+`mecanumbot_locate_detections` publishes from the fetch camera detector's boxes.
+That detector is a **different network** from the pose one — a pose model has one
+class, so there is no threshold at which it finds tennis balls — and it replaces
+rather than joins it on the robot.
+
+Its search is two dimensions at once, as one parallel: `CircleSearch` drives
+widening circles facing the direction of travel, and `SweepHead` tilts the neck
+up and down throughout, because the camera at any one tilt sees a band of floor
+and nothing else. `WatchForBall` is the only child that can end the parallel, so
+a sighting breaks off the search mid-drive.
+
+The branch that decides whether the ball can be had is its **height**, which the
+apparent size of a known-diameter ball supplies: the grabbers are a horizontal
+pincer with no lift, so a ball on a table is one the robot cannot have however
+close it drives. Unlike the seek tree, the response to an unreachable object is
+to give up on it rather than to tell somebody — in a fetch game the person can
+see the ball, and it is not news.
+
+It deliberately models **no** emotional circuit. Fetch with a person is PLAY in
+Panksepp's scheme, a separate primary-process system from SEEKING, and driving it
+with a SEEKING circuit would claim that fetching a ball *for somebody* is the
+same motivation as foraging. `search_patterns.py` is ROS-free with 21 unit tests
+that run without a ROS graph.
+
 ### `mecanumbot_ostensive_behaviour`
 
 Provided executables:
@@ -132,7 +166,8 @@ indication and is run directly with `ros2 run`.
 
 The ostensive condition is not part of that launcher's `condition` argument — it
 is a different experiment, with its own launch file and its own constants
-schema, and the robot is led by the human rather than leading them.
+schema, and the robot is led by the human rather than leading them. The seek and
+fetch trees are likewise separate experiments with their own launch files.
 
 ## Where the numbers live
 
