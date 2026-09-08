@@ -119,10 +119,25 @@ accepts anything is not motivated but broken.
 
 **It wants nothing in particular before it is directed.** *"This system does not
 'want' anything specific before learning; it just wants opportunities to explore
-the world."* That is **T1**: with no object named the circuit sits at the
-baseline in the `undirected` phase, and the autonomous exploration in
-`mecanumbot_custom_nav2` is what it drives. T2 is the same circuit with an
-incentive attached.
+the world."* That is what the `undirected` phase is for: with no object named the
+circuit sits at baseline, and T2 is the same circuit with an incentive attached.
+
+> **The circuit does not currently drive T1, and this is an open decision.**
+> `mecanumbot_custom_nav2`'s explorer scores frontiers on its own terms and
+> contains no reference to `arousal`, `expectancy` or `SeekingState`; the
+> `undirected` phase is implemented here and read by nothing. So the Panksepp
+> grounding is real for T2 and, for now, a claim about T1 rather than a
+> mechanism in it.
+>
+> Making it true means deciding what the circuit is entitled to change during
+> exploration — whether falling expectancy widens the frontier search the way it
+> widens the T2 rings, whether extinction is allowed to end T1 alongside the
+> exit criteria, whether an `undirected` circuit modulates anything at all when
+> there is no incentive object to be salient about. Those are thesis questions
+> about how far the model reaches, not plumbing, and answering them by wiring
+> would be answering them by accident. Until then the honest reading is: T1 is
+> exploration with a modelled circuit running beside it, and T2 is exploration
+> the circuit steers.
 
 ### What the drive is *for*
 
@@ -130,6 +145,7 @@ incentive attached.
 | --- | --- | --- |
 | `WatchForObject`, `SeekingCircuit` | `detection_threshold()` | how weak a detection is acted on |
 | `SearchAround` | `search_radius()` | how wide the rings go — falling expectancy widens the search |
+| *(nothing yet)* | `undirected` phase | what T1 would read, if the circuit drove exploration — see above |
 | `SearchAround` | `extinguished` | **when the robot gives up** |
 
 That last one matters most. The search does not end when the waypoints run out —
@@ -235,7 +251,7 @@ Arduino attached. `seek_alert_led_mode: 0` disables it outright.
 
 | Topic | Type | Direction | Function |
 | --- | --- | --- | --- |
-| `/mecanumbot/seek/request` | `std_msgs/String` | in | what to look for — a class label |
+| `/mecanumbot/seek/request` | `std_msgs/String` | in | what to look for — **free text**, handed to the server's open-vocabulary detector verbatim |
 | `/mecanumbot/seek/target` | `vision_msgs/Detection3DArray` | in | where the **server** found it in the T1 cloud, in the robot's `map` frame |
 | `/mecanumbot/seek/detections` | `vision_msgs/Detection3DArray` | in | live **onboard** detections of the same object, in `map` |
 | `/mecanumbot/seek/state` | `mecanumbot_msgs/SeekingState` | out | the modelled circuit, every tick |

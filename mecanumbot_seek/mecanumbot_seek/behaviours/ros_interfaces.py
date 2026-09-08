@@ -6,7 +6,13 @@ pose, nav2's goal state, the neck and gripper commander. What is here is only
 what is specific to seeking an object, which is the robot's end of the T2 link:
 
     /mecanumbot/seek/request    (in)   std_msgs/String
-        what to look for. A class label, from the operator or the web GUI.
+        what to look for. **Free text**, from the operator or the web GUI --
+        not a class label. It is handed to the server's open-vocabulary
+        detector as the query verbatim, so "the red mug on the desk" finds what
+        "mug" does not, and the half of the description that makes the object
+        findable is exactly the half a class label would throw away. It travels
+        unchanged into SeekingState.object_class and SeekAlert.object_class,
+        which is what the trial record should show.
 
     /mecanumbot/seek/target     (in)   vision_msgs/Detection3DArray
         where the server found it in the point cloud, transformed into the

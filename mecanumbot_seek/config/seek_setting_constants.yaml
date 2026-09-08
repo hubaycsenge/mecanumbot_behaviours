@@ -152,6 +152,14 @@ seek_bt_node:
     # z ~ 0.034 with a 0.116 m clear gap, and there is no lift DOF -- so an
     # object outside this band cannot be had however close the robot gets.
     #
+    # SHARED WITH THE SERVER: these must match `seek.grasp_z_min` and
+    # `seek.grasp_z_max` in RoboCamStreamProcessing's config/server.yaml, which
+    # is what its `reachable` verdict is judged against. They disagreed until
+    # 2026-09-08 -- the server said 0.12 and -0.05 -- so over a 3 cm band the
+    # two ends gave opposite answers about the same object: the server
+    # promising a grasp this tree then refused, and refusing one the grabbers
+    # would have closed on. Change both at once or neither.
+    #
     # This is what turns the point cloud's z into a decision. From the lidar
     # alone a mug on a table and a mug on the floor behind a chair are the same
     # fact; with a height they are different things to tell a person.

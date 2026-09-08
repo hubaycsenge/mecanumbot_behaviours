@@ -23,9 +23,14 @@ not a metaphor.
 
 **It wants nothing in particular before it is directed.** *"This system does not
 'want' anything specific before learning; it just wants opportunities to explore
-the world."* That is T1: with no object named the circuit still runs, at the
-baseline, and the exploration in `mecanumbot_custom_nav2` is what it drives.
-T2 is the same circuit with an incentive attached.
+the world."* That is the `undirected` phase: with no object named the circuit
+still runs, at the baseline. T2 is the same circuit with an incentive attached.
+
+**T1 does not read it yet.** `mecanumbot_custom_nav2` explores on its own terms
+and consumes nothing from here; whether an undirected circuit should steer the
+frontier search is an open thesis question, recorded in this package's README.
+Until it is answered, `undirected` is a state this model can be in rather than a
+state that changes what the robot does.
 
 > **This is deliberately not a reward-prediction error.** Panksepp rejects the
 > RPE reduction explicitly and at length -- §7 of the 2005 paper is titled *"The
