@@ -296,20 +296,48 @@ a behaviour of its own — it is a shape, not a mechanism.
 
 ## Running
 
+**T2 follows T1 and does not stand alone**: the target it drives to is a
+coordinate the server located in the cloud T1 built. Run T1 first — the full
+sequence is in `mecanumbot_custom_nav2/README.md` under "Starting T1" — and let
+it latch `/mecanumbot/exploration/finished`.
+
+The handover itself is automatic. `mecanumbot_deep3r` sees the latch and sends
+the server a `phase` message, so by the time this tree starts the decision stage
+is already looking for the target. Nothing here has to be told that T1 ended.
+
 ```bash
 # T2 needs nav2 localized against the map T1 saved -- the robot's own 2D map is
 # the more stable frame, which is why this phase uses it rather than the cloud
 ros2 launch mecanumbot_bringup launch_mecanumbot_base.launch.py
 ros2 launch mecanumbot_deep3r deep3r.launch.py     # the second scan updates the first
 
+# ask for something. FREE TEXT, not a class label: it is the query the server's
+# open-vocabulary detector is given verbatim, so the description does work.
+ros2 topic pub --once /mecanumbot/seek/request std_msgs/String \
+  "{data: 'the red mug on the desk'}"
+
 ros2 launch mecanumbot_seek launch_seek.launch.py
 
-# ask for something
-ros2 topic pub --once /mecanumbot/seek/request std_msgs/String "{data: 'mug'}"
-
-# watch the circuit
+# watch the circuit, and the two inputs it runs on
 ros2 topic echo /mecanumbot/seek/state
+ros2 topic echo /mecanumbot/seek/target        # the memory: where it was in T1
+ros2 topic echo /mecanumbot/seek/detections    # perception: where it is now
+ros2 topic echo /mecanumbot/seek/alert         # found it, cannot have it
 ```
+
+For the point cloud's keepouts in this phase, start the base launch against the
+T2 parameters:
+
+```bash
+NAV2_PARAMS_FILE=$(ros2 pkg prefix mecanumbot_description)/share/mecanumbot_description/param/mecanumbot_seek_nav2.yaml \
+  ros2 launch mecanumbot_bringup launch_mecanumbot_base.launch.py
+```
+
+Both detection topics are published by `mecanumbot_deep3r` from the server's
+`found` announcements, split on its `basis` field — `memory` to `seek/target`,
+`live` to `seek/detections`. So the tree does nothing until the link is up and
+the server has a target; if `AcquireSeekTarget` times out, check the tunnel and
+the server before looking at the tree.
 
 The launch file picks its constants from the Wi-Fi SSID, like every other
 behaviour launcher here: `MecanumetoNet` → `Eto_seek_setting_constants.yaml`,
