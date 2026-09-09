@@ -1,0 +1,70 @@
+# Constants for the m-explore-ros2 exploration pass.
+#
+# The root key is `/**` and not the node's name, deliberately.  A parameter
+# file keyed by a bare node name only reaches a node in the ROOT namespace,
+# and this node runs in `mecanumbot`.  `/**` matches whatever namespace the
+# launch file puts the node in.
+#
+# Every key here is also declared in defaults.py with the value it takes when
+# unset, so the node has one place to declare its parameters.  This file is
+# the setting, not the declaration.
+
+/**:
+  ros__parameters:
+
+    # ----- Topics ----------------------------------------------------------------
+    # slam_toolbox publishes pose with covariance on /pose in mapping mode.
+    pose_topic: /pose
+    map_frame: map
+    base_frame: mecanumbot/base_link
+
+    finished_topic: exploration/finished
+    state_topic: exploration/state
+
+    # ----- Uncertainty monitoring ------------------------------------------------
+    # Covariance trace (x + y + yaw variance) above which the robot returns to
+    # the revisit point.  0.05 m^2+rad^2 is a quarter cell width at 0.05 m
+    # resolution -- visible in the map as a blurry wall, but not yet bad enough
+    # for the planner to route the robot into one.
+    uncertainty_threshold: 0.05
+
+    # How often to evaluate the covariance.  5 s is fast enough to catch a
+    # growing drift before the map degrades and slow enough that a single bad
+    # slam_toolbox frame does not trigger a revisit.
+    check_period: 5.0
+
+    # Where to return for a loop closure.  The map origin is the right value
+    # for most rooms: the robot starts there, always has a clear path back, and
+    # the overlap with the start gives slam_toolbox the most to work with.
+    revisit_x: 0.0
+    revisit_y: 0.0
+
+    # ----- explore_lite interface ------------------------------------------------
+    explore_resume_service: /explore/resume
+    nav2_action: /navigate_to_pose
+
+    # ----- Exit criteria ---------------------------------------------------------
+    # Seconds without movement (not counting revisit drives) before the pass is
+    # considered complete.  explore_lite stops sending nav2 goals when all
+    # frontiers are gone; the robot stops moving shortly after.  60 s filters
+    # out the pause while nav2 finishes parking and a new plan is computed.
+    frontier_quiet_time: 60.0
+
+    # Less than this many metres between pose readings counts as standing still.
+    movement_threshold: 0.05
+
+    # Hard time budget in seconds; 0 disables it.  Not a quality criterion --
+    # it is what stops an unattended run if explore_lite loops forever.
+    max_duration: 0.0
+
+    # ----- Tick rate -------------------------------------------------------------
+    rate: 1.0
+
+    # ----- Preflight -------------------------------------------------------------
+    preflight: true
+    # Seconds watching the graph before deciding what is on it.
+    preflight_discovery: 2.0
+    # Per-service budget for a single lifecycle transition call.
+    preflight_timeout: 15.0
+    # Budget for the localization manager's manage_nodes call.
+    preflight_manager_timeout: 60.0

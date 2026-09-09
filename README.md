@@ -30,6 +30,7 @@ package holds the trees, the constants and the one condition it is about.
 | `mecanumbot_ostensive_behaviour` | Experiment | The ostensive condition: a person bids for attention by gesture, the robot commits to them and follows their pointing cue. |
 | `mecanumbot_seek` | Experiment | The seeking condition: the robot is told what to find and where the Deep3R server last saw it, then watches for it while searching where it was. Modelled on Panksepp's SEEKING circuit. An episode ends either with the object in the grabbers or with the robot going to **tell a person** it cannot reach it. |
 | `mecanumbot_autoslam` | Experiment | The T1 exploration pass: drive to the best frontier under slam_toolbox until the 2D map and the Deep3R reconstruction have both stopped improving, then latch `exploration/finished` for T2. **Not a `py_trees` tree** — a pass has no branch to select — and the only package here that starts by shutting other nodes down. |
+| `mecanumbot_exploration` | Experiment | m-explore-ros2 based exploration pass. Delegates frontier detection to explore_lite; orchestrates an uncertainty monitor (pause → return to origin for loop closure → resume) and a finish detector. Simpler alternative to `mecanumbot_autoslam` for 2D mapping without Deep3R integration. |
 | `mecanumbot_fetch_behaviour` | Experiment | Playing fetch: circle and sweep the head to find a tennis ball, grip it, and take it to the first person in sight. Deliberately models **no** circuit — fetch is PLAY, not SEEKING. |
 
 Dependencies run one way: experiments depend on libraries, and
@@ -151,6 +152,20 @@ Provided executables:
 
 - `autoslam_node` — `tree_nodes/autoslam_node.py`
 - `autoslam_preflight` — `tree_nodes/preflight_node.py`
+
+### `mecanumbot_exploration`
+
+Provided executables:
+
+- `exploration_node` — `tree_nodes/exploration_node.py`
+- `exploration_preflight` — `tree_nodes/preflight_node.py`
+
+The m-explore-ros2 based alternative to `mecanumbot_autoslam`.  It starts
+explore_lite (frontier detection + nav2 goal dispatch), monitors slam_toolbox
+pose covariance, and latches `exploration/finished` when the robot has stood
+still long enough for all frontiers to be exhausted.  Does not restart nav2
+and does not integrate with the Deep3R server — use `mecanumbot_autoslam` for
+a full T1 trial.  See the package README for the interface tables.
 
 The T1 exploration pass, and the one package here that is **not** a `py_trees`
 tree. It looks (grow both RRTs over slam_toolbox's grid, score the frontiers),

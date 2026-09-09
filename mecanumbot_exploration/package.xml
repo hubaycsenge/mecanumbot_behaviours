@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mecanumbot_exploration</name>
+  <version>0.0.0</version>
+  <description>
+    The m-explore-ros2 based exploration pass.  Delegates frontier detection
+    and navigation to explore_lite; orchestrates two things: an uncertainty
+    monitor that pauses explore_lite and returns to the map origin when
+    slam_toolbox pose covariance exceeds a threshold, and a finish detector
+    that latches exploration/finished when the robot has stood still long
+    enough for all frontiers to be exhausted.  Not a py_trees tree: the pass
+    has no branch to select.
+  </description>
+  <maintainer email="csengehubay@gmail.com">Csenge Hubay</maintainer>
+  <license>Apache License 2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <!-- The preflight shuts AMCL down through the lifecycle manager. -->
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <!-- The SLAM parameter file the launch file defaults to. -->
+  <exec_depend>mecanumbot_description</exec_depend>
+  <exec_depend>slam_toolbox</exec_depend>
+  <!-- explore_lite is built from source (robo-friends/m-explore-ros2);
+       it has no apt binary for Humble.  The dependency is declared so that
+       colcon can verify it at build time; the binary is not in rosdep. -->
+  <exec_depend>explore_lite</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
