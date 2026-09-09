@@ -39,11 +39,10 @@ The tree runs **no detector of its own**. It reads `/mecanumbot/ball_detections`
 publishes from the fetch camera detector's bounding boxes.
 
 ```bash
-# on the robot: the fetch detector INSTEAD of the pose one
-ros2 launch mecanumbot_bringup launch_mecanumbot_base.launch.py \
-    use_fetch_detector:=true use_pose_detector:=false
+# on the robot: drivers, nav2, the GUI -- no perception
+ros2 launch mecanumbot_bringup launch_mecanumbot_base.launch.py
 
-# then the tree
+# the tree, which starts the FETCH detector and the fusion for itself
 ros2 launch mecanumbot_fetch_behaviour launch_fetch.launch.py
 
 # watch it
@@ -51,10 +50,14 @@ ros2 topic echo /mecanumbot/fetch/state
 ros2 topic echo /mecanumbot/ball_fusion
 ```
 
-The detector swap is not optional and not an upgrade. A pose network has exactly one
+The launch file includes `mecanumbot_sensorprocess_smart`'s `perception.launch.py` with
+`detector:=fetch`; `use_perception:=false` when it is already running.
+
+The detector choice is not optional and not an upgrade. A pose network has exactly one
 class, so there is no threshold at which it starts finding tennis balls; a plain
 detector has no skeletons, so the ostensive gestures are unavailable while it is the one
-in use; and on an Orin Nano running both at once is most of the GPU. See
+in use; and on an Orin Nano running both at once is most of the GPU. That is also why
+this game and the ostensive experiment cannot share a perception pipeline. See
 `mecanumbot_sensorprocess_smart/README.md`.
 
 It also needs **nav2 with AMCL localized against the room's map**. Every drive here is a

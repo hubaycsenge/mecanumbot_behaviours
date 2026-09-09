@@ -1,0 +1,28 @@
+running develop
+running egg_info
+creating mecanumbot_autoslam.egg-info
+writing mecanumbot_autoslam.egg-info/PKG-INFO
+writing dependency_links to mecanumbot_autoslam.egg-info/dependency_links.txt
+writing entry points to mecanumbot_autoslam.egg-info/entry_points.txt
+writing requirements to mecanumbot_autoslam.egg-info/requires.txt
+writing top-level names to mecanumbot_autoslam.egg-info/top_level.txt
+writing manifest file 'mecanumbot_autoslam.egg-info/SOURCES.txt'
+reading manifest file 'mecanumbot_autoslam.egg-info/SOURCES.txt'
+writing manifest file 'mecanumbot_autoslam.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/lib/python3.10/site-packages/mecanumbot-autoslam.egg-link (link to .)
+Installing autoslam_node script to /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/lib/mecanumbot_autoslam
+Installing autoslam_preflight script to /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/lib/mecanumbot_autoslam
+
+Installed /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam
+running symlink_data
+creating /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/ament_index
+creating /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/ament_index/resource_index
+creating /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/ament_index/resource_index/packages
+symbolically linking /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam/resource/mecanumbot_autoslam -> /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/ament_index/resource_index/packages
+symbolically linking /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam/package.xml -> /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam
+creating /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/launch
+symbolically linking /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam/launch/launch_autoslam.launch.py -> /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/launch
+symbolically linking /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam/launch/launch_t1.launch.py -> /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/launch
+creating /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/config
+symbolically linking /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam/config/autoslam_setting_constants.yaml -> /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/config

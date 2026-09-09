@@ -32,6 +32,12 @@
   <!-- The launch file starts its map-agreement handler, so the point cloud's
        keepouts apply in T2 as well as T1. Nothing here imports it. -->
   <exec_depend>mecanumbot_custom_nav2</exec_depend>
+  <!-- The launch file includes mecanumbot_sensorprocess_smart's
+       perception.launch.py, which the base launch no longer runs. Nothing here
+       imports it. It cannot come from mecanumbot_bringup, which depends on
+       mecanumbot_web, which depends on mecanumbot_leading_behaviour; that
+       would be a dependency cycle. -->
+  <exec_depend>mecanumbot_sensorprocess_smart</exec_depend>
   <exec_depend>py_trees</exec_depend>
   <exec_depend>py_trees_ros</exec_depend>
   <exec_depend>python3-yaml</exec_depend>

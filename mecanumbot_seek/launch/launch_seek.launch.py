@@ -25,6 +25,13 @@ The tree only runs the behaviour. It needs, already running:
   detections. Without the first the tree waits and then gives up; without the
   second it will drive to where the object was and never see it.
 
+This launch also starts **the people-detection pipeline**, which the base launch
+no longer does. The seek tree does not need it to find the *object* -- that
+comes from the server -- but it does need `people_fusion` for the other ending:
+an object located and not obtained sends the robot to find a person and show it
+to them, and with no people detector that branch quietly never finds an
+audience. `use_perception:=false` when it is already running.
+
 Ask it for something with:
 
     ros2 topic pub --once /mecanumbot/seek/request std_msgs/String "{data: 'mug'}"
@@ -39,10 +46,22 @@ import subprocess
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo, SetEnvironmentVariable
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    LogInfo,
+    SetEnvironmentVariable,
+)
 from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+PERCEPTION_LAUNCH = os.path.join(
+    get_package_share_directory("mecanumbot_sensorprocess_smart"),
+    "launch",
+    "perception.launch.py",
+)
 
 
 def get_wifi_ssid():
@@ -110,6 +129,42 @@ def generate_launch_description():
                 description="Namespace for the behaviour node",
             ),
             DeclareLaunchArgument(
+                "use_perception",
+                default_value="true",
+                description=(
+                    "Start the people-detection pipeline. Not for finding the "
+                    "object -- that comes from the server -- but for the ending "
+                    "where the robot has to find somebody to tell"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "use_camera",
+                default_value="false",
+                description=(
+                    "Publish /camera/image_raw/compressed and feed the detector "
+                    "from it, instead of letting the detector open the camera "
+                    "directly. The camera can only be opened once -- and in T2 "
+                    "the Deep3R client wants the camera stream too, so set this "
+                    "true whenever the cloud is being updated during the run"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "camera_width", default_value="1280", description="Frame width"
+            ),
+            DeclareLaunchArgument(
+                "camera_height", default_value="720", description="Frame height"
+            ),
+            DeclareLaunchArgument(
+                "yolo_imgsz",
+                default_value="1280",
+                description="Input size the pose model was exported at",
+            ),
+            DeclareLaunchArgument(
+                "yolo_model",
+                default_value="yolo26m-pose",
+                description="Pose model stem inside models/imgsz_<yolo_imgsz>/",
+            ),
+            DeclareLaunchArgument(
                 "use_agreement",
                 default_value="true",
                 description=(
@@ -137,6 +192,22 @@ def generate_launch_description():
             ),
             SetEnvironmentVariable(name="YAML_PATH", value=yaml_path),
             SetEnvironmentVariable(name="BEHAVIOUR_YAML_PATH", value=yaml_path),
+            # People detection, for the alert's audience. The pose detector
+            # rather than the fetch one: nothing here needs a ball, and the
+            # skeletons cost nothing extra.
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(PERCEPTION_LAUNCH),
+                condition=IfCondition(LaunchConfiguration("use_perception")),
+                launch_arguments={
+                    "namespace": namespace,
+                    "detector": "pose",
+                    "use_camera": LaunchConfiguration("use_camera"),
+                    "camera_width": LaunchConfiguration("camera_width"),
+                    "camera_height": LaunchConfiguration("camera_height"),
+                    "yolo_imgsz": LaunchConfiguration("yolo_imgsz"),
+                    "yolo_model": LaunchConfiguration("yolo_model"),
+                }.items(),
+            ),
             Node(
                 package="mecanumbot_custom_nav2",
                 executable="mecanumbot_map_agreement_node",

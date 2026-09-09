@@ -453,6 +453,23 @@ ros2 launch mecanumbot_leading_behaviour launch_wifi_condition_sequence.launch.p
   condition:=LED yaml_path:=/absolute/path/to/behaviour_setting_constants.yaml
 ```
 
-The trees expect Nav2 (with AMCL localized on a map), the people-detection pipeline
-publishing `/mecanumbot/people_fusion`, and — for the LED condition — the
-`mecanumbot_led` service node.
+The trees expect Nav2 (with AMCL localized on a map) and — for the LED condition — the
+`mecanumbot_led` service node. **The people-detection pipeline is started by this
+launch file**, which the base launch no longer does: it includes
+`mecanumbot_sensorprocess_smart/launch/perception.launch.py` with the pose detector, so
+`/mecanumbot/people_fusion` and `/mecanumbot/cam_people_detections` are there.
+`use_perception:=false` when it is already running.
+
+`use_camera` defaults to **true** here and to false in every other behaviour launcher.
+The camera can only be opened once, so it is a choice: either the DeepStream detector
+opens it directly (cheapest, but there is then no image topic at all) or
+`mecanumbot_camera_stream`'s compressed publisher owns it and the detector reads the
+topic. A leading trial is scored afterwards from what the robot could see, so
+`/camera/image_raw/compressed` is published for the whole run, at the cost of a JPEG
+encode and decode per frame. `use_camera:=false` gives the old behaviour back.
+
+```bash
+# a trial with no image recording, and the smaller pose model
+ros2 launch mecanumbot_leading_behaviour launch_wifi_condition_sequence.launch.py \
+  condition:=Doglike use_camera:=false yolo_imgsz:=640
+```

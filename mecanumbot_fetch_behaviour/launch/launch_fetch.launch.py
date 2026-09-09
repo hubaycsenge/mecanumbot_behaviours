@@ -6,25 +6,22 @@ The SSID selects the room and the room selects the YAML -- the same convention
 of them agree about which space the robot thinks it is in without anybody having
 to remember a launch argument.
 
-The tree only runs the behaviour. It needs, already running:
+The tree runs the behaviour **and starts the perception it reads**, which the
+base launch no longer does. It needs the **fetch** detector specifically: a pose
+network has exactly one class, so there is no threshold at which it starts
+finding tennis balls, and the fetch detector is the only one that produces
+`cam_ball_boxes` for `mecanumbot_locate_detections` to place. The trade is that
+the ostensive gestures are unavailable while it is the detector in use, and it
+is why two behaviours cannot share one perception pipeline.
+`use_perception:=false` when it is already running.
 
-* **the fetch camera detector**, which is the one that finds balls at all. It is
-  off by default in the base launch because it replaces the pose detector rather
-  than joining it::
+The LiDAR cannot see a tennis ball at all -- it scans one horizontal plane about
+0.12 m up -- so both the ball's range and its height come from the camera, in
+`mecanumbot_locate_detections`.
 
-      ros2 launch mecanumbot_bringup launch_mecanumbot_base.launch.py \\
-          use_fetch_detector:=true use_pose_detector:=false
-
-  A pose network has exactly one class, so there is no threshold at which it
-  starts finding tennis balls; and two networks on one camera stream is most of
-  an Orin Nano's GPU. The trade is that the ostensive gestures are unavailable
-  while this is the detector in use.
-* **`mecanumbot_locate_detections`**, part of the same base launch, which turns
-  the ball boxes into `/mecanumbot/ball_detections` in the map frame. This is
-  where the ball's range and height come from; the LiDAR cannot see a tennis
-  ball at all.
-* **nav2 with AMCL localized against the room's map**, for `/amcl_pose` and the
-  `navigate_to_pose` action. Every drive in this tree is a nav2 goal.
+Still needed, already running: **nav2 with AMCL localized against the room's
+map**, for `/amcl_pose` and the `navigate_to_pose` action. Every drive in this
+tree is a nav2 goal.
 
 Watch a round with::
 
@@ -37,9 +34,22 @@ import subprocess
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo, SetEnvironmentVariable
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    LogInfo,
+    SetEnvironmentVariable,
+)
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+PERCEPTION_LAUNCH = os.path.join(
+    get_package_share_directory("mecanumbot_sensorprocess_smart"),
+    "launch",
+    "perception.launch.py",
+)
 
 
 def get_wifi_ssid():
@@ -104,17 +114,68 @@ def generate_launch_description():
                 default_value="mecanumbot",
                 description="Namespace for the behaviour node",
             ),
+            DeclareLaunchArgument(
+                "use_perception",
+                default_value="true",
+                description=(
+                    "Start the perception pipeline this tree reads. The base "
+                    "launch no longer does; set false only when it is already up"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "use_camera",
+                default_value="false",
+                description=(
+                    "Publish /camera/image_raw/compressed and feed the detector "
+                    "from it, instead of letting the detector open the camera "
+                    "directly. The camera can only be opened once"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "camera_width", default_value="1280", description="Frame width"
+            ),
+            DeclareLaunchArgument(
+                "camera_height", default_value="720", description="Frame height"
+            ),
+            DeclareLaunchArgument(
+                "fetch_imgsz",
+                default_value="640",
+                description="Input size the fetch detector was exported at",
+            ),
+            DeclareLaunchArgument(
+                "fetch_model",
+                default_value="yolo26m",
+                description="Detection model stem inside models/imgsz_<fetch_imgsz>/",
+            ),
             LogInfo(msg=["Detected Wi-Fi SSID: ", str(ssid)]),
             LogInfo(msg=["Using fetch YAML: ", yaml_path]),
             LogInfo(
                 msg=(
-                    "the ball comes from /mecanumbot/ball_detections -- start the "
-                    "base launch with use_fetch_detector:=true or nothing will "
-                    "ever be seen"
+                    "the ball comes from /mecanumbot/ball_detections, published "
+                    "by the perception pipeline this launch starts; with "
+                    "use_perception:=false, start it yourself with "
+                    "detector:=fetch or nothing will ever be seen"
                 )
             ),
             SetEnvironmentVariable(name="YAML_PATH", value=yaml_path),
             SetEnvironmentVariable(name="BEHAVIOUR_YAML_PATH", value=yaml_path),
+            # The FETCH detector, which is the only one that can see a ball --
+            # and therefore the reason this game cannot run alongside the
+            # ostensive one, which needs the skeletons this detector does not
+            # produce.
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(PERCEPTION_LAUNCH),
+                condition=IfCondition(LaunchConfiguration("use_perception")),
+                launch_arguments={
+                    "namespace": namespace,
+                    "detector": "fetch",
+                    "use_camera": LaunchConfiguration("use_camera"),
+                    "camera_width": LaunchConfiguration("camera_width"),
+                    "camera_height": LaunchConfiguration("camera_height"),
+                    "fetch_imgsz": LaunchConfiguration("fetch_imgsz"),
+                    "fetch_model": LaunchConfiguration("fetch_model"),
+                }.items(),
+            ),
             Node(
                 package="mecanumbot_fetch_behaviour",
                 executable="fetch_bt_node",

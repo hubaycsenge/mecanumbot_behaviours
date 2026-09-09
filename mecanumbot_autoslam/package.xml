@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mecanumbot_autoslam</name>
+  <version>0.0.0</version>
+  <description>
+    The autoslam pass (T1). RRT frontier exploration under slam_toolbox: the
+    robot is sent to the best frontier and, every few goals, to a region the
+    Deep3R server says its reconstruction is least sure about, until the exit
+    criteria are met and `exploration/finished` is latched for T2.
+
+    Everything it reasons with -- the RRT, the frontier scoring, the occupancy
+    model, the exit criteria, the 2D/3D comparison -- lives in
+    mecanumbot_custom_nav2, which commands no motion. This package is the half
+    that sends the robot somewhere, which is why it is a behaviour package. It
+    is not a py_trees tree: an exploration pass has no branch to select.
+  </description>
+  <maintainer email="csengehubay@gmail.com">Csenge Hubay</maintainer>
+  <license>Apache License 2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <!-- The preflight shuts nav2's servers down the way nav2 does it: the
+       lifecycle manager's manage_nodes service, and change_state for a node
+       whose manager is already gone. -->
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>mecanumbot_msgs</exec_depend>
+  <!-- The frontier detector, the occupancy model, the exit criteria and the
+       2D/3D comparison handler. This package imports the first three and its
+       launch file starts the node that is the fourth. -->
+  <exec_depend>mecanumbot_custom_nav2</exec_depend>
+  <!-- Nav2PoseNavigator: a goal from this package is sent, followed and
+       cancelled exactly the way a leading tree's goal is. -->
+  <exec_depend>mecanumbot_movement_behaviours</exec_depend>
+  <!-- The SLAM and exploration nav2 parameter files the launch file defaults
+       to. -->
+  <exec_depend>mecanumbot_description</exec_depend>
+  <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <!-- NOT declared, deliberately: mecanumbot_bringup and mecanumbot_deep3r.
+       launch_t1.launch.py includes both, and resolves them at launch time the
+       way its previous home in mecanumbot_custom_nav2 did. Declaring
+       mecanumbot_bringup would make this package one edit away from a
+       dependency cycle, since mecanumbot_bringup depends on mecanumbot_web,
+       which depends on a behaviour package because it starts trees from the
+       browser; and mecanumbot_deep3r has no remote, so it is not in every
+       checkout.
+       launch_t1 is a convenience wrapper; launch_autoslam needs neither. -->
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

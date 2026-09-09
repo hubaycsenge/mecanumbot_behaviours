@@ -1,0 +1,4 @@
+[console_scripts]
+autoslam_node = mecanumbot_autoslam.tree_nodes.autoslam_node:main
+autoslam_preflight = mecanumbot_autoslam.tree_nodes.preflight_node:main
+

@@ -1,10 +1,18 @@
 # mecanumbot_behaviours
 
-ROS 2 repository for high-level behaviour orchestration on Mecanumbot, built on
-`py_trees` / `py_trees_ros`. The trees do not drive the wheels directly for
-navigation — the leading trees send Nav2 goals through its actions and the
+ROS 2 repository for high-level behaviour orchestration on Mecanumbot, mostly
+built on `py_trees` / `py_trees_ros`. The trees do not drive the wheels directly
+for navigation — the leading trees send Nav2 goals through its actions and the
 ostensive tree publishes them on `/goal_pose`; `/cmd_vel` is used only for
 in-place spins.
+
+**A behaviour package is defined by what it does, not by what it is built
+with.** `mecanumbot_autoslam` is here because it sends the robot places, and it
+is deliberately not a tree: an exploration pass is four steps in a fixed order
+with no branch to select. Everything it reasons *with* — the RRT frontier
+detector, the occupancy model, the exit criteria — stays in
+`mecanumbot_custom_nav2` in the `mecanumbot` repository, which commands no
+motion.
 
 The repository is split into **library** packages and **experiment** packages. A
 library package holds behaviour that any experiment could want; an experiment
@@ -21,6 +29,7 @@ package holds the trees, the constants and the one condition it is about.
 | `mecanumbot_demo_behaviours` | Experiment | Demo trees (wander between people, hide and seek). |
 | `mecanumbot_ostensive_behaviour` | Experiment | The ostensive condition: a person bids for attention by gesture, the robot commits to them and follows their pointing cue. |
 | `mecanumbot_seek` | Experiment | The seeking condition: the robot is told what to find and where the Deep3R server last saw it, then watches for it while searching where it was. Modelled on Panksepp's SEEKING circuit. An episode ends either with the object in the grabbers or with the robot going to **tell a person** it cannot reach it. |
+| `mecanumbot_autoslam` | Experiment | The T1 exploration pass: drive to the best frontier under slam_toolbox until the 2D map and the Deep3R reconstruction have both stopped improving, then latch `exploration/finished` for T2. **Not a `py_trees` tree** — a pass has no branch to select — and the only package here that starts by shutting other nodes down. |
 | `mecanumbot_fetch_behaviour` | Experiment | Playing fetch: circle and sweep the head to find a tennis ball, grip it, and take it to the first person in sight. Deliberately models **no** circuit — fetch is PLAY, not SEEKING. |
 
 Dependencies run one way: experiments depend on libraries, and
@@ -135,6 +144,36 @@ Panksepp's scheme, a separate primary-process system from SEEKING, and driving i
 with a SEEKING circuit would claim that fetching a ball *for somebody* is the
 same motivation as foraging. `search_patterns.py` is ROS-free with 21 unit tests
 that run without a ROS graph.
+
+### `mecanumbot_autoslam`
+
+Provided executables:
+
+- `autoslam_node` — `tree_nodes/autoslam_node.py`
+- `autoslam_preflight` — `tree_nodes/preflight_node.py`
+
+The T1 exploration pass, and the one package here that is **not** a `py_trees`
+tree. It looks (grow both RRTs over slam_toolbox's grid, score the frontiers),
+decides whether the pass is done, and if it is not, sends the robot to the best
+frontier — or, every few goals, to a region the Deep3R server says its
+reconstruction is least sure about. Four steps in a fixed order with one goal in
+flight at a time, so a tree would be scaffolding rather than structure; the
+behaviours are plain objects with `setup()` / `update()` / `terminate()` and
+`autoslam_node` is the tick. The nav2 half is not reimplemented:
+`ExplorationNavigator` is `mecanumbot_movement_behaviours`' `Nav2PoseNavigator`,
+so an exploration goal is sent, followed and cancelled exactly the way a leading
+tree's goal is.
+
+Everything it reasons with is imported from `mecanumbot_custom_nav2` — the RRT,
+the frontier scoring, the occupancy model, the exit criteria — and none of it
+moved. What moved is the part that commands motion.
+
+`autoslam_preflight` runs first and the pass waits for it to **exit**: T1
+replaces the navigation stack rather than using it, so it shuts down the study
+nav2 stack, AMCL, the map server and any behaviour tree it finds sending its own
+nav2 goals. It deliberately leaves the joystick alone — that is the human
+override — and it says in the log what it could not stop rather than refusing to
+start. `preflight.py` is ROS-free with 15 unit tests.
 
 ### `mecanumbot_ostensive_behaviour`
 

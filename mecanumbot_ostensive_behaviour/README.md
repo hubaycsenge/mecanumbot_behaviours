@@ -354,17 +354,20 @@ colcon build --symlink-install --packages-select \
 source install/setup.bash
 ```
 
-The tree needs, already running:
-
-* the people-detection pipeline, for `cam_people_detections` and `people_fusion`;
-* nav2 with AMCL localized on a map.
+The tree needs nav2 with AMCL localized on a map, already running. It starts the
+people-detection pipeline itself — with the **pose** detector specifically, since
+gestures are decoded from COCO-17 keypoints and the fetch detector emits boxes and
+no skeleton at all.
 
 ```bash
-# perception
-ros2 launch mecanumbot_sensorprocess_smart mecanumbot_peopledetect.launch.py
-
-# the tree, with the YAML chosen from the Wi-Fi SSID
+# the tree plus its perception, with the YAML chosen from the Wi-Fi SSID
 ros2 launch mecanumbot_ostensive_behaviour launch_ostensive.launch.py
+
+# ... with perception already running elsewhere
+ros2 launch mecanumbot_ostensive_behaviour launch_ostensive.launch.py use_perception:=false
+
+# ... and with /camera/image_raw/compressed published for a recording
+ros2 launch mecanumbot_ostensive_behaviour launch_ostensive.launch.py use_camera:=true
 
 # or with an explicit YAML
 ros2 launch mecanumbot_ostensive_behaviour launch_ostensive.launch.py \
