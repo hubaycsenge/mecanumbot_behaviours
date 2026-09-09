@@ -14,6 +14,8 @@ Deep3R server publishes.
 Everything is a subscription plus the last value. Nothing here decides.
 """
 
+import math
+
 import rclpy
 from geometry_msgs.msg import Point, Pose, PoseArray, PoseWithCovarianceStamped
 from nav_msgs.msg import OccupancyGrid
@@ -211,17 +213,34 @@ class ExplorationNavigator(Nav2PoseNavigator):
         self.ACTION_NAME = action_name
         super().__init__(node)
 
-    def go_to_point(self, point):
+    def go_to_point(self, point, heading=None):
         """
-        Drive to an (x, y), facing whichever way the robot already faces.
+        Drive to an (x, y), arriving pointed at `heading` (map frame, radians).
 
-        A frontier has no natural orientation, and asking nav2 for a specific
-        yaw at one costs a turn at the end of every leg for nothing.
+        A frontier has no natural orientation, so this used to send an identity
+        quaternion and describe it as "facing whichever way the robot already
+        faces". It is not: `go_to` stamps the goal in the **map** frame, so an
+        identity quaternion is map yaw 0, and nav2 ended every leg by turning
+        in place to face map-east. That turn is exactly the motion T1 cannot
+        afford -- an un-deskewed 10 Hz lidar and mecanum rollers that slip
+        under yaw -- and it happened once per goal, for nothing.
+
+        `heading` is the bearing from where the robot was when the goal was
+        chosen to the frontier itself, so the terminal turn is small (the
+        rotation shim has already put the robot roughly on that bearing at the
+        start of the leg) and what it buys is real: the robot arrives looking
+        into the unknown region the frontier borders, which is where the next
+        cycle's scans have to come from. None keeps the old behaviour, for a
+        caller with no pose to compute a bearing from.
         """
         pose = Pose()
         pose.position.x = float(point[0])
         pose.position.y = float(point[1])
-        pose.orientation.w = 1.0
+        if heading is None:
+            pose.orientation.w = 1.0
+        else:
+            pose.orientation.z = math.sin(float(heading) / 2.0)
+            pose.orientation.w = math.cos(float(heading) / 2.0)
         self.go_to(pose)
 
     def settled(self):

@@ -247,6 +247,113 @@ Without that it sent a goal per tick and had every one rejected, which reads
 like a robot that will not move for a hundred lines before it reads like a nav2
 that never came up.
 
+## Keeping the map stable
+
+The failure this section exists for looks like this: the pass runs, the map
+grows, and then the whole thing rotates under the robot — walls duplicated at
+several angles, dashed free-space rays fanning out through them, and a robot
+confidently somewhere it is not. It is not one bug. T1 is the only thing in this
+workspace that *builds* the map it drives on, so it is the only thing that pays
+for a lidar and an odometry that the study behaviours can get away with, and
+four separate things were making it pay.
+
+**The lidar is a rotating 10 Hz sensor and nobody deskews it.** One LDS-02 scan
+takes 100 ms to sweep. `ld08_driver` stamps it and hands it over as if it were
+instantaneous, so a scan taken while turning is smeared by a full 100 ms of
+rotation — 6° at the old 1.0 rad/s. Scan matching against a smeared scan is
+scan matching against geometry that was never there.
+
+**Mecanum odometry lies hardest exactly then.** The rollers slip most under
+yaw, and `mecanumbot_sensorproc_node` integrates wheel ticks: it reports the
+rotation the wheels turned through, not the one the robot did.
+
+**And slam_toolbox is not watching while the robot turns.** This is the one
+worth knowing, because it is structural rather than a setting.
+`shouldProcessScan` in `slam_toolbox_common.cpp` gates an incoming scan on
+**translation only** — `dist2 < 0.8 * minimum_travel_distance^2` and the scan
+is dropped. There is no heading term in it. Karto's own `HasMovedEnough` does
+check heading, but it never receives the scan. So during an in-place turn the
+pose graph gets *nothing*: no nodes, no matches, no correction. The only
+account of the turn is the wheel odometry — the estimate that is least
+trustworthy in exactly that motion — and the first scan after the turn is
+matched against a prior carrying the whole spin's accumulated error.
+`coarse_search_angle_offset` (20°) is how much of that the matcher can absorb
+before it locks onto a wrong alignment, and locking onto a wrong alignment is
+the map jumping.
+
+No slam_toolbox parameter fixes that, which is why the two changes below are
+about turning *less* and turning *slower* rather than about the mapper.
+`minimum_travel_distance` stays at 0.1 for the same reason: it is the distance
+the robot has to translate before the map may look again, so it is the recovery
+latency after every turn.
+
+**So the pass now turns half as fast** —
+`mecanumbot_description/param/mecanumbot_exploration_nav2.yaml`, difference 6 in
+its header. The controller, the rotation shim, the spin recovery and the
+velocity smoother are all capped at 0.6 rad/s with halved yaw acceleration.
+Translation limits are untouched, so a leg is driven the way a trial's leg is
+driven; only the turns are slower.
+
+**And it turns much less often.** `ExplorationNavigator.go_to_point` used to
+send an identity quaternion, described in its own docstring as "facing whichever
+way the robot already faces". It is not: the goal is stamped in the **map**
+frame, so an identity quaternion is map yaw 0, and nav2 finished every leg by
+turning in place to face map-east. nav2 has no way to be told "any orientation
+will do", so the fix is to send a heading worth arriving at — the bearing from
+the robot to the frontier. The rotation shim has already put the robot roughly
+on that bearing at the start of the leg, so the terminal turn is small, and it
+leaves the robot looking into the unknown region the frontier borders, which is
+where the next cycle's scans have to come from.
+
+**Long readings were painting free space through the walls.** In
+`mecanumbot_slam_mapping.yaml`, `max_laser_range` was 10.0 — but Karto raytraces
+any beam longer than that as *free* out to the threshold without marking an
+endpoint, and `ld08_driver` advertises 12 m, which is the protocol's range and
+not the sensor's. Every no-return beam drew a 10 m free ray. That is the
+starburst, and it is not only cosmetic: the same clipped readings build the
+correlation grid the matcher runs on. Now capped at the 8.0 m
+`mecanumbot_lds.lua` has always used for this lidar in this arena, with a 0.16 m
+floor below which the returns are the robot's own body.
+
+**And a false loop closure rewrites the map rather than degrading it.** The four
+loop-closure gates were at the slam_toolbox defaults, and one of them is wrong
+for a corridor: `loop_match_minimum_chain_size: 10` at 0.1 m node spacing made a
+candidate chain about a metre of travel, and one metre of corridor wall matches
+any other metre of corridor wall. The gates are now deliberately asymmetric — a
+missed closure only lets drift accumulate, and over a 900 s pass in a 10 × 9 m
+arena that is bounded, while a false one re-optimises the entire pose graph and
+re-rasterises the entire grid. Chain size is 25 nodes at 0.1 m spacing,
+about 2.5 m of geometry.
+
+Two knobs deliberately **not** turned:
+
+- **`odom_params.from_imu`.** The OpenCR publishes a fused quaternion, and yaw
+  from it drifts rather than slipping, which is the slower and more forgiving
+  of the two errors. It is still `false`, because it has never run: the
+  `odom -> base_footprint` broadcast used to sit inside the wheel branch, so
+  setting it true published an `/odom` topic and no transform at all — a TF tree
+  with a hole in it, and therefore no SLAM, no costmaps and no nav2. That is
+  fixed, so the switch is now testable; it wants a bench pass (spin the robot
+  360° by joystick, compare `/odom` yaw against the wall) before a trial.
+- **`min_pass_through` and `occupancy_threshold`.** They are what leaves the
+  black speckle scattered through open floor, and raising them would clean it
+  up. They also decide which cells the map calls occupied, and *that* is the
+  denominator of `MapCloudAgreement.agreement` — which `min_agreement: 0.15`
+  is a threshold on and which T1 will not finish without. Changing them moves
+  an exit criterion, so it is a research decision, not a tuning one.
+
+What to watch during a pass:
+
+```bash
+ros2 topic echo /mecanumbot/exploration/state
+ros2 run tf2_ros tf2_echo map mecanumbot/odom   # map -> odom should creep, not step
+```
+
+A `map -> odom` transform that *jumps* is the pose graph being re-optimised. One
+after a genuine loop closure is the system working; a run of them, or one that
+moves the whole map by more than the robot could have drifted, is the failure
+above coming back — and the next thing to try is `from_imu`.
+
 ## The constants
 
 `config/autoslam_setting_constants.yaml`, which documents every constant where
@@ -290,12 +397,13 @@ PYTHONPATH=. python3 -m pytest test/ -q -p no:launch_testing \
   --ignore=test/test_flake8.py --ignore=test/test_copyright.py --ignore=test/test_pep257.py
 ```
 
-36 tests, pure Python, no ROS graph. Use `/usr/bin/python3`, not the conda one.
+40 tests, pure Python, no ROS graph. Use `/usr/bin/python3`, not the conda one.
 
 | File | Covers |
 | --- | --- |
 | `test_preflight.py` | What contradicts an exploration pass and what does not — including that the joystick is never stopped, that a namespaced node contradicts exactly as much as a bare one, that a manager's shutdown does not cover another manager's nodes, and that a launch file merely *naming* a tree is not matched as one. Plus the collision rules: that the whole nav2 navigation stack is removed rather than shut down, that a tree is not a collision, that a surviving collision blocks the pass and a surviving tree does not, and that the navigation manager is matched by its remap so the localization manager is spared |
 | `test_choosing.py` | The interleaving: a frontier is the ordinary goal, every Nth is the server's, the server is still visited when the frontiers run out, switching revisiting off leaves the pass on frontiers alone, and a rejected goal does not advance the ratio |
+| `test_goal_heading.py` | Which way a frontier goal asks the robot to end up facing: the bearing to the frontier, and — the bug it guards — never map yaw 0 by accident, neither with no pose to measure from nor when the robot is standing on the frontier already |
 
 The detector, the scoring, the occupancy model and the exit criteria are tested
 in `mecanumbot_custom_nav2` — 173 tests — because that is where they live.

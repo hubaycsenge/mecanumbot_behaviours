@@ -41,6 +41,23 @@ from mecanumbot_autoslam.behaviours.base import FAILURE, RUNNING, SUCCESS, Behav
 from mecanumbot_autoslam.behaviours.ros_interfaces import ExplorationNavigator
 
 
+def _bearing(origin, target):
+    """
+    Return the map-frame bearing from `origin` to `target`, or None.
+
+    None when there is no pose to measure from, or when the two points
+    coincide -- `atan2(0, 0)` is 0.0, which would silently be the map-east
+    heading this function exists to stop sending.
+    """
+    if origin is None:
+        return None
+    dx = target[0] - origin[0]
+    dy = target[1] - origin[1]
+    if math.hypot(dx, dy) < 1e-6:
+        return None
+    return math.atan2(dy, dx)
+
+
 class DriveToGoal(Behaviour):
     """Keep one nav2 goal in flight: hold the current one, or pick the next."""
 
@@ -93,7 +110,7 @@ class DriveToGoal(Behaviour):
         if point is None:
             return FAILURE
 
-        self._send(point, source)
+        self._send(point, source, context.robot_xy)
         context.goal = self.goal
         context.goal_source = self.goal_source
         return SUCCESS
@@ -158,12 +175,20 @@ class DriveToGoal(Behaviour):
                 return False
         return True
 
-    def _send(self, point, source):
-        """Send one goal and start following it."""
+    def _send(self, point, source, robot_xy=None):
+        """
+        Send one goal and start following it.
+
+        The goal carries a heading -- the bearing from the robot to the
+        frontier -- rather than no heading at all. nav2 has no way to be told
+        "any orientation will do": an unset quaternion is map yaw 0, and it
+        turned in place to reach it at the end of every leg. See
+        `ExplorationNavigator.go_to_point`.
+        """
         self.goal = (float(point[0]), float(point[1]))
         self.goal_source = source
         self.goals_sent += 1
-        self.navigator.go_to_point(self.goal)
+        self.navigator.go_to_point(self.goal, heading=_bearing(robot_xy, self.goal))
         self.log(
             "goal #{} ({}) at x={:.2f} y={:.2f}".format(
                 self.goals_sent, source, self.goal[0], self.goal[1])
