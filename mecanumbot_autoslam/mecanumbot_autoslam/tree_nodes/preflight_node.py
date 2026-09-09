@@ -80,7 +80,6 @@ class AutoslamPreflight(Node):
         # not start.
         self.declare_parameter("preflight_manager_timeout", 60.0)
         self.declare_parameter("preflight_kill_processes", True)
-        self.unresolved = []
         self.blocking = []
 
     # --- discovery ------------------------------------------------------------
@@ -190,62 +189,56 @@ class AutoslamPreflight(Node):
                 "asking {} to shut its nodes down (up to {:.0f} s -- it answers "
                 "only once every one of them has gone)".format(
                     rule.node, manager_timeout))
-            ok, detail = self.shutdown_manager(rule.node, manager_timeout)
-            self._record(rule, ok, detail)
+            _, detail = self.shutdown_manager(rule.node, manager_timeout)
+            self._record(rule, "manager", detail)
         for rule in steps[preflight.BY_LIFECYCLE]:
-            ok, detail = self.shutdown_lifecycle(rule.node, timeout)
-            self._record(rule, ok, detail)
+            _, detail = self.shutdown_lifecycle(rule.node, timeout)
+            self._record(rule, "lifecycle", detail)
 
         tokens = preflight.tokens_to_signal(steps)
         may_signal = bool(self.get_parameter("preflight_kill_processes").value)
-        stopped = (
-            self.signal_processes(tokens) if tokens and may_signal else []
-        )
-        for rule in steps[preflight.BY_PROCESS]:
-            if not may_signal:
-                self._record(rule, False, "preflight_kill_processes is false")
-                continue
-            candidates = set(preflight.candidate_tokens(rule))
-            hit = [token for token in stopped if token in candidates]
-            self._record(
-                rule, bool(hit),
-                "signalled" if hit
-                else "no local process running it -- another machine?",
-            )
+        if tokens and may_signal:
+            self.signal_processes(tokens)
+        elif tokens:
+            self.get_logger().warn(
+                "preflight_kill_processes is false, so nothing was signalled")
 
         self._verify(steps)
 
     def _verify(self, steps):
         """
-        Look again, and separate "not tidy" from "cannot start".
+        Look at the graph again, and separate "not tidy" from "cannot start".
 
-        A lifecycle node that shut down cleanly is still on the graph, so the
-        node list cannot answer this on its own -- what matters for a name
-        collision is whether a *process* is still holding it, which is the same
-        question `signal_processes` asks.
+        The graph and not the process table: a name collision is about whether
+        the name is still taken. A cleanly shut-down lifecycle node still holds
+        its name, and a node composed into a container never had a process of
+        its own -- asking about processes reported eight live nav2 nodes as "not
+        running here" and let the pass start into the collision.
         """
-        tokens = preflight.tokens_to_signal(steps)
-        survivors = preflight.processes_to_signal(
-            _local_processes(), tokens,
-            keep_pids=(os.getpid(), os.getppid()),
-            keep_groups=(os.getpgid(0),))
-        still_running = {
-            tokens[token].node for _, token in survivors if token in tokens
-        }
-        self.blocking = preflight.blocking(steps, still_running)
+        remaining = self.live_nodes()
+        left = preflight.survivors(steps, remaining)
+        self.blocking = preflight.blocking(steps, remaining)
+        cleared = [
+            rule for group in steps.values() for rule in group
+            if rule not in left
+        ]
+        for rule in cleared:
+            self.get_logger().info("{}: gone".format(rule.node))
 
-        if self.unresolved:
+        warnings = [rule for rule in left if not rule.collides]
+        if warnings:
             self.get_logger().warn(
-                "{} contradiction(s) not cleared from here. If they are on "
-                "another machine, stop them there:".format(len(self.unresolved)))
-            for line in self.unresolved:
-                self.get_logger().warn("  {}".format(line))
+                "{} contradiction(s) still on the graph. They do not stop the "
+                "pass starting, but they will compete with it. If they are on "
+                "another machine, stop them there:".format(len(warnings)))
+            for rule in warnings:
+                self.get_logger().warn("  {}: {}".format(rule.node, rule.why))
 
         if self.blocking:
             self.get_logger().error(
                 "{} node(s) still hold names autoslam needs. nav2 cannot come "
                 "up alongside them: its bringup aborts on the collision and "
-                "takes our own servers down with it, and the pass gets no "
+                "takes our own servers down with it, so the pass would get no "
                 "navigation at all. Refusing to start.".format(
                     len(self.blocking)))
             for rule in self.blocking:
@@ -255,15 +248,17 @@ class AutoslamPreflight(Node):
                 "with use_nav2:=false -- or start with preflight_strict:=false "
                 "to try anyway.")
             return
-        if not self.unresolved:
+        if not warnings:
             self.get_logger().info("the graph is clear; starting the pass")
 
-    def _record(self, rule, ok, detail):
-        """Log one outcome, and remember it if the node is still there."""
-        if ok:
-            self.get_logger().info("{}: {}".format(rule.node, detail))
-        else:
-            self.unresolved.append("{}: {}".format(rule.node, detail))
+    def _record(self, rule, how, detail):
+        """
+        Log what was attempted on one node.
+
+        Only what was *tried* -- whether it worked is `_verify`'s question, and
+        it asks the graph rather than believing a service that answered "yes".
+        """
+        self.get_logger().info("{} ({}): {}".format(rule.node, how, detail))
 
 
 def _local_processes():

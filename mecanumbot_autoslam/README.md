@@ -110,6 +110,19 @@ remap and never by its executable, which is a bare `lifecycle_manager` shared
 with the localization and keepout managers that must be shut down cleanly
 instead.
 
+**And "removed" is usually one process, not eight.** `bringup_launch.py`
+defaults `use_composition` to True, so the study stack is not eight processes
+named `controller_server`, `planner_server` and so on — it is eight *nodes*
+composed into a single `component_container_isolated` called `nav2_container`.
+Looking for a process per node finds nothing there, and "nothing" read as "not
+running on this machine, must be someone else's" — so the preflight declared the
+graph clear and the pass started straight into the collision it exists to
+prevent. The container is what gets signalled, matched by its
+`__node:=nav2_container` remap alone so that no other container in the workspace
+can be caught by it. Autoslam's own nav2 comes from `navigation_launch.py`,
+whose `use_composition` defaults to False, so it is eight ordinary processes and
+there is no container of ours to confuse with it.
+
 ### It verifies, and it refuses to start over a collision
 
 Two outcomes worth telling apart. A tree on the operator PC that cannot be
@@ -118,11 +131,13 @@ still holding a name we need **prevents** one, so the preflight exits non-zero
 and `launch_autoslam.launch.py` stops rather than spending a trial discovering
 it. `preflight_strict:=false` starts anyway.
 
-Verification asks about *processes*, not the node list: a cleanly shut-down
-lifecycle node is still on the graph, so the graph cannot answer whether a name
-is free. It also catches a node that came back — a launch file with
-`respawn:=true` puts its node back a couple of seconds after a SIGTERM, so what
-was signalled is not the same question as what is now gone.
+Verification asks the **node graph**, because that is what a name collision is
+about: is the name still taken. A composed node has no process to look for and a
+finalized lifecycle node still holds its name, so the process table answers a
+different question — and answering that one instead is exactly how eight live
+nav2 nodes were reported as cleared. The graph also catches a node that came
+back, which a launch file with `respawn:=true` will do a couple of seconds after
+a SIGTERM.
 
 **What is deliberately not stopped.** The **joystick** — it publishes
 `/cmd_vel`, so by the letter of the rule it contradicts an autonomous pass, and
@@ -221,6 +236,17 @@ happily suggest it again for ever.
 turning in place is the one thing in this workspace that bypasses nav2 on
 purpose.
 
+**Nav2 is not optional, and it has to be *activated*.** Every metre this pass
+drives is a nav2 goal; with no nav2 there is no exploration at all. The action
+server exists from the moment `bt_navigator` is constructed, but it rejects
+every goal until the lifecycle manager activates it — which never happens if the
+bringup aborted. A *rejection* is therefore treated as "nav2 is not ready" and
+not as "that frontier was no good": the pass waits `nav2_retry_delay`, does not
+count the goal, and says in the log that the stack is up but not activated.
+Without that it sent a goal per tick and had every one rejected, which reads
+like a robot that will not move for a hundred lines before it reads like a nav2
+that never came up.
+
 ## The constants
 
 `config/autoslam_setting_constants.yaml`, which documents every constant where
@@ -264,12 +290,12 @@ PYTHONPATH=. python3 -m pytest test/ -q -p no:launch_testing \
   --ignore=test/test_flake8.py --ignore=test/test_copyright.py --ignore=test/test_pep257.py
 ```
 
-30 tests, pure Python, no ROS graph. Use `/usr/bin/python3`, not the conda one.
+36 tests, pure Python, no ROS graph. Use `/usr/bin/python3`, not the conda one.
 
 | File | Covers |
 | --- | --- |
 | `test_preflight.py` | What contradicts an exploration pass and what does not — including that the joystick is never stopped, that a namespaced node contradicts exactly as much as a bare one, that a manager's shutdown does not cover another manager's nodes, and that a launch file merely *naming* a tree is not matched as one. Plus the collision rules: that the whole nav2 navigation stack is removed rather than shut down, that a tree is not a collision, that a surviving collision blocks the pass and a surviving tree does not, and that the navigation manager is matched by its remap so the localization manager is spared |
-| `test_choosing.py` | The interleaving: a frontier is the ordinary goal, every Nth is the server's, the server is still visited when the frontiers run out, and switching revisiting off leaves the pass on frontiers alone |
+| `test_choosing.py` | The interleaving: a frontier is the ordinary goal, every Nth is the server's, the server is still visited when the frontiers run out, switching revisiting off leaves the pass on frontiers alone, and a rejected goal does not advance the ratio |
 
 The detector, the scoring, the occupancy model and the exit criteria are tested
 in `mecanumbot_custom_nav2` — 173 tests — because that is where they live.

@@ -177,7 +177,7 @@ autoslam re-registers a node under that exact name, is removed, because a
 finalized node still owns its name and still answers `change_state`. It
 deliberately leaves the joystick alone (the human override), warns about what it
 could not reach, and refuses to start when a collision survives, since nav2's
-bringup would abort on it. `preflight.py` is ROS-free with 21 unit tests.
+bringup would abort on it. `preflight.py` is ROS-free with 26 unit tests.
 
 ### `mecanumbot_ostensive_behaviour`
 

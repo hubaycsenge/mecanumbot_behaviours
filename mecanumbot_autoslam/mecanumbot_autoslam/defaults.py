@@ -62,6 +62,7 @@ EXPLORATION = {
     "hysteresis_radius": 1.0,
     "goal_timeout": 60.0,
     "goal_reached_distance": 0.6,
+    "nav2_retry_delay": 5.0,
     "revisit_uncertain": True,
     "uncertain_every": 3,
 }

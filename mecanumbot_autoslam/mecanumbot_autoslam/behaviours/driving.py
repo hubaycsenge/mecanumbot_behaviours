@@ -23,6 +23,15 @@ current when the goal was sent.
 the planner cannot get around is not a frontier worth keeping; the detector will
 happily propose it again every cycle, and taking nav2's refusal at face value is
 the cheapest way to stop that.
+
+**A goal nav2 *rejects* is a different thing, and is not the goal's fault.**
+The action server exists as soon as `bt_navigator` is constructed, but it turns
+every goal down until the lifecycle manager has activated it -- which never
+happens if the bringup aborted. Treated like an abort, that produced a goal per
+tick, each one rejected, each one counted: thirteen "goals" in thirteen seconds,
+none of which happened, and the interleaving counter running on regardless. So a
+rejection backs off for `nav2_retry_delay` and is not counted as a goal at all,
+and the log says what it means -- nav2 is up but not activated.
 """
 
 import math
@@ -46,6 +55,9 @@ class DriveToGoal(Behaviour):
         self._reached = 0.6
         self._uncertain_every = 3
         self._revisit_uncertain = True
+        self._retry_delay = 5.0
+        #: When the next goal may be sent, after nav2 turned one down.
+        self._blocked_until = 0.0
 
     def setup(self, node, params):
         """Build the nav2 action client and cache the goal constants."""
@@ -55,6 +67,7 @@ class DriveToGoal(Behaviour):
         self._reached = float(params["goal_reached_distance"])
         self._uncertain_every = int(params["uncertain_every"])
         self._revisit_uncertain = bool(params["revisit_uncertain"])
+        self._retry_delay = float(params["nav2_retry_delay"])
 
     def update(self, context, revisit_points=()):
         """Hold the goal in flight, or choose and send the next one."""
@@ -66,6 +79,9 @@ class DriveToGoal(Behaviour):
             context.goal = self.goal
             context.goal_source = self.goal_source
             return RUNNING
+
+        if context.now < self._blocked_until:
+            return FAILURE
 
         point, source = choosing.select(
             context.best,
@@ -98,6 +114,19 @@ class DriveToGoal(Behaviour):
         if self.navigator.settled():
             if self.navigator.succeeded():
                 self.log("arrived at the {} goal".format(self.goal_source))
+            elif self.navigator.rejected():
+                # Not this goal's fault: nav2 is not accepting any. The most
+                # likely reason by far is a stack that came up but was never
+                # activated, so say so rather than blaming the frontier.
+                self.goals_sent -= 1
+                self._blocked_until = context.now + self._retry_delay
+                self.log(
+                    "nav2 turned the goal down -- the action server is there "
+                    "but not activated. Waiting {:.0f} s. If this repeats, "
+                    "nav2's bringup failed; check the lifecycle manager's log "
+                    "for 'Failed to bring up all requested nodes'"
+                    .format(self._retry_delay)
+                )
             else:
                 # See the module docstring: not retried, dropped.
                 self.log("nav2 gave up on the {} goal".format(self.goal_source))

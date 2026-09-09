@@ -111,6 +111,17 @@ class Contradiction:
 #
 # So: things that merely contradict are **stopped**, and things whose names we
 # re-register are **removed**.
+#
+# **And "removed" often means one process, not eight.** `bringup_launch.py`
+# defaults `use_composition` to True, so the study stack is not eight processes
+# called `controller_server`, `planner_server` and so on -- it is eight *nodes*
+# composed into a single `component_container_isolated` called `nav2_container`.
+# Looking for a process per node finds nothing at all there, which is worse than
+# useless: it reads as "not running here, must be on another machine" and lets
+# the pass start into the collision. The container is the thing to signal, and
+# it is matched by its `__node:=nav2_container` remap alone -- never by
+# `component_container_isolated`, which is a name other containers in this
+# workspace could share.
 
 #: Nav2 lifecycle managers whose nodes autoslam does NOT re-register. Shutting
 #: one of these down retires every server under it, in dependency order, and a
@@ -183,8 +194,23 @@ NAV2_STACK = (
         "republish /cmd_vel", collides=True),
 )
 
+#: The composed form of everything in NAV2_STACK. Present instead of the
+#: individual processes whenever nav2 was brought up with `use_composition`,
+#: which is the `bringup_launch.py` default and therefore what the base launch
+#: gets. Signalling it takes every node inside it, which is the whole study
+#: stack -- localization included, and that is fine: it is a contradiction too,
+#: already asked to shut down cleanly by then.
+CONTAINER = (
+    Contradiction(
+        "nav2_container", BY_PROCESS,
+        "the composed study nav2 stack -- with use_composition (the nav2 "
+        "bringup default) every server runs inside this one process, so there "
+        "is no controller_server process to signal",
+        executable="", collides=True),
+)
+
 #: Plain nodes, stopped by signalling their process.
-PROCESSES = NAV2_STACK + (
+PROCESSES = NAV2_STACK + CONTAINER + (
     Contradiction(
         "slam_toolbox", BY_PROCESS,
         "autoslam starts slam_toolbox under this name, and two of them are two "
@@ -352,7 +378,25 @@ def processes_to_signal(processes, tokens, keep_pids=(), keep_groups=()):
     return hits
 
 
-def blocking(steps, still_running):
+def survivors(steps, live_nodes):
+    """
+    Return the rules whose node is still on the graph after acting.
+
+    **The graph, not the process table.** What matters for a name collision is
+    whether the name is still taken, and it is the graph that says so: a
+    lifecycle node that shut down cleanly is still registered under its name and
+    still answers `<name>/change_state`, and a node composed into a container
+    never had a process of its own to look for. Asking about processes answered
+    a different question and answered it wrongly -- eight composed nav2 nodes
+    came back as "no local process running it, must be on another machine", and
+    the pass started into exactly the collision the preflight exists to prevent.
+    """
+    names = {bare(name) for name in live_nodes}
+    return [rule for group in steps.values() for rule in group
+            if rule.node in names]
+
+
+def blocking(steps, live_nodes):
     """
     Return the contradictions that make an autoslam pass impossible.
 
@@ -362,13 +406,7 @@ def blocking(steps, still_running):
     nav2's bringup will abort on the collision and take our own servers down
     with it. Only the second is worth refusing to start over.
     """
-    names = {bare(name) for name in still_running}
-    blocked = []
-    for group in steps.values():
-        for rule in group:
-            if rule.collides and rule.node in names:
-                blocked.append(rule)
-    return blocked
+    return [rule for rule in survivors(steps, live_nodes) if rule.collides]
 
 
 def summary(steps):

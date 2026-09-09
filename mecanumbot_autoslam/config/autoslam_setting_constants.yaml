@@ -112,6 +112,13 @@
     # finish parking on a point that has no meaningful orientation.
     goal_reached_distance: 0.6
 
+    # How long to wait after nav2 REJECTS a goal, as opposed to trying it and
+    # giving up. A rejection is not about the goal: nav2's action server exists
+    # from construction but turns every goal down until the lifecycle manager
+    # activates it, which never happens if the bringup aborted. Without this the
+    # pass sends one goal per tick and every one of them is rejected.
+    nav2_retry_delay: 5.0
+
     # ----- Servicing the server's uncertain regions -----------------------------
     # The feedback path to the reconstruction: go and look again at the places
     # the comparison is least sure about. This is view planning, not a

@@ -172,9 +172,15 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        node.drive.terminate()
-        node.destroy_node()
-        rclpy.try_shutdown()
+        # Guarded, like the spin: `ros2 launch` signals the whole process
+        # group, so a second SIGINT lands inside the teardown and would print
+        # a traceback from a node that stopped perfectly cleanly.
+        for step in (node.drive.terminate, node.destroy_node,
+                     rclpy.try_shutdown):
+            try:
+                step()
+            except KeyboardInterrupt:
+                pass
 
 
 if __name__ == "__main__":

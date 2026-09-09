@@ -1,0 +1,106 @@
+[0.106s] colcon DEBUG Command line arguments: ['/usr/bin/colcon', 'build', '--symlink-install', '--packages-select', 'mecanumbot_autoslam', 'mecanumbot_custom_nav2']
+[0.106s] colcon DEBUG Parsed command line arguments: Namespace(log_base=None, log_level=None, verb_name='build', build_base='build', install_base='install', merge_install=False, symlink_install=True, test_result_base=None, continue_on_error=False, executor='parallel', parallel_workers=16, event_handlers=None, ignore_user_meta=False, metas=['./colcon.meta'], base_paths=['.'], packages_ignore=None, packages_ignore_regex=None, paths=None, packages_up_to=None, packages_up_to_regex=None, packages_above=None, packages_above_and_dependencies=None, packages_above_depth=None, packages_select_by_dep=None, packages_skip_by_dep=None, packages_skip_up_to=None, packages_select_build_failed=False, packages_skip_build_finished=False, packages_select_test_failures=False, packages_skip_test_passed=False, packages_select=['mecanumbot_autoslam', 'mecanumbot_custom_nav2'], packages_skip=None, packages_select_regex=None, packages_skip_regex=None, packages_start=None, packages_end=None, allow_overriding=[], cmake_args=None, cmake_target=None, cmake_target_skip_unavailable=False, cmake_clean_cache=False, cmake_clean_first=False, cmake_force_configure=False, ament_cmake_args=None, catkin_cmake_args=None, catkin_skip_building_tests=False, mixin_files=None, mixin=None, verb_parser=<colcon_mixin.mixin.mixin_argument.MixinArgumentDecorator object at 0x7937dab9f100>, verb_extension=<colcon_core.verb.build.BuildVerb object at 0x7937dab9e4a0>, main=<bound method BuildVerb.main of <colcon_core.verb.build.BuildVerb object at 0x7937dab9e4a0>>, mixin_verb=('build',))
+[0.287s] colcon.colcon_core.package_discovery Level 1 discover_packages(colcon_meta) check parameters
+[0.287s] colcon.colcon_core.package_discovery Level 1 discover_packages(recursive) check parameters
+[0.287s] colcon.colcon_core.package_discovery Level 1 discover_packages(ignore) check parameters
+[0.287s] colcon.colcon_core.package_discovery Level 1 discover_packages(path) check parameters
+[0.287s] colcon.colcon_core.package_discovery Level 1 discover_packages(colcon_meta) discover
+[0.287s] colcon.colcon_core.package_discovery Level 1 discover_packages(recursive) discover
+[0.287s] colcon.colcon_core.package_discovery INFO Crawling recursively for packages in '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam'
+[0.287s] colcon.colcon_core.package_identification Level 1 _identify(.) by extensions ['ignore', 'ignore_ament_install']
+[0.287s] colcon.colcon_core.package_identification Level 1 _identify(.) by extension 'ignore'
+[0.287s] colcon.colcon_core.package_identification Level 1 _identify(.) by extension 'ignore_ament_install'
+[0.287s] colcon.colcon_core.package_identification Level 1 _identify(.) by extensions ['colcon_pkg']
+[0.287s] colcon.colcon_core.package_identification Level 1 _identify(.) by extension 'colcon_pkg'
+[0.287s] colcon.colcon_core.package_identification Level 1 _identify(.) by extensions ['colcon_meta']
+[0.287s] colcon.colcon_core.package_identification Level 1 _identify(.) by extension 'colcon_meta'
+[0.287s] colcon.colcon_core.package_identification Level 1 _identify(.) by extensions ['ros']
+[0.287s] colcon.colcon_core.package_identification Level 1 _identify(.) by extension 'ros'
+[0.309s] colcon.colcon_core.package_identification DEBUG Package '.' with type 'ros.ament_python' and name 'mecanumbot_autoslam'
+[0.310s] colcon.colcon_core.package_discovery Level 1 discover_packages(recursive) using defaults
+[0.310s] colcon.colcon_core.package_discovery Level 1 discover_packages(ignore) discover
+[0.310s] colcon.colcon_core.package_discovery Level 1 discover_packages(ignore) using defaults
+[0.310s] colcon.colcon_core.package_discovery Level 1 discover_packages(path) discover
+[0.310s] colcon.colcon_core.package_discovery Level 1 discover_packages(path) using defaults
+[0.310s] colcon.colcon_core.package_selection WARNING ignoring unknown package 'mecanumbot_custom_nav2' in --packages-select
+[0.322s] colcon.colcon_core.package_discovery Level 1 discover_packages(prefix_path) check parameters
+[0.322s] colcon.colcon_core.package_discovery Level 1 discover_packages(prefix_path) discover
+[0.325s] colcon.colcon_installed_package_information.package_discovery DEBUG Found 28 installed packages in /home/csenge/Documents/mecanumbot_ws/install
+[0.326s] colcon.colcon_installed_package_information.package_discovery DEBUG Found 274 installed packages in /opt/ros/humble
+[0.327s] colcon.colcon_core.package_discovery Level 1 discover_packages(prefix_path) using defaults
+[0.351s] colcon.colcon_core.package_selection WARNING Some selected packages are already built in one or more underlay workspaces:
+	'mecanumbot_autoslam' is in: /home/csenge/Documents/mecanumbot_ws/install/mecanumbot_autoslam
+If a package in a merged underlay workspace is overridden and it installs headers, then all packages in the overlay must sort their include directories by workspace order. Failure to do so may result in build failures or undefined behavior at run time.
+If the overridden package is used by another package in any underlay, then the overriding package in the overlay must be API and ABI compatible or undefined behavior at run time may occur.
+
+If you understand the risks and want to override a package anyways, add the following to the command line:
+	--allow-overriding mecanumbot_autoslam
+
+This may be promoted to an error in a future release of colcon-override-check.
+[0.352s] colcon.colcon_core.verb Level 5 set package 'mecanumbot_autoslam' build argument 'cmake_args' from command line to 'None'
+[0.352s] colcon.colcon_core.verb Level 5 set package 'mecanumbot_autoslam' build argument 'cmake_target' from command line to 'None'
+[0.352s] colcon.colcon_core.verb Level 5 set package 'mecanumbot_autoslam' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[0.352s] colcon.colcon_core.verb Level 5 set package 'mecanumbot_autoslam' build argument 'cmake_clean_cache' from command line to 'False'
+[0.352s] colcon.colcon_core.verb Level 5 set package 'mecanumbot_autoslam' build argument 'cmake_clean_first' from command line to 'False'
+[0.352s] colcon.colcon_core.verb Level 5 set package 'mecanumbot_autoslam' build argument 'cmake_force_configure' from command line to 'False'
+[0.352s] colcon.colcon_core.verb Level 5 set package 'mecanumbot_autoslam' build argument 'ament_cmake_args' from command line to 'None'
+[0.352s] colcon.colcon_core.verb Level 5 set package 'mecanumbot_autoslam' build argument 'catkin_cmake_args' from command line to 'None'
+[0.352s] colcon.colcon_core.verb Level 5 set package 'mecanumbot_autoslam' build argument 'catkin_skip_building_tests' from command line to 'False'
+[0.352s] colcon.colcon_core.verb DEBUG Building package 'mecanumbot_autoslam' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam', 'merge_install': False, 'path': '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam', 'symlink_install': True, 'test_result_base': None}
+[0.353s] colcon.colcon_core.executor INFO Executing jobs using 'parallel' executor
+[0.354s] colcon.colcon_parallel_executor.executor.parallel DEBUG run_until_complete
+[0.354s] colcon.colcon_ros.task.ament_python.build INFO Building ROS package in '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam' with build type 'ament_python'
+[0.354s] colcon.colcon_core.shell Level 1 create_environment_hook('mecanumbot_autoslam', 'ament_prefix_path')
+[0.356s] colcon.colcon_core.plugin_system INFO Skipping extension 'colcon_core.shell.bat': Not used on non-Windows systems
+[0.356s] colcon.colcon_core.shell INFO Creating environment hook '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/hook/ament_prefix_path.ps1'
+[0.356s] colcon.colcon_core.shell INFO Creating environment descriptor '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/hook/ament_prefix_path.dsv'
+[0.357s] colcon.colcon_core.shell INFO Creating environment hook '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/hook/ament_prefix_path.sh'
+[0.357s] colcon.colcon_core.shell INFO Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[0.357s] colcon.colcon_core.shell DEBUG Skip shell extension 'dsv' for command environment
+[0.621s] colcon.colcon_core.task.python.build INFO Building Python package in '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam'
+[0.621s] colcon.colcon_core.shell INFO Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[0.621s] colcon.colcon_core.shell DEBUG Skip shell extension 'dsv' for command environment
+[0.959s] colcon.colcon_core.task.python.build DEBUG Available setuptools commands: bdist_egg, saveopts, register, bdist, install_headers, install_scripts, sdist, check, extract_messages, init_catalog, setopt, test, install, build_clib, bdist_wheel, rotate, clean, build_scripts, develop, symlink_data, compile_catalog, install_lib, dist_info, upload, egg_info, install_egg_info, build, easy_install, update_catalog, build_ext, upload_docs, bdist_rpm, install_data, alias, bdist_dumb, build_py
+[1.230s] colcon.colcon_core.task.python.build DEBUG Available setuptools 'develop' options: --dry-run, --prefix, --editable, --user, --build-directory, --exclude-scripts, --no-deps, --find-links, --multi-version, --script-dir, --optimize, --install-layout, --verbose, --always-copy, --uninstall, --help, --version, --force-installation-into-system-dir, --always-unzip, --egg-path, --no-find-links, --install-dir, --allow-hosts, --zip-ok, --quiet, --upgrade, --record, --local-snapshots-ok, --no-user-cfg, --index-url, --site-dirs
+[1.232s] colcon.colcon_core.event_handler.log_command DEBUG Invoking command in '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam': CONDA_PROMPT_MODIFIER=(base) PYTHONPATH=/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam/build --no-deps symlink_data
+[1.706s] colcon.colcon_core.shell Level 1 create_environment_hook('mecanumbot_autoslam', 'pythonpath_develop')
+[1.706s] colcon.colcon_core.event_handler.log_command DEBUG Invoked command in '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam' returned '0': CONDA_PROMPT_MODIFIER=(base) PYTHONPATH=/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam/build --no-deps symlink_data
+[1.707s] colcon.colcon_core.shell INFO Creating environment hook '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam/share/mecanumbot_autoslam/hook/pythonpath_develop.ps1'
+[1.707s] colcon.colcon_core.shell INFO Creating environment descriptor '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam/share/mecanumbot_autoslam/hook/pythonpath_develop.dsv'
+[1.708s] colcon.colcon_core.shell INFO Creating environment hook '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam/share/mecanumbot_autoslam/hook/pythonpath_develop.sh'
+[1.710s] colcon.colcon_core.environment Level 1 checking '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam' for CMake module files
+[1.711s] colcon.colcon_core.environment Level 1 checking '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam' for CMake config files
+[1.711s] colcon.colcon_core.environment Level 1 checking '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/lib'
+[1.711s] colcon.colcon_core.environment Level 1 checking '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/bin'
+[1.711s] colcon.colcon_core.environment Level 1 checking '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/lib/pkgconfig/mecanumbot_autoslam.pc'
+[1.712s] colcon.colcon_core.environment Level 1 checking '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/lib/python3.10/site-packages'
+[1.712s] colcon.colcon_core.shell Level 1 create_environment_hook('mecanumbot_autoslam', 'pythonpath')
+[1.712s] colcon.colcon_core.shell INFO Creating environment hook '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/hook/pythonpath.ps1'
+[1.712s] colcon.colcon_core.shell INFO Creating environment descriptor '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/hook/pythonpath.dsv'
+[1.713s] colcon.colcon_core.shell INFO Creating environment hook '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/hook/pythonpath.sh'
+[1.713s] colcon.colcon_core.environment Level 1 checking '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/bin'
+[1.713s] colcon.colcon_core.environment Level 1 create_environment_scripts_only(mecanumbot_autoslam)
+[1.714s] colcon.colcon_core.shell INFO Creating package script '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/package.ps1'
+[1.714s] colcon.colcon_core.shell INFO Creating package descriptor '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/package.dsv'
+[1.715s] colcon.colcon_core.shell INFO Creating package script '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/package.sh'
+[1.715s] colcon.colcon_core.shell INFO Creating package script '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/package.bash'
+[1.716s] colcon.colcon_core.shell INFO Creating package script '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/mecanumbot_autoslam/package.zsh'
+[1.716s] colcon.colcon_core.environment Level 1 create_file_with_runtime_dependencies(/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/share/colcon-core/packages/mecanumbot_autoslam)
+[1.716s] colcon.colcon_parallel_executor.executor.parallel DEBUG closing loop
+[1.717s] colcon.colcon_parallel_executor.executor.parallel DEBUG loop closed
+[1.717s] colcon.colcon_parallel_executor.executor.parallel DEBUG run_until_complete finished with '0'
+[1.717s] colcon.colcon_core.event_reactor DEBUG joining thread
+[1.722s] colcon.colcon_core.plugin_system INFO Skipping extension 'colcon_notification.desktop_notification.terminal_notifier': Not used on non-Darwin systems
+[1.722s] colcon.colcon_core.plugin_system INFO Skipping extension 'colcon_notification.desktop_notification.win32': Not used on non-Windows systems
+[1.722s] colcon.colcon_notification.desktop_notification INFO Sending desktop notification using 'notify2'
+[1.731s] colcon.colcon_core.event_reactor DEBUG joined thread
+[1.731s] colcon.colcon_core.shell INFO Creating prefix script '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/local_setup.ps1'
+[1.732s] colcon.colcon_core.shell INFO Creating prefix util module '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/_local_setup_util_ps1.py'
+[1.733s] colcon.colcon_core.shell INFO Creating prefix chain script '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/setup.ps1'
+[1.735s] colcon.colcon_core.shell INFO Creating prefix script '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/local_setup.sh'
+[1.735s] colcon.colcon_core.shell INFO Creating prefix util module '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/_local_setup_util_sh.py'
+[1.735s] colcon.colcon_core.shell INFO Creating prefix chain script '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/setup.sh'
+[1.737s] colcon.colcon_core.shell INFO Creating prefix script '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/local_setup.bash'
+[1.737s] colcon.colcon_core.shell INFO Creating prefix chain script '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/setup.bash'
+[1.738s] colcon.colcon_core.shell INFO Creating prefix script '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/local_setup.zsh'
+[1.739s] colcon.colcon_core.shell INFO Creating prefix chain script '/home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/setup.zsh'

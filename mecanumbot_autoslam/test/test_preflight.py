@@ -196,3 +196,59 @@ def test_every_leading_condition_is_looked_for_under_one_node_name():
     steps = preflight.plan(["/bottom_up_tree_node"])
     tokens = preflight.tokens_to_signal(steps)
     assert set(preflight.LEADING_EXECUTABLES) <= set(tokens)
+
+
+# --- the composed stack ------------------------------------------------------
+
+def test_a_composed_nav2_stack_is_found_through_its_container():
+    """
+    `bringup_launch.py` defaults use_composition to True.
+
+    The study stack is then one `component_container_isolated` process holding
+    eight nodes, so there is no `controller_server` process anywhere. Looking
+    for one found nothing and reported it as "not running on this machine",
+    which let the pass start straight into the collision.
+    """
+    steps = preflight.plan(["/nav2_container", "/controller_server",
+                            "/bt_navigator", "/lifecycle_manager_navigation"])
+    assert "nav2_container" in names(steps, preflight.BY_PROCESS)
+    tokens = preflight.tokens_to_signal(steps)
+    container = ["/opt/ros/humble/lib/rclcpp_components/component_container_isolated",
+                 "--ros-args", "-r", "__node:=nav2_container"]
+    assert preflight.matches_process(container, tokens) == "__node:=nav2_container"
+
+
+def test_another_component_container_is_not_signalled():
+    # Matched by its node remap and never by `component_container_isolated`,
+    # which any other container in the workspace could also be running.
+    steps = preflight.plan(["/nav2_container"])
+    tokens = preflight.tokens_to_signal(steps)
+    assert "component_container_isolated" not in tokens
+    other = ["/opt/ros/humble/lib/rclcpp_components/component_container_isolated",
+             "--ros-args", "-r", "__node:=camera_container"]
+    assert preflight.matches_process(other, tokens) == ""
+
+
+def test_the_container_is_a_collision():
+    steps = preflight.plan(["/nav2_container"])
+    assert preflight.blocking(steps, ["/nav2_container"])
+
+
+# --- verifying against the graph, not the process table ----------------------
+
+def test_a_node_still_on_the_graph_has_not_been_cleared():
+    """
+    A composed or finalized node has no process and still holds its name.
+
+    This is the check that would have caught the composed stack: eight nodes
+    with no processes were reported as cleared, and the pass started anyway.
+    """
+    steps = preflight.plan(["/controller_server", "/mecanumbot/seek_bt_node"])
+    left = [rule.node for rule in preflight.survivors(steps, ["/controller_server"])]
+    assert left == ["controller_server"]
+
+
+def test_a_node_gone_from_the_graph_counts_as_cleared():
+    steps = preflight.plan(["/controller_server"])
+    assert preflight.survivors(steps, []) == []
+    assert preflight.blocking(steps, []) == []

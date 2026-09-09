@@ -75,3 +75,21 @@ def test_an_interval_of_zero_does_not_divide_by_zero():
     _, source = choosing.select(
         FRONTIER, REVISIT, goals_sent=1, uncertain_every=0)
     assert source == choosing.UNCERTAIN
+
+
+def test_a_rejected_goal_must_not_advance_the_interleaving():
+    """
+    Rolling `goals_sent` back on a rejection keeps the ratio honest.
+
+    A pass against a nav2 that is up but not activated rejects every goal. If
+    those counted, the "every Nth goal is the server's" ratio would run at the
+    tick rate over runs that never happened -- so `DriveToGoal` decrements the
+    counter, and this is the property that makes that matter.
+    """
+    sent = 3
+    assert choosing.select(FRONTIER, REVISIT, sent, uncertain_every=3)[1] == \
+        choosing.UNCERTAIN
+    # The goal was rejected, so it did not happen and the count goes back.
+    sent -= 1
+    assert choosing.select(FRONTIER, REVISIT, sent, uncertain_every=3)[1] == \
+        choosing.FRONTIER

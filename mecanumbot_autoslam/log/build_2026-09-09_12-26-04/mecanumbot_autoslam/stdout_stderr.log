@@ -1,0 +1,16 @@
+running develop
+running egg_info
+writing mecanumbot_autoslam.egg-info/PKG-INFO
+writing dependency_links to mecanumbot_autoslam.egg-info/dependency_links.txt
+writing entry points to mecanumbot_autoslam.egg-info/entry_points.txt
+writing requirements to mecanumbot_autoslam.egg-info/requires.txt
+writing top-level names to mecanumbot_autoslam.egg-info/top_level.txt
+reading manifest file 'mecanumbot_autoslam.egg-info/SOURCES.txt'
+writing manifest file 'mecanumbot_autoslam.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/lib/python3.10/site-packages/mecanumbot-autoslam.egg-link (link to .)
+Installing autoslam_node script to /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/lib/mecanumbot_autoslam
+Installing autoslam_preflight script to /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/install/mecanumbot_autoslam/lib/mecanumbot_autoslam
+
+Installed /home/csenge/Documents/mecanumbot_ws/src/mecanumbot_behaviours/mecanumbot_autoslam/build/mecanumbot_autoslam
+running symlink_data

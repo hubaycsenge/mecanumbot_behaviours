@@ -228,6 +228,20 @@ class ExplorationNavigator(Nav2PoseNavigator):
         """Report whether nav2 has finished with our goal, however it ended."""
         return self.status() in (STATUS_SUCCEEDED, STATUS_ABORTED, STATUS_CANCELED)
 
+    def rejected(self):
+        """
+        Report whether nav2 turned the goal down without ever starting it.
+
+        Different from a goal nav2 tried and gave up on, and the difference
+        matters. An abort is about the *goal* -- a frontier behind a wall the
+        planner cannot get around -- so the goal is dropped and the next one
+        chosen. A rejection is about *nav2*: the action server exists but is
+        not activated, which is what an aborted bringup leaves behind, and no
+        frontier will fare any better. Retrying it at the tick rate produces a
+        goal a second, none of which happen.
+        """
+        return bool(self._rejected)
+
     def succeeded(self):
         """Report whether nav2 drove the goal to completion."""
         return self.status() == STATUS_SUCCEEDED
