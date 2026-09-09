@@ -17,6 +17,15 @@ explorer. It deliberately leaves the joystick alone -- that is the human
 override -- and it leaves the drivers, the camera, the perception stack and the
 Deep3R client alone, because T1 needs all of them.
 
+**And if it could not clear a name collision, nothing else starts.**
+`navigation_launch.py` below registers `controller_server`, `bt_navigator` and
+six more under exactly the names the study stack holds. With an old one still
+running, our manager's `configure` is answered by the wrong node, nav2 aborts
+its own bringup and tears down the servers it just started, and the pass logs
+"nav2 action server not ready" for as long as you leave it. That is not a
+degraded run, it is no run, so the preflight exits non-zero and this file stops
+instead of spending a trial on it. `preflight_strict:=false` starts anyway.
+
 Nav2 comes from `nav2_bringup/navigation_launch.py` rather than the usual
 `bringup_launch.py`, and that choice is the whole point: `navigation_launch`
 starts the controller, planner, behaviours and BT navigator and *nothing else*
@@ -49,7 +58,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, GroupAction,
-                            IncludeLaunchDescription, LogInfo,
+                            IncludeLaunchDescription, LogInfo, Shutdown,
                             RegisterEventHandler)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
@@ -135,6 +144,16 @@ def generate_launch_description():
             ),
         ),
         DeclareLaunchArgument(
+            "preflight_strict",
+            default_value="true",
+            description=(
+                "Stop if the preflight could not clear a node whose name "
+                "autoslam re-registers. Those collisions make nav2 bringup "
+                "abort, so starting anyway wastes the run rather than "
+                "degrading it. false starts regardless."
+            ),
+        ),
+        DeclareLaunchArgument(
             "use_agreement",
             default_value="true",
             description=(
@@ -152,6 +171,28 @@ def generate_launch_description():
         condition=IfCondition(use_preflight),
         parameters=[params],
     )
+
+    def _after_preflight(event, context):
+        """Start the pass, or stop, depending on what the preflight found."""
+        strict = context.perform_substitution(
+            LaunchConfiguration("preflight_strict")).lower()
+        if event.returncode and strict not in ("false", "0"):
+            return [
+                LogInfo(msg=(
+                    "[autoslam] the preflight could not clear the graph and "
+                    "nav2 would not come up; stopping. Its log above says "
+                    "what is still running. Start with "
+                    "preflight_strict:=false to try anyway.")),
+                Shutdown(reason="autoslam preflight found a name collision"),
+            ]
+        if event.returncode:
+            return [
+                LogInfo(msg=(
+                    "[autoslam] the preflight could not clear the graph, but "
+                    "preflight_strict is false -- starting anyway. Expect nav2 "
+                    "bringup to abort if a name is still held.")),
+            ] + stack()
+        return stack()
 
     def stack():
         """
@@ -226,9 +267,11 @@ def generate_launch_description():
                      " -- watch /mecanumbot/exploration/state"],
             ),
             preflight,
-            # The pass starts when the preflight has exited, not after a delay.
+            # The pass starts when the preflight has exited, not after a delay
+            # -- and only if it says the graph is fit to start in. A non-zero
+            # exit means something is still holding a node name we need.
             RegisterEventHandler(
-                OnProcessExit(target_action=preflight, on_exit=stack()),
+                OnProcessExit(target_action=preflight, on_exit=_after_preflight),
                 condition=IfCondition(use_preflight),
             ),
             GroupAction(stack(), condition=UnlessCondition(use_preflight)),

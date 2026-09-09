@@ -80,9 +80,49 @@ Three ways to stop something, in order of how gentle they are:
 
 | Method | Used for | How |
 | --- | --- | --- |
-| Lifecycle manager | The study nav2 stack, AMCL + `map_server`, the keepout servers | `manage_nodes` with `SHUTDOWN` — one call retires everything under a manager, in dependency order. The only method here nav2 itself considers supported. |
+| Lifecycle manager | AMCL + `map_server`, the keepout servers | `manage_nodes` with `SHUTDOWN` — one call retires everything under a manager, in dependency order. The only method here nav2 itself considers supported. |
 | `change_state` | A managed node whose manager is already gone | Its current state is read first, because the shutdown transition is a different id from each of unconfigured, inactive and active. |
-| `SIGTERM`, then `SIGKILL` | Behaviour trees, `slam_toolbox`, an old explorer | Matched on the **executable name** in a process's command line, never a free-text search; never this process or its own process group. Behind `preflight_kill_processes`. |
+| `SIGTERM`, then `SIGKILL` | **The whole study nav2 navigation stack**, `slam_toolbox`, an old pass, and the behaviour trees | Matched on the executable name **or the `__node:=` remap** in a process's command line, never a free-text search; never this process or its own process group. Behind `preflight_kill_processes`. |
+
+### Stopping something, versus removing it
+
+The distinction the first version got wrong, and it is the whole difference
+between a pass that starts and one that cannot.
+
+`navigation_launch.py` registers `controller_server`, `planner_server`,
+`bt_navigator` and five more under **exactly the names the study stack already
+holds** — and a lifecycle shutdown does not free a name. A finalized node is
+still on the graph and still answers `<name>/change_state`. So a surviving old
+server answers our own manager's `configure`; an *active* one rejects it
+outright, nav2 logs `Failed to bring up all requested nodes. Aborting bringup`,
+and then tears down the servers it had just started. The pass gets no navigation
+at all and sits there logging `nav2 action server not ready`.
+
+So the rule is: what merely **contradicts** is stopped, and what **collides** is
+removed. AMCL and `map_server` contradict — autoslam registers nothing under
+those names, and a finalized AMCL publishes no transform, which is all that is
+needed. The navigation stack collides, so it is signalled. That is the same
+signal `ros2 launch` sends it on Ctrl-C, and it leaves the rest of the base
+launch — drivers, joystick, web GUI — running.
+
+The navigation *manager* is matched by its `__node:=lifecycle_manager_navigation`
+remap and never by its executable, which is a bare `lifecycle_manager` shared
+with the localization and keepout managers that must be shut down cleanly
+instead.
+
+### It verifies, and it refuses to start over a collision
+
+Two outcomes worth telling apart. A tree on the operator PC that cannot be
+signalled from here **degrades** a pass — a warning. A study `controller_server`
+still holding a name we need **prevents** one, so the preflight exits non-zero
+and `launch_autoslam.launch.py` stops rather than spending a trial discovering
+it. `preflight_strict:=false` starts anyway.
+
+Verification asks about *processes*, not the node list: a cleanly shut-down
+lifecycle node is still on the graph, so the graph cannot answer whether a name
+is free. It also catches a node that came back — a launch file with
+`respawn:=true` puts its node back a couple of seconds after a SIGTERM, so what
+was signalled is not the same question as what is now gone.
 
 **What is deliberately not stopped.** The **joystick** — it publishes
 `/cmd_vel`, so by the letter of the rule it contradicts an autonomous pass, and
@@ -133,6 +173,7 @@ ros2 run nav2_map_server map_saver_cli -f <maps>/AI_dept/AI_dept
 | Argument | Default | Function |
 | --- | --- | --- |
 | `params` | `config/autoslam_setting_constants.yaml` | The constants, as a ROS parameter file. |
+| `preflight_strict` | `true` | Stop if the preflight could not clear a **name collision**. Those make nav2 bringup abort, so starting anyway wastes the run rather than degrading it. |
 | `require_cloud` | `true` | Whether the pass may only end once the server says the reconstruction is good enough. `false` is right for a dry run and wrong during a trial. |
 | `use_preflight` | `true` | Shut the contradicting nodes down first. |
 | `use_agreement` | `true` | Start the 2D/3D comparison handler. `false` for a session that already has one from the T2 launch. |
@@ -223,11 +264,11 @@ PYTHONPATH=. python3 -m pytest test/ -q -p no:launch_testing \
   --ignore=test/test_flake8.py --ignore=test/test_copyright.py --ignore=test/test_pep257.py
 ```
 
-23 tests, pure Python, no ROS graph. Use `/usr/bin/python3`, not the conda one.
+30 tests, pure Python, no ROS graph. Use `/usr/bin/python3`, not the conda one.
 
 | File | Covers |
 | --- | --- |
-| `test_preflight.py` | What contradicts an exploration pass and what does not — including that the joystick is never stopped, that a namespaced node contradicts exactly as much as a bare one, that a manager's shutdown does not cover another manager's nodes, and that a launch file merely *naming* a tree is not matched as one |
+| `test_preflight.py` | What contradicts an exploration pass and what does not — including that the joystick is never stopped, that a namespaced node contradicts exactly as much as a bare one, that a manager's shutdown does not cover another manager's nodes, and that a launch file merely *naming* a tree is not matched as one. Plus the collision rules: that the whole nav2 navigation stack is removed rather than shut down, that a tree is not a collision, that a surviving collision blocks the pass and a surviving tree does not, and that the navigation manager is matched by its remap so the localization manager is spared |
 | `test_choosing.py` | The interleaving: a frontier is the ordinary goal, every Nth is the server's, the server is still visited when the frontiers run out, and switching revisiting off leaves the pass on frontiers alone |
 
 The detector, the scoring, the occupancy model and the exit criteria are tested

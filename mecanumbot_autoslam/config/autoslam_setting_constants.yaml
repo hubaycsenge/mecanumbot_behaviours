@@ -217,8 +217,15 @@
     # is not instant and an empty list reads as "nothing to do", which is the
     # one wrong answer the preflight can give.
     preflight_discovery: 2.0
-    # Per-service budget for a lifecycle shutdown.
+    # Per-service budget for shutting one lifecycle node down.
     preflight_timeout: 15.0
+    # Budget for asking a nav2 lifecycle manager to shut its whole stack down.
+    # Much larger, because the manager answers only once every node under it
+    # has been through several transitions and dropped its bond. At 15 s the
+    # call to a seven-node stack timed out, the study nav2 stayed up, and the
+    # pass could not start at all -- our own servers register the same names,
+    # so nav2's bringup aborted on the collision.
+    preflight_manager_timeout: 60.0
     # Whether the preflight may signal processes for the nodes that are not
     # lifecycle-managed (the behaviour trees, slam_toolbox, an old explorer).
     # False leaves them running and says so in the log.

@@ -15,21 +15,35 @@ gentlest:
 2. **A lifecycle node's own `change_state`**, for a stack whose manager is
    already gone. The current state is read first, because the shutdown
    transition is a different id from each of unconfigured, inactive and active.
-3. **SIGTERM, then SIGKILL**, for the plain nodes -- behaviour trees,
-   slam_toolbox, an old explorer. Matched on the executable name in a process's
+3. **SIGTERM, then SIGKILL**, for everything whose *name* autoslam re-uses --
+   the whole study nav2 navigation stack, slam_toolbox, an old pass -- and for
+   the plain nodes that are not lifecycle-managed at all, like the behaviour
+   trees. Matched on the executable name or the `__node:=` remap in a process's
    command line, never a free-text search, and never against this process or
    anything in its own process group.
 
-**It reports what it could not do.** A node on the operator PC cannot be
-signalled from here and often cannot be shut down either; saying so in the log
-is the difference between a pass that fails mysteriously and one that fails with
-its cause on the screen. That is also why the exit code is always 0: a
-contradiction that could not be cleared is a warning to a person, not a reason
-to refuse to explore.
+**Why the nav2 navigation stack is signalled rather than shut down.** A
+lifecycle shutdown does not free a node name: a finalized node is still on the
+graph and still answers `<name>/change_state`. `navigation_launch.py` registers
+`controller_server`, `bt_navigator` and six more under exactly the names the
+study stack already holds, so a surviving old server answers our own manager's
+`configure` -- and an *active* one rejects it, at which point nav2 logs "Failed
+to bring up all requested nodes. Aborting bringup" and tears down the servers it
+had just started. The pass then sits there logging "nav2 action server not
+ready" with no nav2 at all. Stopping those nodes is not enough; they have to be
+gone.
+
+**It verifies, and it refuses to start over a collision.** Two different
+outcomes are worth telling apart. A tree on the operator PC that cannot be
+signalled from here *degrades* a pass and is a warning. A study nav2 server
+still holding a name we need *prevents* one, so the preflight exits non-zero and
+`launch_autoslam.launch.py` stops rather than starting a stack that provably
+cannot come up. `preflight_strict:=false` starts anyway.
 """
 
 import os
 import signal
+import sys
 import time
 
 import rclpy
@@ -59,8 +73,15 @@ class AutoslamPreflight(Node):
         super().__init__("autoslam_preflight")
         self.declare_parameter("preflight_discovery", 2.0)
         self.declare_parameter("preflight_timeout", 15.0)
+        # Shutting a whole nav2 stack down is several sequential lifecycle
+        # transitions per node plus their bonds, and it does not answer until
+        # it has finished all of them. 15 s was not enough for a seven-node
+        # stack -- the call timed out, the stack stayed up, and the pass could
+        # not start.
+        self.declare_parameter("preflight_manager_timeout", 60.0)
         self.declare_parameter("preflight_kill_processes", True)
         self.unresolved = []
+        self.blocking = []
 
     # --- discovery ------------------------------------------------------------
 
@@ -121,27 +142,29 @@ class AutoslamPreflight(Node):
             return False, "change_state did not answer"
         return bool(future.result().success), "shut down"
 
-    def signal_processes(self, executables):
-        """SIGTERM every local process running one of `executables`."""
+    def signal_processes(self, tokens):
+        """SIGTERM every local process matching one of `tokens`."""
         keep_pids = (os.getpid(), os.getppid())
         keep_groups = (os.getpgid(0),)
         hits = preflight.processes_to_signal(
-            _local_processes(), executables,
+            _local_processes(), tokens,
             keep_pids=keep_pids, keep_groups=keep_groups)
-        for pid, executable in hits:
-            self.get_logger().info(
-                "stopping {} (pid {})".format(executable, pid))
+        for pid, token in hits:
+            self.get_logger().info("stopping {} (pid {})".format(token, pid))
             _signal(pid, signal.SIGTERM)
         if not hits:
             return []
         time.sleep(KILL_GRACE)
-        for pid, executable in hits:
+        for pid, token in hits:
             if _alive(pid):
                 self.get_logger().warn(
                     "{} (pid {}) ignored SIGTERM; sending SIGKILL".format(
-                        executable, pid))
+                        token, pid))
                 _signal(pid, signal.SIGKILL)
-        return [executable for _, executable in hits]
+        # A launch file started with respawn=true puts its node back a couple
+        # of seconds later, so what was signalled is not the same question as
+        # what is now gone. _verify asks the second one.
+        return [token for _, token in hits]
 
     # --- the pass -------------------------------------------------------------
 
@@ -160,39 +183,79 @@ class AutoslamPreflight(Node):
         for line in preflight.summary(steps):
             self.get_logger().info("contradiction: {}".format(line))
 
+        manager_timeout = float(
+            self.get_parameter("preflight_manager_timeout").value)
         for rule in steps[preflight.BY_MANAGER]:
-            ok, detail = self.shutdown_manager(rule.node, timeout)
+            self.get_logger().info(
+                "asking {} to shut its nodes down (up to {:.0f} s -- it answers "
+                "only once every one of them has gone)".format(
+                    rule.node, manager_timeout))
+            ok, detail = self.shutdown_manager(rule.node, manager_timeout)
             self._record(rule, ok, detail)
         for rule in steps[preflight.BY_LIFECYCLE]:
             ok, detail = self.shutdown_lifecycle(rule.node, timeout)
             self._record(rule, ok, detail)
 
-        executables = preflight.executables_to_signal(steps)
+        tokens = preflight.tokens_to_signal(steps)
         may_signal = bool(self.get_parameter("preflight_kill_processes").value)
         stopped = (
-            self.signal_processes(executables)
-            if executables and may_signal else []
+            self.signal_processes(tokens) if tokens and may_signal else []
         )
         for rule in steps[preflight.BY_PROCESS]:
             if not may_signal:
                 self._record(rule, False, "preflight_kill_processes is false")
                 continue
-            candidates = preflight.candidate_executables(rule)
-            hit = [name for name in stopped if name in candidates]
+            candidates = set(preflight.candidate_tokens(rule))
+            hit = [token for token in stopped if token in candidates]
             self._record(
                 rule, bool(hit),
-                "signalled {}".format(", ".join(hit)) if hit
+                "signalled" if hit
                 else "no local process running it -- another machine?",
             )
 
+        self._verify(steps)
+
+    def _verify(self, steps):
+        """
+        Look again, and separate "not tidy" from "cannot start".
+
+        A lifecycle node that shut down cleanly is still on the graph, so the
+        node list cannot answer this on its own -- what matters for a name
+        collision is whether a *process* is still holding it, which is the same
+        question `signal_processes` asks.
+        """
+        tokens = preflight.tokens_to_signal(steps)
+        survivors = preflight.processes_to_signal(
+            _local_processes(), tokens,
+            keep_pids=(os.getpid(), os.getppid()),
+            keep_groups=(os.getpgid(0),))
+        still_running = {
+            tokens[token].node for _, token in survivors if token in tokens
+        }
+        self.blocking = preflight.blocking(steps, still_running)
+
         if self.unresolved:
             self.get_logger().warn(
-                "{} contradiction(s) still running -- an autoslam pass may "
-                "fight them. If they are on another machine, stop them "
-                "there:".format(len(self.unresolved)))
+                "{} contradiction(s) not cleared from here. If they are on "
+                "another machine, stop them there:".format(len(self.unresolved)))
             for line in self.unresolved:
                 self.get_logger().warn("  {}".format(line))
-        else:
+
+        if self.blocking:
+            self.get_logger().error(
+                "{} node(s) still hold names autoslam needs. nav2 cannot come "
+                "up alongside them: its bringup aborts on the collision and "
+                "takes our own servers down with it, and the pass gets no "
+                "navigation at all. Refusing to start.".format(
+                    len(self.blocking)))
+            for rule in self.blocking:
+                self.get_logger().error("  {}: {}".format(rule.node, rule.why))
+            self.get_logger().error(
+                "Stop them by hand -- Ctrl-C the base launch, or restart it "
+                "with use_nav2:=false -- or start with preflight_strict:=false "
+                "to try anyway.")
+            return
+        if not self.unresolved:
             self.get_logger().info("the graph is clear; starting the pass")
 
     def _record(self, rule, ok, detail):
@@ -239,14 +302,25 @@ def _alive(pid):
 
 
 def main(args=None):
-    """Clear the graph, then exit so the rest of the launch can start."""
+    """
+    Clear the graph, then exit so the rest of the launch can start.
+
+    Exit 0 means the pass may start -- possibly with a warning about something
+    on another machine. Exit 1 means a node autoslam re-registers is still
+    running here, so nav2 cannot come up and the launch stops instead of
+    spending a trial finding that out.
+    """
     rclpy.init(args=args)
     node = AutoslamPreflight()
+    blocked = []
     try:
         node.run()
+        blocked = node.blocking
     finally:
         node.destroy_node()
         rclpy.try_shutdown()
+    if blocked:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

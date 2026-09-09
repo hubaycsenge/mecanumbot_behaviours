@@ -95,6 +95,7 @@ PREFLIGHT = {
     "preflight": True,
     "preflight_discovery": 2.0,
     "preflight_timeout": 15.0,
+    "preflight_manager_timeout": 60.0,
     "preflight_kill_processes": True,
 }
 

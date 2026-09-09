@@ -169,11 +169,15 @@ the frontier scoring, the occupancy model, the exit criteria — and none of it
 moved. What moved is the part that commands motion.
 
 `autoslam_preflight` runs first and the pass waits for it to **exit**: T1
-replaces the navigation stack rather than using it, so it shuts down the study
-nav2 stack, AMCL, the map server and any behaviour tree it finds sending its own
-nav2 goals. It deliberately leaves the joystick alone — that is the human
-override — and it says in the log what it could not stop rather than refusing to
-start. `preflight.py` is ROS-free with 15 unit tests.
+replaces the navigation stack rather than using it, so it clears AMCL, the map
+server, the study nav2 stack and any behaviour tree it finds sending its own
+nav2 goals. It distinguishes two things — what merely **contradicts** a pass is
+shut down through nav2's own lifecycle manager, and what **collides**, meaning
+autoslam re-registers a node under that exact name, is removed, because a
+finalized node still owns its name and still answers `change_state`. It
+deliberately leaves the joystick alone (the human override), warns about what it
+could not reach, and refuses to start when a collision survives, since nav2's
+bringup would abort on it. `preflight.py` is ROS-free with 21 unit tests.
 
 ### `mecanumbot_ostensive_behaviour`
 

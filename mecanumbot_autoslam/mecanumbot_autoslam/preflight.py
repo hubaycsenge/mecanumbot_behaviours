@@ -65,7 +65,8 @@ BY_PROCESS = "process"      #: SIGTERM to the process running it
 class Contradiction:
     """One node that cannot run at the same time as an autoslam pass."""
 
-    def __init__(self, node, method, why, executable="", manager=""):
+    def __init__(self, node, method, why, executable=None, manager="",
+                 collides=False):
         """Describe one node, why it contradicts, and how it is stopped."""
         self.node = node
         self.method = method
@@ -73,24 +74,48 @@ class Contradiction:
         #: For a managed node, the lifecycle manager that owns it. While that
         #: manager is up the node is its business, not ours.
         self.manager = manager
+        #: Whether autoslam re-registers a node under this exact name. If it
+        #: does, the old one has to be GONE and not merely stopped -- see the
+        #: module docstring. A collision that survives makes the pass
+        #: impossible, so it is also what the preflight refuses to start over.
+        self.collides = collides
         #: The executable name to look for in a command line, for BY_PROCESS.
         #: Never a substring to match loosely: it is compared against the
         #: basename of an argument, so `seek_bt_node` cannot match a launch
-        #: file that merely mentions it.
-        self.executable = executable or node
+        #: file that merely mentions it. Defaults to the node's own name,
+        #: which is what a nav2 server's executable is called; an explicit ""
+        #: means match on the `__node:=` remap alone, for a node whose
+        #: executable is shared with something that must NOT be signalled.
+        self.executable = node if executable is None else executable
 
     def __repr__(self):
         """Return a short debugging representation."""
         return "Contradiction({!r}, {!r})".format(self.node, self.method)
 
 
-#: Nav2 lifecycle managers. Shutting one of these down retires every server it
-#: manages, which is why the servers below it are not listed individually.
+# ── stopping something, versus removing it ──────────────────────────────────
+#
+# The distinction the first version of this file missed, and it is the whole
+# difference between a pass that starts and one that cannot.
+#
+# `navigation_launch.py` registers `controller_server`, `planner_server`,
+# `bt_navigator` and five more under **exactly the names the study stack already
+# has**. A lifecycle shutdown does not free a name: a finalized node is still on
+# the graph and still answers `<name>/change_state`. So when the study servers
+# are merely shut down -- or, worse, not shut down at all -- our own
+# `lifecycle_manager_navigation` sends `configure` to `controller_server` and
+# gets an answer from the wrong one. An *active* old server rejects `configure`
+# outright, the manager logs "Failed to bring up all requested nodes. Aborting
+# bringup", and then tears down the servers we just started. Nav2 never comes
+# up, and the pass sits there logging "nav2 action server not ready".
+#
+# So: things that merely contradict are **stopped**, and things whose names we
+# re-register are **removed**.
+
+#: Nav2 lifecycle managers whose nodes autoslam does NOT re-register. Shutting
+#: one of these down retires every server under it, in dependency order, and a
+#: finalized AMCL publishes no transform -- which is all that is needed.
 MANAGERS = (
-    Contradiction(
-        "lifecycle_manager_navigation", BY_MANAGER,
-        "the study nav2 stack serves the same navigate_to_pose action as the "
-        "one autoslam starts"),
     Contradiction(
         "lifecycle_manager_localization", BY_MANAGER,
         "AMCL publishes map -> odom, which slam_toolbox owns during T1, and "
@@ -99,13 +124,9 @@ MANAGERS = (
         "lifecycle_manager_keepout_zone", BY_MANAGER,
         "the study keepout mask is drawn against the saved map, not the one "
         "being built"),
-    Contradiction(
-        "lifecycle_manager_slam", BY_MANAGER,
-        "a second slam_toolbox is a second publisher of map -> odom"),
 )
 
-#: Managed nodes, for a stack whose manager is already gone. Listed after the
-#: managers so that the tidy path is tried first, and each records which
+#: Managed nodes, for a stack whose manager is already gone. Each records which
 #: manager owns it -- a node whose own manager is up is shut down by that
 #: manager, and asking it directly as well only races.
 MANAGED = tuple(
@@ -115,20 +136,6 @@ MANAGED = tuple(
          "publishes map -> odom, which slam_toolbox owns during T1"),
         ("map_server", "lifecycle_manager_localization",
          "serves the saved map on /map"),
-        ("controller_server", "lifecycle_manager_navigation",
-         "part of the study nav2 stack"),
-        ("planner_server", "lifecycle_manager_navigation",
-         "part of the study nav2 stack"),
-        ("smoother_server", "lifecycle_manager_navigation",
-         "part of the study nav2 stack"),
-        ("behavior_server", "lifecycle_manager_navigation",
-         "part of the study nav2 stack"),
-        ("bt_navigator", "lifecycle_manager_navigation",
-         "serves navigate_to_pose"),
-        ("waypoint_follower", "lifecycle_manager_navigation",
-         "serves navigate_through_poses"),
-        ("velocity_smoother", "lifecycle_manager_navigation",
-         "republishes /cmd_vel"),
         ("keepout_filter_mask_server", "lifecycle_manager_keepout_zone",
          "serves the study keepout mask"),
         ("keepout_costmap_filter_info_server", "lifecycle_manager_keepout_zone",
@@ -136,16 +143,57 @@ MANAGED = tuple(
     )
 )
 
+#: The study nav2 navigation stack: every name in it is one autoslam re-uses,
+#: so these are removed rather than shut down. Signalling them is the same
+#: thing `ros2 launch` does to them on Ctrl-C -- rclcpp handles SIGTERM -- and
+#: it leaves the rest of the base launch (drivers, joystick, web GUI) running.
+#:
+#: The manager is matched on its `__node:=` remap and not on its executable,
+#: which is a bare `lifecycle_manager` shared with the localization and keepout
+#: managers. Those are shut down cleanly above, and must not be caught here.
+NAV2_STACK = (
+    Contradiction(
+        "lifecycle_manager_navigation", BY_PROCESS,
+        "would answer for, and fight over, the manager autoslam starts under "
+        "this same name", executable="", collides=True),
+    Contradiction(
+        "controller_server", BY_PROCESS,
+        "autoslam starts a controller_server too, and an active one rejects "
+        "the new manager's configure, which aborts the whole bringup",
+        collides=True),
+    Contradiction(
+        "planner_server", BY_PROCESS,
+        "autoslam starts a planner_server under this name", collides=True),
+    Contradiction(
+        "smoother_server", BY_PROCESS,
+        "autoslam starts a smoother_server under this name", collides=True),
+    Contradiction(
+        "behavior_server", BY_PROCESS,
+        "autoslam starts a behavior_server under this name", collides=True),
+    Contradiction(
+        "bt_navigator", BY_PROCESS,
+        "autoslam starts a bt_navigator under this name, and both would serve "
+        "navigate_to_pose", collides=True),
+    Contradiction(
+        "waypoint_follower", BY_PROCESS,
+        "autoslam starts a waypoint_follower under this name", collides=True),
+    Contradiction(
+        "velocity_smoother", BY_PROCESS,
+        "autoslam starts a velocity_smoother under this name, and both would "
+        "republish /cmd_vel", collides=True),
+)
+
 #: Plain nodes, stopped by signalling their process.
-PROCESSES = (
+PROCESSES = NAV2_STACK + (
     Contradiction(
         "slam_toolbox", BY_PROCESS,
-        "a second slam_toolbox is a second publisher of map -> odom",
-        executable="async_slam_toolbox_node"),
+        "autoslam starts slam_toolbox under this name, and two of them are two "
+        "publishers of map -> odom",
+        executable="async_slam_toolbox_node", collides=True),
     Contradiction(
-        "mecanumbot_autoslam", BY_PROCESS,
-        "a second explorer sends its own goals to the same nav2",
-        executable="autoslam_node"),
+        "autoslam_node", BY_PROCESS,
+        "a second pass sends its own goals to the same nav2",
+        executable="autoslam_node", collides=True),
     Contradiction(
         "mecanumbot_frontier_explorer", BY_PROCESS,
         "the explorer that used to live in mecanumbot_custom_nav2, from an "
@@ -222,55 +270,75 @@ def plan(live_nodes):
     }
 
 
-def candidate_executables(rule):
+def candidate_tokens(rule):
     """
-    Return every executable name one rule can be running as.
+    Return every command-line token that identifies one rule's process.
 
-    Usually one. The leading experiment is the exception: all four of its
-    conditions register under the ROS node name `bottom_up_tree_node`, so the
-    graph cannot say which of them is up and each has to be looked for.
+    Two shapes, because ROS 2 offers two. A node started without a `name=`
+    carries only its **executable** (`controller_server`), and one started with
+    a `name=` also carries a `__node:=` **remap** -- which is the only handle on
+    a node like `lifecycle_manager_navigation`, whose executable is a bare
+    `lifecycle_manager` shared with the localization and keepout managers that
+    must be shut down cleanly rather than signalled.
+
+    The leading experiment is the other special case: all four of its conditions
+    register under the ROS node name `bottom_up_tree_node`, so the graph cannot
+    say which executable is up and each has to be looked for.
     """
+    tokens = ["__node:={}".format(rule.node)]
     if rule.executable == "bottom_up_tree_node":
-        return tuple(LEADING_EXECUTABLES)
-    return (rule.executable,)
+        tokens.extend(LEADING_EXECUTABLES)
+    elif rule.executable:
+        tokens.append(rule.executable)
+    else:
+        return tuple(tokens)
+    return tuple(tokens)
 
 
-def executables_to_signal(steps):
-    """Return the executable names the BY_PROCESS half of a plan looks for."""
-    names = []
+def candidate_executables(rule):
+    """Return the executable names one rule can be running as."""
+    return tuple(token for token in candidate_tokens(rule)
+                 if not token.startswith("__node:="))
+
+
+def tokens_to_signal(steps):
+    """Return `{token: rule}` for the BY_PROCESS half of a plan."""
+    table = {}
     for rule in steps.get(BY_PROCESS, ()):
-        for name in candidate_executables(rule):
-            if name not in names:
-                names.append(name)
-    return names
+        for token in candidate_tokens(rule):
+            table.setdefault(token, rule)
+    return table
 
 
-def matches_executable(cmdline, executables):
+def matches_process(cmdline, tokens):
     """
-    Return the executable a command line runs, if it is one of `executables`.
+    Return the token identifying what a command line runs, or "".
 
-    The command line is compared argument by argument against the *basename* of
-    each argument, so `/opt/ros/install/lib/mecanumbot_seek/seek_bt_node` is a
-    match and `ros2 launch mecanumbot_seek launch_seek.launch.py` is not. A
-    loose substring search over the whole line would match a launch file that
-    only names the node, and killing the launch that starts the drivers because
-    it mentions a tree is exactly the accident this is written to avoid.
+    Each argument is compared whole, and by the **basename** of its path, so
+    `/opt/ros/humble/lib/nav2_controller/controller_server` matches and
+    `ros2 launch mecanumbot_seek launch_seek.launch.py` does not. A loose
+    substring search over the whole line would match a launch file that only
+    names the node, and killing the launch that starts the drivers because its
+    command line mentions a tree is the accident this is written to avoid.
     """
     for argument in cmdline:
-        base = str(argument).rsplit("/", 1)[-1]
-        if base in executables:
+        text = str(argument)
+        if text in tokens:
+            return text
+        base = text.rsplit("/", 1)[-1]
+        if base in tokens:
             return base
     return ""
 
 
-def processes_to_signal(processes, executables, keep_pids=(), keep_groups=()):
+def processes_to_signal(processes, tokens, keep_pids=(), keep_groups=()):
     """
-    Return `(pid, executable)` for every process that should be signalled.
+    Return `(pid, token)` for every process that should be signalled.
 
     `processes` are `(pid, process_group, cmdline)` triples. This process and
     its own process group are never included: the preflight runs from the same
-    launch as the explorer it is clearing the way for, and a launch file that
-    kills itself would be a memorable way to start a trial.
+    launch as the pass it is clearing the way for, and a launch file that kills
+    itself would be a memorable way to start a trial.
     """
     keep_pids = set(keep_pids)
     keep_groups = set(keep_groups)
@@ -278,10 +346,29 @@ def processes_to_signal(processes, executables, keep_pids=(), keep_groups=()):
     for pid, group, cmdline in processes:
         if pid in keep_pids or group in keep_groups:
             continue
-        executable = matches_executable(cmdline, executables)
-        if executable:
-            hits.append((pid, executable))
+        token = matches_process(cmdline, tokens)
+        if token:
+            hits.append((pid, token))
     return hits
+
+
+def blocking(steps, still_running):
+    """
+    Return the contradictions that make an autoslam pass impossible.
+
+    Not the same question as "did everything stop". A tree on the operator PC
+    that could not be signalled from here degrades a pass; a study
+    `controller_server` still holding the name ours needs *prevents* it, because
+    nav2's bringup will abort on the collision and take our own servers down
+    with it. Only the second is worth refusing to start over.
+    """
+    names = {bare(name) for name in still_running}
+    blocked = []
+    for group in steps.values():
+        for rule in group:
+            if rule.collides and rule.node in names:
+                blocked.append(rule)
+    return blocked
 
 
 def summary(steps):
