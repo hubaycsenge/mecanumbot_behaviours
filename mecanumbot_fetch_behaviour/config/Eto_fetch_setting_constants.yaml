@@ -91,9 +91,10 @@ fetch_bt_node:
     # current band is invisible however good the detector is, so a search with a
     # fixed head is a search for balls at one distance.
     #
-    # This is also why `ball.range_source` in the perception layer is left on
-    # `size` rather than `ground_plane`: the tilt is moving, and nothing tells
-    # the fusion node what it currently is.
+    # `ball.range_source` in the perception layer stays on `size`, whose range
+    # does not depend on the tilt. The ball's height does, so the fusion node
+    # places each frame with the neck position it was taken at (`ball.neck.*`
+    # there) rather than with one fixed pitch.
     fetch_head_low: 3.0
     fetch_head_high: 6.5
     # Seconds for one down-and-up lap. Slow enough that the detector gets

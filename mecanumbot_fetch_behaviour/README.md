@@ -108,9 +108,12 @@ balls at one distance. The sweep is a **triangle** wave and not a sine, because 
 lingers at both ends and hurries through the middle — and the middle of this range is the
 band a ball two metres away sits in.
 
-The moving tilt is also why `ball.range_source` in the perception layer stays on `size`:
-the apparent-size range does not care where the camera is pointing, and nothing tells the
-fusion node what the tilt currently is.
+`ball.range_source` in the perception layer stays on `size`, whose range does not depend
+on the tilt. The ball's **height** does — it is that range along a ray the tilt points —
+so the fusion node places every frame with the neck position it was taken at
+(`ball.neck.*` there), not with one fixed pitch. Placed as if the camera looked level, a
+ball on the floor seen with the head down comes out as high as the camera, and
+`CheckBallReachable` calls it out of reach.
 
 ## Height is what decides whether the ball can be had
 
