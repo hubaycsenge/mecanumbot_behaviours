@@ -46,6 +46,26 @@ fetch_bt_node:
     fetch_sighting_dwell: 0.4
 
     # ==========================================================================
+    # What the body does while searching
+    # ==========================================================================
+    # spin | circles. `spin` turns one full revolution on the spot per lap
+    # (`fetch_search_laps` of them), so every bearing from where the robot
+    # stands is looked at. `circles` drives the widening circles below, which
+    # cover more floor but only look along the direction of travel, and so can
+    # drive straight past a ball lying beside the starting point. Like
+    # `fetch_circle_facing`, this is a choice about what the robot attends to.
+    fetch_search_strategy: spin
+
+    # The revolution's speed [rad/s] and how long one may take [s] -- the
+    # movement library's full-scan constants, which `FetchScan` reads. The speed
+    # is tied to the head sweep: a bearing stays in the ~60 deg view for
+    # 1.05 / speed seconds, and the head needs half of `fetch_head_sweep_period`
+    # (3 s) to go from floor to far wall, so above ~0.35 a ball can pass through
+    # the view while the head is looking at the wrong band.
+    full_scan_spin_speed: 0.3
+    full_scan_timeout: 45.0
+
+    # ==========================================================================
     # The circling search
     # ==========================================================================
     # Widening circles around wherever the robot was standing when it started
