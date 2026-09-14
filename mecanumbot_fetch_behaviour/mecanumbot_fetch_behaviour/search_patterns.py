@@ -49,6 +49,13 @@ import math
 # Full circle, spelled once.
 TAU = 2.0 * math.pi
 
+# What the robot's body does while it searches. `spin` turns one full revolution
+# on the spot per lap; `circles` drives the widening circles below. The head
+# sweeps in both.
+SEARCH_SPIN = "spin"
+SEARCH_CIRCLES = "circles"
+SEARCH_STRATEGIES = (SEARCH_SPIN, SEARCH_CIRCLES)
+
 # Which way the robot faces at each stop on a circle.
 FACING_TANGENT = "tangent"
 FACING_INWARD = "inward"

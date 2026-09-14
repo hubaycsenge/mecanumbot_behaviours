@@ -17,7 +17,7 @@ close counts as having arrived.
 
 from mecanumbot_movement_behaviours.approach import Approach
 from mecanumbot_movement_behaviours.keys import DEFAULT_KEYS
-from mecanumbot_movement_behaviours.turning import FindPeople, TurnToward
+from mecanumbot_movement_behaviours.turning import FindPeople, Spin360, TurnToward
 
 FETCH_KEYS = DEFAULT_KEYS.derive(
     target_position="fetch_ball_position",
@@ -40,3 +40,19 @@ class FetchFindPeople(FindPeople):
     """`FindPeople`, bound to this package's key spelling."""
 
     KEYS = FETCH_KEYS
+
+
+class FetchScan(Spin360):
+    """
+    One full revolution on the spot, looking for a ball.
+
+    The same binding as `mecanumbot_seek`'s `SeekScan`: `Spin360` does not act
+    on what it sees, because `WatchForBall` is the sibling that does, and
+    `head=None` leaves the neck to `SweepHead` instead of lifting it for people.
+    Speed and timeout are the library's `full_scan_*` constants.
+    """
+
+    KEYS = FETCH_KEYS
+
+    def __init__(self, name="FetchScan", **kwargs):
+        super().__init__(name, head=None, **kwargs)

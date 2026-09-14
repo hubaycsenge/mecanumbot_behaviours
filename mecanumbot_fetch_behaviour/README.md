@@ -15,7 +15,10 @@ ROOT (memory)
         │   │   └── SearchUntilSighted            parallel, SuccessOnSelected([WatchForBall])
         │   │       ├── SweepHead                 always RUNNING — tilts the neck up and down
         │   │       ├── WatchForBall              the only child that can end the parallel
-        │   │       └── CircleSearch              widening circles; fails when the laps run out
+        │   │       └── GiveUpAfterSpinning       fetch_search_strategy: spin (default) — fails after the laps
+        │   │           └── SpinOnTheSpot ×fetch_search_laps
+        │   │               └── FullCircle        one revolution on the spot (Spin360, head left to SweepHead)
+        │   │       (or CircleSearch)             fetch_search_strategy: circles — widening circles
         │   ├── SecureBall
         │   │   └── RetryTheGrab  ×fetch_grasp_attempts
         │   │       ├── ApproachBall              nav2, re-aimed as the estimate refines
@@ -89,7 +92,18 @@ tree would fall into the approach with nothing sighted.
 
 ## The search has two dimensions, and they need two behaviours
 
-**`CircleSearch` covers the floor.** Widening circles around wherever the robot was
+**The body search is a strategy, `fetch_search_strategy`.** The default, `spin`, turns one
+full revolution on the spot per lap (`FetchScan`, the library's `Spin360` at
+`full_scan_spin_speed`), repeated `fetch_search_laps` times before the round is given up.
+It replaced `circles` as the default on 2026-09-14 because the circles missed balls: a
+tangent-facing robot only ever looks along its direction of travel, so a ball lying
+beside where it started is never in view. The spin looks at every bearing from one place,
+at every tilt of the head sweep provided the spin stays below ~0.35 rad/s (a bearing is in
+the 60° view for 1.05/speed s, and the head needs half its 6 s period to cross the bands).
+What it gives up is reach: it never moves, so a ball too far to detect from the start stays
+unfound, and the round fails and restarts after `fetch_rest`.
+
+**`CircleSearch` (`circles`) covers the floor.** Widening circles around wherever the robot was
 standing when it started looking. A circle rather than a lawnmower sweep because the
 constraint is the camera's ~60°, not the floor: what matters is ending up pointed in
 every direction from a spread of places, and going round is the cheapest way to do that
