@@ -48,7 +48,17 @@ ros2 launch mecanumbot_fetch_behaviour launch_fetch.launch.py
 # watch it
 ros2 topic echo /mecanumbot/fetch/state
 ros2 topic echo /mecanumbot/ball_fusion
+
+# and see what the detector sees (debug_image:=false turns it off)
+ros2 run rqt_image_view rqt_image_view /mecanumbot/cam_object_detections/debug_image/compressed
 ```
+
+The launch starts the detector with `debug_image:=true`, so it publishes the frame the
+network was given with every box on it: people blue, balls yellow, and a refused box red
+with the check it failed (`score`, `size`, `shape`, `unconfirmed`). With `use_camera`
+false, the default, this is the only view of the camera there is. It costs a copy of
+the frame out of GPU memory and a JPEG encode per frame; switch it off for runs that
+need the GPU and CPU headroom.
 
 The launch file includes `mecanumbot_sensorprocess_smart`'s `perception.launch.py` with
 `detector:=fetch`; `use_perception:=false` when it is already running.

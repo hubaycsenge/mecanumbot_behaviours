@@ -27,6 +27,15 @@ Watch a round with::
 
     ros2 topic echo /mecanumbot/fetch/state
     ros2 topic echo /mecanumbot/ball_fusion
+
+and see what the detector sees -- on by default here, ``debug_image:=false``
+to save the per-frame JPEG encode::
+
+    ros2 run rqt_image_view rqt_image_view \
+        /mecanumbot/cam_object_detections/debug_image/compressed
+
+People are drawn blue, balls yellow, and a refused box red with the check it
+failed (score | size | shape | unconfirmed).
 """
 
 import os
@@ -132,6 +141,14 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument(
+                "debug_image",
+                default_value="true",
+                description=(
+                    "Publish the fetch detector's annotated frame on "
+                    "/mecanumbot/cam_object_detections/debug_image/compressed"
+                ),
+            ),
+            DeclareLaunchArgument(
                 "camera_width", default_value="1280", description="Frame width"
             ),
             DeclareLaunchArgument(
@@ -170,6 +187,7 @@ def generate_launch_description():
                     "namespace": namespace,
                     "detector": "fetch",
                     "use_camera": LaunchConfiguration("use_camera"),
+                    "debug_image": LaunchConfiguration("debug_image"),
                     "camera_width": LaunchConfiguration("camera_width"),
                     "camera_height": LaunchConfiguration("camera_height"),
                     "fetch_imgsz": LaunchConfiguration("fetch_imgsz"),
