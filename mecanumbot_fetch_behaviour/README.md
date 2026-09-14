@@ -15,10 +15,11 @@ ROOT (memory)
         │   │   └── SearchUntilSighted            parallel, SuccessOnSelected([WatchForBall])
         │   │       ├── SweepHead                 always RUNNING — tilts the neck up and down
         │   │       ├── WatchForBall              the only child that can end the parallel
-        │   │       └── GiveUpAfterSpinning       fetch_search_strategy: spin (default) — fails after the laps
-        │   │           └── SpinOnTheSpot ×fetch_search_laps
-        │   │               └── FullCircle        one revolution on the spot (Spin360, head left to SweepHead)
-        │   │       (or CircleSearch)             fetch_search_strategy: circles — widening circles
+        │   │       └── SpinAndHop  (repeat)       fetch_search_strategy: spin (default)
+        │   │           └── TurnThenMove
+        │   │               ├── FullCircle        one revolution where it stands (Spin360, head left to SweepHead)
+        │   │               └── HopToNextSpot     nav2 to the next spot; fails when the laps run out
+        │   │       (or CircleSearch)             fetch_search_strategy: circles — widening circles, no stops
         │   ├── SecureBall
         │   │   └── RetryTheGrab  ×fetch_grasp_attempts
         │   │       ├── ApproachBall              nav2, re-aimed as the estimate refines
@@ -92,16 +93,21 @@ tree would fall into the approach with nothing sighted.
 
 ## The search has two dimensions, and they need two behaviours
 
-**The body search is a strategy, `fetch_search_strategy`.** The default, `spin`, turns one
-full revolution on the spot per lap (`FetchScan`, the library's `Spin360` at
-`full_scan_spin_speed`), repeated `fetch_search_laps` times before the round is given up.
-It replaced `circles` as the default on 2026-09-14 because the circles missed balls: a
-tangent-facing robot only ever looks along its direction of travel, so a ball lying
-beside where it started is never in view. The spin looks at every bearing from one place,
-at every tilt of the head sweep provided the spin stays below ~0.35 rad/s (a bearing is in
-the 60° view for 1.05/speed s, and the head needs half its 6 s period to cross the bands).
-What it gives up is reach: it never moves, so a ball too far to detect from the start stays
-unfound, and the round fails and restarts after `fetch_rest`.
+**The body search is a strategy, `fetch_search_strategy`.** The default, `spin`, turns a
+full circle where the robot stands (`FetchScan`, the library's `Spin360` at
+`full_scan_spin_speed`), drives to the next spot (`HopToNextSpot`), and turns a full circle
+again. The spots are rings around where the search began, nearest first, laid out with the
+same `expanding_circles` as the circling search but sparser (`fetch_spot_*`): a spot is
+looked round from, so neighbours need only be about two detection ranges apart. A lap is
+every spot once — 9 spots in both rooms as shipped — and after `fetch_search_laps` laps the
+round is given up. `fetch_search_timeout` was raised to 900 s for it, since one lap is ten
+turns of ~25 s plus the drives.
+
+`spin` replaced `circles` as the default on 2026-09-14 because the circles missed balls: a
+tangent-facing robot only ever looks along its direction of travel, so a ball lying beside
+it is never in view. A full turn looks at every bearing, at every tilt of the head sweep
+provided the turn stays below ~0.35 rad/s (a bearing is in the 60° view for 1.05/speed s,
+and the head needs half its 6 s period to cross the bands).
 
 **`CircleSearch` (`circles`) covers the floor.** Widening circles around wherever the robot was
 standing when it started looking. A circle rather than a lawnmower sweep because the

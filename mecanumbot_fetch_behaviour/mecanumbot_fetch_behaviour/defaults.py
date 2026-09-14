@@ -34,14 +34,28 @@ FETCH_DEFAULTS = {
     "fetch_ball_class": "sports ball",
 
     # ===== What the body does while searching =================================
-    # spin | circles. `spin` turns one full revolution on the spot per lap, at
-    # the movement library's `full_scan_spin_speed`, so every bearing from where
-    # the robot stands is looked at, at every tilt of the head sweep. `circles`
-    # drives the widening circles below, which cover more floor but only ever
-    # look along the direction of travel -- and so can drive past a ball lying
-    # beside the robot's own starting point. A research choice about what the
-    # robot attends to, like `fetch_circle_facing`.
+    # spin | circles. `spin` turns a full revolution where the robot stands, at
+    # the movement library's `full_scan_spin_speed`, drives to the next spot
+    # (`fetch_spot_*` below), and turns again -- so every bearing from each spot
+    # is looked at, at every tilt of the head sweep. `circles` drives the
+    # widening circles below without stopping, which only ever looks along the
+    # direction of travel and so can drive past a ball lying beside the robot.
+    # A research choice about what the robot attends to, like
+    # `fetch_circle_facing`.
     "fetch_search_strategy": "spin",
+
+    # ===== The spots the `spin` search turns at ===============================
+    # Rings of spots around where the search began, nearest ring first, the
+    # same layout as the circles but sparser: a spot is looked round from, so
+    # neighbouring spots need only be about two detection ranges apart [m].
+    "fetch_spot_first": 1.5,
+    "fetch_spot_step": 1.5,
+    "fetch_spot_max": 3.0,
+    "fetch_spot_spacing": 3.0,
+    # Bounds on the spots per ring. Three is enough when each one is a full
+    # turn; the ceiling keeps a lap from becoming a quarter of an hour.
+    "fetch_spot_min_stops": 3,
+    "fetch_spot_max_stops": 8,
 
     # ===== The circling search ================================================
     # Radius of the first circle and how much each lap adds [m].
@@ -70,8 +84,8 @@ FETCH_DEFAULTS = {
     # Laps of the whole pattern before the search gives up, and the backstop in
     # seconds. Each lap rebuilds the circles from the innermost radius, because
     # a ball that was not there a minute ago may have been thrown there since.
-    # With `spin`, a lap is one revolution; the backstop is then the library's
-    # per-revolution `full_scan_timeout` instead.
+    # With `spin`, a lap is every spot once, each with its full turn -- several
+    # minutes, which the backstop has to allow for.
     "fetch_search_laps": 3,
     "fetch_search_timeout": 300.0,
 

@@ -48,15 +48,28 @@ fetch_bt_node:
     # ==========================================================================
     # What the body does while searching
     # ==========================================================================
-    # spin | circles. `spin` turns one full revolution on the spot per lap
-    # (`fetch_search_laps` of them), so every bearing from where the robot
-    # stands is looked at. `circles` drives the widening circles below, which
-    # cover more floor but only look along the direction of travel, and so can
-    # drive straight past a ball lying beside the starting point. Like
-    # `fetch_circle_facing`, this is a choice about what the robot attends to.
+    # spin | circles. `spin` turns a full circle where the robot stands, drives
+    # to the next spot, and turns a full circle again, so every bearing from each
+    # spot is looked at. `circles` drives the widening circles below without
+    # stopping, which only looks along the direction of travel and so can drive
+    # straight past a ball lying beside the robot. Like `fetch_circle_facing`,
+    # this is a choice about what the robot attends to.
     fetch_search_strategy: spin
 
-    # The revolution's speed [rad/s] and how long one may take [s] -- the
+    # The spots `spin` turns at: rings around where the search began, nearest
+    # first, laid out like the circles but sparser -- a spot is looked round
+    # from, so neighbours need only be about two detection ranges apart. Radius
+    # of the first ring, what each adds, the outermost [m], and the distance
+    # between spots along a ring [m]. A lap is every spot once.
+    fetch_spot_first: 1.5
+    fetch_spot_step: 1.5
+    fetch_spot_max: 3.0
+    fetch_spot_spacing: 3.0
+    # Bounds on the spots per ring.
+    fetch_spot_min_stops: 3
+    fetch_spot_max_stops: 8
+
+    # The full turn's speed [rad/s] and how long one may take [s] -- the
     # movement library's full-scan constants, which `FetchScan` reads. The speed
     # is tied to the head sweep: a bearing stays in the ~60 deg view for
     # 1.05 / speed seconds, and the head needs half of `fetch_head_sweep_period`
@@ -108,7 +121,9 @@ fetch_bt_node:
     # was not at the robot's feet a minute ago may well be there now because
     # somebody threw it.
     fetch_search_laps: 3
-    fetch_search_timeout: 300.0
+    # Raised from 300 s for the `spin` search, one lap of which is 10 full
+    # turns (~25 s each) plus the drives between them.
+    fetch_search_timeout: 900.0
 
     # ==========================================================================
     # The head sweep

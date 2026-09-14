@@ -6,9 +6,10 @@ round repeated for ever:
 
     1. the robot looks for a ball -- two branches at once:
          a. it watches for one, everywhere, the whole time;
-         b. it turns full circles on the spot (`fetch_search_strategy: spin`,
-            the default) or drives widening circles around where it started
-            (`circles`), sweeping its head up and down either way;
+         b. it turns a full circle, drives to another spot and turns again
+            (`fetch_search_strategy: spin`, the default), or drives widening
+            circles around where it started without stopping (`circles`),
+            sweeping its head up and down either way;
     2. the moment (a) succeeds, (b) is abandoned mid-drive;
     3. it drives up to the ball, checks the ball is on the floor and not on a
        table or in a hand, and closes the grabbers -- retried as a whole,
@@ -82,6 +83,7 @@ from mecanumbot_fetch_behaviour.behaviours.delivery import (
 )
 from mecanumbot_fetch_behaviour.behaviours.searching import (
     CircleSearch,
+    HopToNextSpot,
     SweepHead,
     WatchForBall,
 )
@@ -113,16 +115,16 @@ def get_yaml_path():
     return resolve_yaml_path(TREE_NAME, DEFAULT_YAML_FILENAME)
 
 
-def create_body_search(strategy, laps):
+def create_body_search(strategy):
     """
-    Build the search branch that moves the robot: spin on the spot, or circles.
+    Build the search branch that moves the robot: spin-and-hop, or circles.
 
-    Both only ever run or fail. `CircleSearch` is written that way; the spin is
-    made so here, because `Repeat` succeeds after its last revolution and a
-    search branch that succeeds would be re-ticked by the parallel and spin for
-    ever -- `SuccessIsFailure` turns "went round `laps` times" into "gave up".
-    A revolution that times out fails the `Repeat` and so the search, the same
-    as `CircleSearch`'s backstop.
+    Both only ever run or fail. `spin` is a full turn where the robot stands,
+    then a drive to the next spot, repeated with no success count: the turn and
+    the hop both succeed every time, so the repeat ends only when a hop fails --
+    the spots' laps or `fetch_search_timeout` have run out -- or when a turn
+    times out. The turn comes first so the robot looks round where it already
+    is before driving anywhere.
     """
     if strategy == SEARCH_CIRCLES:
         return CircleSearch(name="CircleSearch")
@@ -130,17 +132,16 @@ def create_body_search(strategy, laps):
         raise ValueError(
             f"fetch_search_strategy '{strategy}', expected one of {SEARCH_STRATEGIES}"
         )
-    return py_trees.decorators.SuccessIsFailure(
-        name="GiveUpAfterSpinning",
-        child=py_trees.decorators.Repeat(
-            name="SpinOnTheSpot",
-            child=FetchScan(name="FullCircle"),
-            num_success=max(1, int(laps)),
-        ),
+    turn_then_move = py_trees.composites.Sequence(name="TurnThenMove", memory=True)
+    turn_then_move.add_children(
+        [FetchScan(name="FullCircle"), HopToNextSpot(name="HopToNextSpot")]
+    )
+    return py_trees.decorators.Repeat(
+        name="SpinAndHop", child=turn_then_move, num_success=-1
     )
 
 
-def create_search(strategy=SEARCH_SPIN, laps=3):
+def create_search(strategy=SEARCH_SPIN):
     """
     Look for a ball: watch for one, turn or circle for one, and sweep the head.
 
@@ -159,7 +160,7 @@ def create_search(strategy=SEARCH_SPIN, laps=3):
         [
             SweepHead(name="SweepHead"),
             watch,
-            create_body_search(strategy, laps),
+            create_body_search(strategy),
         ]
     )
 
@@ -254,12 +255,12 @@ def create_delivery(turn_timeout):
     return handover
 
 
-def create_episode(attempts, turn_timeout, strategy=SEARCH_SPIN, laps=3):
+def create_episode(attempts, turn_timeout, strategy=SEARCH_SPIN):
     """Build one full round of fetch, from looking to letting go."""
     episode = py_trees.composites.Sequence(name="FetchEpisode", memory=True)
     episode.add_children(
         [
-            create_search(strategy, laps),
+            create_search(strategy),
             create_secure(attempts),
             create_delivery(turn_timeout),
             ClearFetchEpisode(name="EndEpisode", reason="ball delivered"),
@@ -305,7 +306,6 @@ def create_root(yaml_path=None):
     turn_timeout = float(TUNABLES.file_constant(params, "fetch_offer_turn_timeout"))
     # The search's shape is structure too: which subtree the body search is.
     strategy = str(TUNABLES.file_constant(params, "fetch_search_strategy"))
-    laps = TUNABLES.file_constant(params, "fetch_search_laps")
 
     root = py_trees.composites.Sequence("ROOT", memory=True)
     root.add_children(
@@ -313,7 +313,7 @@ def create_root(yaml_path=None):
             FetchParamsToBlackboard(name="LoadFetchParams", yaml_path=yaml_path),
             py_trees.decorators.Repeat(
                 name="FetchLoop",
-                child=create_episode(attempts, turn_timeout, strategy, laps),
+                child=create_episode(attempts, turn_timeout, strategy),
                 num_success=-1,
             ),
         ]

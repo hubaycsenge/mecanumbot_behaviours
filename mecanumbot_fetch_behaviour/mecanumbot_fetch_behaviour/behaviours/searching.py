@@ -11,6 +11,8 @@ search steps instead would mean the robot drives straight past a ball it can see
 and notices at the next stop.
 
 `CircleSearch` is where it drives, and `SweepHead` is where it points its head.
+(`HopToNextSpot` is `CircleSearch` cut into single drives, for the search that
+turns a full circle at each place it stops.)
 They are separate because they search different dimensions and neither can do
 the other's job: circling covers the floor, sweeping covers the *band* of that
 floor the camera can see at all. A ball outside the current tilt's band is
@@ -35,6 +37,7 @@ from mecanumbot_movement_behaviours.ros_interfaces import (
 from mecanumbot_fetch_behaviour.behaviours.ros_interfaces import BallDetectionTracker
 from mecanumbot_fetch_behaviour.defaults import constant, register_param_keys
 from mecanumbot_fetch_behaviour.search_patterns import (
+    FACING_TANGENT,
     expanding_circles,
     head_sweep,
     nearest_unvisited,
@@ -82,6 +85,17 @@ class WatchForBall(py_trees.behaviour.Behaviour):
             timeout=constant(self.blackboard, "fetch_detection_timeout"),
             class_id=str(constant(self.blackboard, "fetch_ball_class")) or None,
         )
+        # A label that matches nothing drops every ball without a sound, so the
+        # one in force is said at startup.
+        self.node.get_logger().info(
+            f"{self.name}: watching {self.balls._subscription.topic_name} for "
+            + (
+                f"balls labelled {self.balls.class_id!r}"
+                if self.balls.class_id
+                else "balls with any label"
+            )
+            + f" at score >= {self.threshold:.2f}"
+        )
         self.logger.info(f"{self.name}: Setup complete")
         return True
 
@@ -100,6 +114,7 @@ class WatchForBall(py_trees.behaviour.Behaviour):
                 self.node.get_logger().info(f"{self.name}: lost sight of it again")
             self._sighted_since = None
             self.feedback_message = f"nothing at or above {self.threshold:.2f}"
+            self._explain_ignored_ball()
             return py_trees.common.Status.RUNNING
 
         now = self.node.get_clock().now()
@@ -127,6 +142,48 @@ class WatchForBall(py_trees.behaviour.Behaviour):
             f"{position.z * 100:.0f} cm up"
         )
         return py_trees.common.Status.SUCCESS
+
+    def _explain_ignored_ball(self):
+        """
+        Say why a ball that is being published is not being acted on.
+
+        Silent only when `ball_detections` is silent too. A message that arrived
+        in the last couple of seconds and still does not count is one of three
+        things, and each points somewhere different: the label does not match
+        `fetch_ball_class`, the score is under `fetch_detection_threshold`, or
+        the stamp is older than `fetch_detection_timeout` although the message
+        is new -- which is two clocks disagreeing, not a slow network.
+        """
+        received = self.balls.received_age()
+        if received is None or received > 2.0:
+            return
+        logger = self.node.get_logger()
+        hypothesis = self.balls.hypothesis
+        if self.balls.last_ignored_classes and (
+            hypothesis is None or not self.balls.fresh()
+        ):
+            reason = (
+                f"it is labelled {list(self.balls.last_ignored_classes)}, and "
+                f"fetch_ball_class is {self.balls.class_id!r}"
+            )
+        elif hypothesis is None:
+            return
+        elif not self.balls.fresh():
+            reason = (
+                f"its stamp is {self.balls.age:.2f} s old although it arrived "
+                f"{received:.2f} s ago, over fetch_detection_timeout "
+                f"{self.balls.timeout:.2f} s -- the publisher's clock and this "
+                "node's disagree"
+            )
+        else:
+            reason = (
+                f"its score {hypothesis.score:.2f} is under "
+                f"fetch_detection_threshold {self.threshold:.2f}"
+            )
+        logger.warn(
+            f"{self.name}: ball_detections has a ball, ignored because {reason}",
+            throttle_duration_sec=2.0,
+        )
 
 
 class SweepHead(py_trees.behaviour.Behaviour):
@@ -253,9 +310,12 @@ class CircleSearch(py_trees.behaviour.Behaviour):
     def initialise(self):
         """Start a fresh search: no centre yet, no waypoints, nothing visited."""
         self.nav2.reset()
-        self._start = self.node.get_clock().now()
         self._waypoint_started = None
         self._current = None
+        self._start_search()
+
+    def _start_search(self):
+        self._start = self.node.get_clock().now()
         self._centre = None
         self.blackboard.fetch_search_waypoints = []
         self.blackboard.fetch_search_visited = set()
@@ -306,6 +366,10 @@ class CircleSearch(py_trees.behaviour.Behaviour):
 
     def _elapsed(self):
         return (self.node.get_clock().now() - self._start).nanoseconds / 1e9
+
+    def _arrived(self):
+        """Keep going on reaching a stop: the circle is not over."""
+        return py_trees.common.Status.RUNNING
 
     def _build_circles(self):
         """Lay out the circles for one lap, tightest first."""
@@ -362,7 +426,7 @@ class CircleSearch(py_trees.behaviour.Behaviour):
         if status == STATUS_SUCCEEDED or self._at(waypoints[index]):
             self.blackboard.fetch_search_visited.add(index)
             self._current = None
-            return py_trees.common.Status.RUNNING
+            return self._arrived()
 
         if held > self.waypoint_timeout or (
             status is not None and status not in GOAL_ACTIVE_STATUSES
@@ -400,3 +464,54 @@ class CircleSearch(py_trees.behaviour.Behaviour):
             distance_xy(self.pose.pose.position, Point(x=float(x), y=float(y)))
             <= self.reached
         )
+
+
+class HopToNextSpot(CircleSearch):
+    """
+    Drive to the next place to turn a full circle from; SUCCESS on arrival.
+
+    The other half of the `spin` search, which alternates a full revolution on
+    the spot with one of these. The spots are laid out like `CircleSearch`'s
+    stops -- rings around where the search began, nearest first -- but sparser,
+    because each one is looked round from rather than looked along: one spot
+    per `fetch_spot_spacing` metres of ring, not per camera width.
+
+    The pattern outlives the behaviour. Every hop re-enters this behaviour, so
+    unlike `CircleSearch` it does not start the search over on `initialise()`;
+    it starts over only when the episode's search state is empty and no lap has
+    been counted, which is what `ClearFetchEpisode` leaves behind. FAILURE is
+    the same as `CircleSearch`'s: the laps or `fetch_search_timeout` ran out.
+    """
+
+    def setup(self, **kwargs):
+        """Read `CircleSearch`'s constants, then the spot layout over them."""
+        super().setup(**kwargs)
+        self.first_radius = float(constant(self.blackboard, "fetch_spot_first"))
+        self.radius_step = float(constant(self.blackboard, "fetch_spot_step"))
+        self.max_radius = float(constant(self.blackboard, "fetch_spot_max"))
+        self.spacing = float(constant(self.blackboard, "fetch_spot_spacing"))
+        self.min_stops = int(constant(self.blackboard, "fetch_spot_min_stops"))
+        self.max_stops = int(constant(self.blackboard, "fetch_spot_max_stops"))
+        # The robot turns a full circle at every spot, so which way it arrives
+        # facing is not a search choice here; facing the way it drove in is the
+        # goal nav2 finishes soonest.
+        self.facing = FACING_TANGENT
+        self._centre = None
+        return True
+
+    def _start_search(self):
+        fresh = (
+            self._centre is None
+            or not self.blackboard.fetch_search_waypoints
+            and self.blackboard.fetch_laps_done == 0
+        )
+        if fresh:
+            super()._start_search()
+
+    def _arrived(self):
+        visited = len(self.blackboard.fetch_search_visited)
+        total = len(self.blackboard.fetch_search_waypoints)
+        self.node.get_logger().info(
+            f"{self.name}: at spot {visited}/{total}, turning a full circle"
+        )
+        return py_trees.common.Status.SUCCESS

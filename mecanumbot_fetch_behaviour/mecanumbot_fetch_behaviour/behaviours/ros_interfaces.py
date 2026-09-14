@@ -41,6 +41,24 @@ FETCH_STATE_TOPIC = "/mecanumbot/fetch/state"
 ACCESSORY_TOPIC = "/cmd_accessory_pos"
 
 
+def class_filter(value):
+    """
+    Return the label a ball has to carry, or None to accept any label.
+
+    `fetch_ball_class: None` in a constants file reaches here as the *string*
+    'None' -- YAML's null is `null` or `~` -- and so does a YAML null after the
+    call sites' `str()`. Taken literally, either one means "only balls labelled
+    None", which silently ignores every ball there is. Nothing is labelled
+    None, so all of these mean "no filter".
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if text in ("", "None", "none", "null", "~"):
+        return None
+    return text
+
+
 class BallHypothesis:
     """One located ball, reduced to what the tree acts on."""
 
@@ -74,9 +92,14 @@ class BallDetectionTracker:
     def __init__(self, node, timeout=1.0, class_id=None, topic=BALL_DETECTIONS_TOPIC):
         self.node = node
         self.timeout = float(timeout)
-        self.class_id = class_id
+        self.class_id = class_filter(class_id)
         self.hypothesis = None
         self.last_seen = None
+        # When the last message of any kind arrived, by this node's clock, and
+        # what it carried that was not used -- so a ball that is published but
+        # never acted on can say why instead of vanishing.
+        self.last_received = None
+        self.last_ignored_classes = ()
         self._robot_position = None
         self._subscription = node.create_subscription(
             Detection3DArray, topic, self._callback, 10
@@ -107,12 +130,21 @@ class BallDetectionTracker:
         """Say whether a ball is in sight at or above a confidence threshold."""
         return self.fresh() and self.hypothesis.score >= float(threshold)
 
+    def received_age(self):
+        """Seconds since any message arrived, by this node's clock, or None."""
+        if self.last_received is None:
+            return None
+        return (self.node.get_clock().now() - self.last_received).nanoseconds / 1e9
+
     def _callback(self, msg):
+        self.last_received = self.node.get_clock().now()
         best = None
         best_distance = None
+        ignored = set()
         for detection in msg.detections:
             for result in detection.results:
                 if self.class_id and result.hypothesis.class_id != self.class_id:
+                    ignored.add(result.hypothesis.class_id)
                     continue
                 candidate = BallHypothesis(
                     result.hypothesis.class_id,
@@ -122,6 +154,7 @@ class BallDetectionTracker:
                 distance = self._distance_to(candidate.position)
                 if best is None or distance < best_distance:
                     best, best_distance = candidate, distance
+        self.last_ignored_classes = tuple(sorted(ignored))
         if best is None:
             return
         self.hypothesis = best
