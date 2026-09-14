@@ -27,7 +27,7 @@ fetch_bt_node:
     # `ball.class_id` in that node's config -- it is the string a detection is
     # matched on, because the numeric class id belongs to whichever model the
     # camera happened to load.
-    fetch_ball_class: sports ball
+    fetch_ball_class: None
 
     # Confidence a detection needs before the robot acts on it. Flat, on
     # purpose: mecanumbot_seek takes this threshold from its SEEKING circuit, so
