@@ -11,14 +11,14 @@ created inside the behaviour classes, so a tree that uses one gets them.
 | --- | --- |
 | Nodes | None |
 | Launch files | None |
-| Depends on | `mecanumbot_bt_config`, `mecanumbot_msgs`, `rclpy`, `py_trees`, `geometry_msgs`, `action_msgs`, `nav2_msgs` |
+| Depends on | `mecanumbot_bt_config`, `mecanumbot_msgs`, `rclpy`, `py_trees`, `geometry_msgs`, `std_msgs`, `action_msgs`, `nav2_msgs`, `numpy` |
 
 ## Modules
 
 | Module | Contents |
 | --- | --- |
 | `geometry.py` | Pure geometry: angles, bearings, `signed_rotation`, `pose_to_goal`, `route_poses`, checkpoint lookups, `route_progress`. |
-| `pacing.py` | When a look back falls due and how far a leg may be. Imports nothing — the decision logic on its own. |
+| `pacing.py` | When a look back falls due, how far a leg may be, and the `+1, -2, +2, -1` step pattern of the attention wiggle. Imports nothing — the decision logic on its own. |
 | `ros_interfaces.py` | Topic names, QoS, pose/people/ball trackers, the Nav2 action navigators, velocity and neck commanders. |
 | `keys.py` | `KeyMap`: what an experiment calls the things these behaviours read off the blackboard. |
 | `defaults.py` | `MOVEMENT_DEFAULTS` — every tunable these behaviours used to hard-code — and the `Tunables` bound to them. |
@@ -81,8 +81,9 @@ class FollowRoute(routes.FollowRoute):
     KEYS = LEADING_KEYS
 ```
 
-`mecanumbot_leading_behaviour/behaviours/route_behaviours.py` is that binding
-for the leading experiments, and is what its trees import. Deriving with a name
+`mecanumbot_leading_behaviour/behaviours/keys.py` spells `LEADING_KEYS`, and
+`mecanumbot_leading_behaviour/behaviours/route_behaviours.py` binds it onto
+subclasses for the leading experiments; that is what its trees import. Deriving with a name
 that is not a field is an error rather than a key nothing ever reads.
 
 ## Navigating by action
@@ -188,13 +189,13 @@ behaviours.
 | --- | --- | --- |
 | `/cmd_vel` | `geometry_msgs/msg/Twist` | Every in-place rotation, profiled. |
 | `/cmd_accessory_pos` | `mecanumbot_msgs/msg/AccessMotorCmd` | Neck (camera tilt) and gripper commands. |
-| `/goal_pose` | `geometry_msgs/msg/PoseStamped` | Created by `Nav2GoalMonitor`, unused here — it stays for the ostensive package's pointing goals. |
+| `/goal_pose` | `geometry_msgs/msg/PoseStamped` | Created by `Nav2GoalMonitor` (every in-place turn builds one), unused here — it stays for the ostensive package's pointing goals. |
 
 ### Action clients
 
 | Action | Type | Used by |
 | --- | --- | --- |
-| `/navigate_to_pose` | `nav2_msgs/action/NavigateToPose` | `Approach` — one place to drive to. |
+| `/navigate_to_pose` | `nav2_msgs/action/NavigateToPose` | `Approach` — one place to drive to; also `FollowRoute`'s fallback when nav2 gives up on a leg, one checkpoint at a time. |
 | `/navigate_through_poses` | `nav2_msgs/action/NavigateThroughPoses` | `FollowRoute` — a leg of route checkpoints in one goal. |
 
 ### Subscribers
@@ -205,13 +206,14 @@ behaviours.
 | `/mecanumbot/people_fusion` | `geometry_msgs/msg/PoseArray` | Fused people detections — finding, selecting and approaching the subject. |
 | `/mecanumbot/subject_pose` | `geometry_msgs/msg/PoseStamped` | Tracked subject pose. Read together with the fused detections by `FollowedSubjectTracker`, whichever is fresher. |
 | `/mecanumbot/has_object` | `std_msgs/msg/Bool` | Ball-handover trigger read by `CheckRobotHasBall`. |
-| `/navigate_to_pose/_action/status` | `action_msgs/msg/GoalStatusArray` | Only for `Nav2GoalMonitor.busy()` — what a turn waits for before it takes `/cmd_vel`. |
+| `/navigate_to_pose/_action/status` | `action_msgs/msg/GoalStatusArray` | `Nav2GoalMonitor`: `busy()` — what a turn waits for before it takes `/cmd_vel` — and the outcome of a published `/goal_pose` for the ostensive package. |
 | `/navigate_through_poses/_action/status` | `action_msgs/msg/GoalStatusArray` | The same question for a waypoint run. |
 
 ## Tests
 
-`test/test_pacing.py` covers the look-back pacing rules — when a look back falls
-due, how long a leg may be, and the waypoint poses a leg is sent as. `pacing.py`
+`test/test_pacing.py` — 22 tests over the look-back pacing rules: when a look
+back falls due, how long a leg may be, the waypoint poses a leg is sent as, and
+the wiggle's sweep pattern. `pacing.py`
 imports nothing, so most of it runs against a bare interpreter; the three
 `route_poses` tests need `geometry_msgs` and skip without it.
 

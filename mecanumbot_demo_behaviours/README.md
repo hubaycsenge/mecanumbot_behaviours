@@ -62,7 +62,7 @@ executable tree nodes.
 | Behaviour           | Role                                                                                                                                                                             |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `FindPeople`        | Spins in place (`demo_spin_speed`) until a `people_fusion` message newer than `sight_timeout` arrives, then stops the robot.                                                     |
-| `GoToRandomPerson`  | Picks a detection fresher than `demo_sight_timeout` at random, builds a goal with the leading package's `pose_to_goal` (stopping `demo_person_stop_distance` short), publishes it and follows the Nav2 goal status until it succeeds. |
+| `GoToRandomPerson`  | Picks a detection fresher than `demo_sight_timeout` at random, builds a goal with the movement library's `pose_to_goal` (stopping `demo_person_stop_distance` short), publishes it and follows the Nav2 goal status until it succeeds. |
 | `ProcessDetections` | `hide_and_seek` — turns the first pose of the blackboard `pose_array` into `intercept_goal`; FAILURE when there is nothing to intercept, so the tree falls back to patrolling.   |
 | `GetNextWaypoint`   | `hide_and_seek` — cycles through the blackboard `waypoints` list, writing each in turn to `patrol_goal`.                                                                         |
 
@@ -116,10 +116,11 @@ and one constants file has one loader.
 
 Standalone waypoint generator: reads a map `.pgm` plus its `.yaml`, ray-casts a
 visibility score for every free cell, extracts the highest-visibility points with a
-minimum separation, converts them to Nav2 world coordinates and writes
-`<map>_waypoints.yaml`. Waypoint count, minimum separation and maximum ray range are
-auto-derived from the map resolution and free area when not given explicitly. Requires
-OpenCV (`cv2`).
+minimum separation, converts them to Nav2 world coordinates, orders them into the
+shortest closed patrol (A* drivable distances on the map, solved with Held–Karp) and
+writes `<map>_waypoints.yaml`. Waypoint count (one per 25 m² of free space, at least 3),
+minimum separation (4.5 m) and maximum ray range (15 m) are auto-derived from the map
+resolution and free area when not given explicitly. Requires OpenCV (`cv2`).
 
 ## Launch files
 
@@ -136,7 +137,7 @@ which exist in this package's `setup.py`, so the launch file fails as written. U
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `mecanumbot_demo_behaviours/tree_nodes/` | Top-level BT compositions and executable entry points.                                                    |
 | `mecanumbot_demo_behaviours/behaviours/` | Demo-specific BT leaf behaviours plus local copies of the blackboard managers.                            |
-| `mecanumbot_demo_behaviours/utils/`      | Map waypoint generation and subtree construction helpers.                                                 |
+| `mecanumbot_demo_behaviours/utils/`      | Map waypoint generation (`map_generate.py`) and subtree construction helpers (`subtrees.py`, which imports behaviours and modules this package no longer has — `dog_behaviours`, `LED_behaviours`, `SubjectToGoalPose`, … — so it cannot be imported). |
 | `launch/`                                | Copy of the condition-based launcher (see the caveat above).                                              |
 | `config/`                                | Behaviour constants in YAML (`behaviour_setting_constants.yaml`, `Eto_behaviour_setting_constants.yaml`). |
 | `resource/`                              | ROS package resource marker.                                                                              |
@@ -170,8 +171,11 @@ Root is a memory-less priority selector:
    the in-flight patrol goal automatically.
 3. Patrol branch — `GetNextWaypoint` then a Nav2 `ActionClient` on `patrol_goal`.
 
-Ticked at 100 ms, with a `ToBlackboard` pre-tick handler pushing `/detections` onto
-the blackboard.
+Ticked at 100 ms (`mecanumbot_bt_config`'s `RUNTIME_DEFAULTS`), with a `ToBlackboard`
+pre-tick handler meant to push `/detections` onto the blackboard. As written it
+registers the subscriber's `setup` method as the handler rather than ticking the
+subscriber, and `py_trees` calls a handler with the tree as a positional argument,
+which that `setup(**kwargs)` does not accept — so the tree cannot tick as it stands.
 
 ## Configuration model
 

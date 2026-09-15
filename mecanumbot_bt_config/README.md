@@ -14,7 +14,7 @@ package here that knows nothing about the robot.
 | --- | --- |
 | Nodes | None |
 | Launch files | None |
-| Depends on | `python3-yaml`, `rclpy`, `py_trees`, `ament_index_python`; `geometry_msgs` / `mecanumbot_msgs` optionally, for the shipped decoders |
+| Depends on | `python3-yaml`, `rclpy`, `py_trees`, `py_trees_ros` (the runner), `ament_index_python`; `geometry_msgs` / `mecanumbot_msgs` optionally, for the shipped decoders |
 
 ## Modules
 
@@ -23,7 +23,7 @@ package here that knows nothing about the robot.
 | `params.py` | Reading a parameter file: root-key discovery, the `_deg` convention, type coercion, which keys are missing. Imports nothing from ROS. |
 | `decoders.py` | Turning the structured strings in a constants file into messages, chosen by the keys inside them. |
 | `blackboard.py` | `ParamsToBlackboard` (the behaviour every tree starts with), `Tunables` (how a behaviour reads a constant back), `ConfiguredTimer`. |
-| `tree_runner.py` | Finding a tree's YAML (`--yaml_path`, `YAML_PATH`, packaged fallback) and spinning it. |
+| `tree_runner.py` | Finding a tree's YAML (`--yaml_path`, `YAML_PATH` / `BEHAVIOUR_YAML_PATH`, packaged fallback) and spinning it. |
 
 ## The three conventions
 
@@ -65,9 +65,11 @@ Two things, and they are the whole of what a tree still declares:
 * **`defaults`** — the value a key keeps when the file does not declare it. This
   is why a constants file written before a tunable existed still loads. Defaults
   belong to the behaviours that read them, so they live in
-  `mecanumbot_movement_behaviours.defaults` and each experiment package's
-  `behaviours/defaults.py`, and are handed to the loader as a list of mappings
-  (later mappings win).
+  `mecanumbot_movement_behaviours.defaults` and in each experiment package
+  (`mecanumbot_leading_behaviour/behaviours/defaults.py`, the package-level
+  `defaults.py` of `mecanumbot_seek` and `mecanumbot_fetch_behaviour`, and
+  `OSTENSIVE_DEFAULTS` in the ostensive package's `behaviours/blackboard_managers.py`),
+  and are handed to the loader as a list of mappings (later mappings win).
 * **`required`** — keys the file must declare. A missing one fails the setup
   rather than being invented: a run with no defined approach distance is not a
   run with a plausible one.
@@ -128,7 +130,8 @@ a package extends another's tunables with its own.
 ## `tree_runner`
 
 ```python
-run_tree(create_root, tree_name, package_name, node_name, default_yaml)
+run_tree(create_root, tree_name, package_name, node_name, default_yaml,
+         args=None, tick_period_ms=None, root_keys=None)
 ```
 
 `RUNTIME_DEFAULTS` (`tick_period_ms`, `setup_timeout`) are the only key names

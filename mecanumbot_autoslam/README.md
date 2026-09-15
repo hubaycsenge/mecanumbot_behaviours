@@ -217,7 +217,8 @@ ros2 run nav2_map_server map_saver_cli -f <maps>/AI_dept/AI_dept
 | `server` / `client_path` | `tcp://127.0.0.1:5555` / `~/robocam_client.py` | Passed to the client: the local end of the tunnel, and the deployed `robocam_client.py`. |
 | `run_id` | *(empty)* | Passed to the client. Empty starts a fresh reconstruction on the server; a previous run's id (the client logs it at startup) resumes that run across a restart. |
 | `use_agreement` | `true` | Start the 2D/3D comparison handler. `false` for a session that already has one from the T2 launch. |
-| `slam_params` / `nav2_params` | `mecanumbot_description/param/` | slam_toolbox and the exploration nav2 file, which has no AMCL block. It does have a static layer: that is where the global costmap gets its size from slam_toolbox's map. |
+| `agreement_params` | `mecanumbot_custom_nav2/config/map_agreement.yaml` | The comparison handler's constants. |
+| `slam_params` / `nav2_params` | `mecanumbot_description/param/mecanumbot_slam_mapping.yaml` / `mecanumbot_exploration_nav2.yaml` | slam_toolbox and the exploration nav2 file, which has no AMCL block. It does have a static layer: that is where the global costmap gets its size from slam_toolbox's map. |
 | `namespace` | `mecanumbot` | Namespace for the pass's node. |
 | `use_sim_time` | `false` | Set by `sim.launch.py`. |
 
@@ -314,10 +315,12 @@ about turning *less* and turning *slower* rather than about the mapper.
 the robot has to translate before the map may look again, so it is the recovery
 latency after every turn.
 
-**So the pass now turns half as fast** —
+**So the pass now turns about half as fast** —
 `mecanumbot_description/param/mecanumbot_exploration_nav2.yaml`, difference 6 in
-its header. The controller, the rotation shim, the spin recovery and the
-velocity smoother are all capped at 0.6 rad/s with halved yaw acceleration.
+its header. The controller, the spin recovery and the velocity smoother are
+capped at 0.6 rad/s (from the study's 1.0, 1.0 and 0.7), the rotation shim at
+0.4 rad/s (from 0.7), and yaw acceleration is halved in the controller and the
+spin recovery (the smoother's goes from 1.0 to 0.8).
 Translation limits are untouched, so a leg is driven the way a trial's leg is
 driven; only the turns are slower.
 
@@ -420,11 +423,16 @@ still `0.0`, which means no limit, so nothing changes until it is set.
 
 ```bash
 cd src/mecanumbot_behaviours/mecanumbot_autoslam
-PYTHONPATH=. python3 -m pytest test/ -q -p no:launch_testing \
+PYTHONPATH=.:$PYTHONPATH /usr/bin/python3 -m pytest test/ -q \
+  -p no:launch_testing -p no:launch_testing_ros \
   --ignore=test/test_flake8.py --ignore=test/test_copyright.py --ignore=test/test_pep257.py
 ```
 
-40 tests, pure Python, no ROS graph. Use `/usr/bin/python3`, not the conda one.
+39 tests (26 preflight, 10 choosing, 3 goal heading), no ROS graph. Use
+`/usr/bin/python3`, not the conda one. `test_preflight.py` and `test_choosing.py`
+are pure Python; `test_goal_heading.py` imports `behaviours/driving.py`, so it
+needs a sourced workspace (`rclpy`, `mecanumbot_movement_behaviours`) and skips
+without one.
 
 | File | Covers |
 | --- | --- |

@@ -102,8 +102,9 @@ again. The spots are rings around where the search began, nearest first, laid ou
 same `expanding_circles` as the circling search but sparser (`fetch_spot_*`): a spot is
 looked round from, so neighbours need only be about two detection ranges apart. A lap is
 every spot once — 9 spots in both rooms as shipped — and after `fetch_search_laps` laps the
-round is given up. `fetch_search_timeout` was raised to 900 s for it, since one lap is ten
-turns of ~25 s plus the drives.
+round is given up. `fetch_search_timeout` was raised to 900 s for it in both shipped files
+(the packaged default in `defaults.py` is still 300 s), since one lap is ten turns of
+~25 s plus the drives.
 
 `spin` replaced `circles` as the default on 2026-09-14 because the circles missed balls: a
 tangent-facing robot only ever looks along its direction of travel, so a ball lying beside
@@ -238,10 +239,10 @@ phase name is a label.
 | --- | --- |
 | `tree_nodes/fetch_tree.py` | The tree. Every structural decision is argued in its module docstring. |
 | `tree_nodes/tree_common.py` | The package name and the node name; everything else is `mecanumbot_bt_config`'s. |
-| `search_patterns.py` | The circles and the head sweep. Pure geometry, no ROS. |
+| `search_patterns.py` | The circles (and the spots, laid out the same way), the search strategies and the head sweep. Pure geometry, no ROS. |
 | `defaults.py` | Every tunable and the value it has when the YAML does not say. |
-| `keys.py` | Binds `fetch_ball_position` onto the movement library's `target_position`. |
-| `behaviours/searching.py` | `WatchForBall`, `SweepHead`, `CircleSearch`. |
+| `keys.py` | Binds `fetch_ball_position` onto the movement library's `target_position`: `FetchApproach`, `FetchTurnToward`, `FetchFindPeople`, `FetchScan`. |
+| `behaviours/searching.py` | `WatchForBall`, `SweepHead`, `CircleSearch`, `HopToNextSpot`. |
 | `behaviours/approach.py` | `ApproachBall`, `CheckBallReachable`, `GraspBall`. |
 | `behaviours/delivery.py` | `SomeoneToGiveTo`, `ReleaseBall`, `BackAway`. |
 | `behaviours/signalling.py` | `AnnouncePhase`. |

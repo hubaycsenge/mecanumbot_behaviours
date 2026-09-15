@@ -123,8 +123,9 @@ the world."* That is what the `undirected` phase is for: with no object named th
 circuit sits at baseline, and T2 is the same circuit with an incentive attached.
 
 > **The circuit does not currently drive T1, and this is an open decision.**
-> `mecanumbot_custom_nav2`'s explorer scores frontiers on its own terms and
-> contains no reference to `arousal`, `expectancy` or `SeekingState`; the
+> The T1 pass, `mecanumbot_autoslam`, scores frontiers on its own terms (with
+> `mecanumbot_custom_nav2`'s map analysis), and neither package contains any
+> reference to `arousal`, `expectancy` or `SeekingState`; the
 > `undirected` phase is implemented here and read by nothing. So the Panksepp
 > grounding is real for T2 and, for now, a claim about T1 rather than a
 > mechanism in it.
@@ -258,7 +259,8 @@ Arduino attached. `seek_alert_led_mode: 0` disables it outright.
 | `/mecanumbot/seek/alert` | `mecanumbot_msgs/SeekAlert` | out | found it, cannot have it: what, where, how high, why, and whether anybody was told |
 | `/mecanumbot/people_fusion` | `geometry_msgs/PoseArray` | in | who there is to tell (via the movement library's tracker) |
 | `/mecanumbot/set_led_status` | `mecanumbot_msgs/SetLedStatus` | srv | the alert flash; skipped when the service is absent |
-| `/cmd_accessory_pos` | `mecanumbot_msgs/AccessMotorCmd` | out | the grabbers (and the neck, held still) |
+| `/cmd_accessory_pos` | `mecanumbot_msgs/AccessMotorCmd` | out | the grabbers (neck held still while gripping), and the neck pose the turns pick |
+| `/cmd_vel` | `geometry_msgs/Twist` | out | in-place turns only: the scan, looking for somebody, the showing gesture |
 | `/mecanumbot/has_object` | `std_msgs/Bool` | in | whether a grasp actually caught anything |
 | `/amcl_pose` | `PoseWithCovarianceStamped` | in | via the movement library's tracker |
 | `/navigate_to_pose` | `nav2_msgs/NavigateToPose` | action | every drive, including the search waypoints |
@@ -291,7 +293,8 @@ approach, the grasp, and the reachability judgement behind the alert.
 
 The showing gesture is reuse too: `SeekTurnToward` and `SeekFindPeople` are the
 library's `TurnToward` and `FindPeople` with the seek key spelling bound on, and
-the alternation is a `Repeat` over a four-leaf sequence in the tree rather than
+the alternation is a `Repeat` over a five-leaf sequence (face the object, hold,
+face the person, hold, count) in the tree rather than
 a behaviour of its own — it is a shape, not a mechanism.
 
 ## Running
@@ -339,9 +342,40 @@ Both detection topics are published by `mecanumbot_deep3r` from the server's
 the server has a target; if `AcquireSeekTarget` times out, check the tunnel and
 the server before looking at the tree.
 
+Besides the tree, `launch_seek.launch.py` starts two things:
+
+- **people detection** — `mecanumbot_sensorprocess_smart`'s `perception.launch.py`
+  with the `pose` detector. Not for the object, which comes from the server, but
+  for the alert: without `people_fusion` the branch that goes to tell somebody
+  never finds an audience. `use_perception:=false` when it is already running;
+  `camera_width` / `camera_height` / `yolo_imgsz` / `yolo_model` (1280 / 720 /
+  1280 / `yolo26m-pose`) pass through to it.
+- **the 2D/3D comparison handler**, `mecanumbot_custom_nav2`'s
+  `mecanumbot_map_agreement_node` with `agreement_params` (default
+  `map_agreement.yaml`). `use_agreement:=false` when a T1 session is still
+  running one.
+
+`use_camera` (default false) feeds the detector from
+`/camera/image_raw/compressed` instead of letting it open the camera directly.
+The launch does **not** start that publisher — perception stopped including it —
+so start it first. The camera can only be opened once, and the Deep3R client
+wants the stream too, so this is the setting whenever the cloud is being updated
+during T2:
+
+```bash
+ros2 launch mecanumbot_camera_stream camera_compressed.launch.py width:=1280 height:=720
+ros2 launch mecanumbot_seek launch_seek.launch.py use_camera:=true
+```
+
+The node runs in `namespace` (default `mecanumbot`) with `/mecanumbot/cmd_vel`
+and `/mecanumbot/cmd_accessory_pos` remapped to the root topics; `params` /
+`yaml_path` override the SSID choice below — `yaml_path` is the one the tree
+actually loads (through `YAML_PATH`); `params` is only handed to the node as ROS
+parameters.
+
 The launch file picks its constants from the Wi-Fi SSID, like every other
 behaviour launcher here: `MecanumetoNet` → `Eto_seek_setting_constants.yaml`,
-anything else → `seek_setting_constants.yaml`. The two files carry the same 56
+anything else → `seek_setting_constants.yaml`. The two files carry the same 66
 keys and differ only in the six that depend on how big the room is.
 
 The tree registers as `seek_bt_node`, not the `bottom_up_tree_node` the four

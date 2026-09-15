@@ -36,8 +36,8 @@ this package, which is the deliberate change:
 
 | Requirement | Where it is met |
 | --- | --- |
-| Take camera input from `/camera/image_raw` | Upstream. `mecanumbot_cam_detect_people` consumes the camera (by default `camera/image_raw/compressed`) and publishes `cam_people_detections`. This package never touches an image. |
-| Detect people with pose estimates | Upstream. YOLO26n-pose (or the DeepStream equivalent) produces the COCO-17 keypoints, already gated for keypoint evidence, hysteresis and temporal confirmation. |
+| Take camera input from `/camera/image_raw` | Upstream. The pose detector — `mecanumbot_onboard_cam_detect_people` (DeepStream), which is the one `perception.launch.py` starts, or the Ultralytics `mecanumbot_cam_detect_people` — consumes the camera (opened directly, or `/camera/image_raw/compressed` with `use_camera:=true`) and publishes `cam_people_detections`. This package never touches an image. |
+| Detect people with pose estimates | Upstream. A YOLO26 pose model (`yolo26m-pose` under DeepStream by default, `yolo26n-pose` in the Ultralytics node) produces the COCO-17 keypoints, already gated for keypoint evidence, hysteresis and temporal confirmation. |
 | Detect an attention signal | `behaviours/gestures.py` — a raised hand, or a wave (a raised hand that keeps reversing direction). |
 | Choose a target person after the signal | `behaviours/attention.py` + `behaviours/target_lock.py` — every person in frame is watched, the first to hold a signal becomes the addressee, and the lock is what every later behaviour is about. |
 | Decipher direction cues from movement | `behaviours/gestures.py` (`pointing_cue`) and `behaviours/cue_geometry.py` (image azimuth → map bearing). |
@@ -48,11 +48,12 @@ camera back ends interchangeable, keeps a second copy of a pose model off the
 Orin Nano's GPU, and lets the behaviour layer use the fused metric positions that
 the camera alone cannot provide.
 
-### Differences from `src/mecanumbot_ostensive`
+### Differences from `mecanumbot_ostensive`
 
 That package — the earlier standalone prototype — is a single node with its own
-MediaPipe pipeline and a three-state FSM. It is still in the workspace and still
-builds; nothing here touches it. This package replaces it, and differs in the
+MediaPipe pipeline and a three-state FSM. It is no longer checked out under
+`src/` (its remote is `hubaycsenge/mecanumbot_ostensive`); nothing here ever
+depended on it. This package replaces it, and differs in the
 ways that matter:
 
 | | `mecanumbot_ostensive` (prototype) | this package |
@@ -79,8 +80,8 @@ run side by side and `ros2 node list` says which is which.
 
 ## Node interfaces
 
-The ROS interfaces are created inside the behaviour classes; most of them are the
-leading package's helper objects, reused rather than reimplemented.
+The ROS interfaces are created inside the behaviour classes; most of them are
+`mecanumbot_movement_behaviours`' helper objects, reused rather than reimplemented.
 
 ### Publishers
 
@@ -98,6 +99,7 @@ leading package's helper objects, reused rather than reimplemented.
 | `/mecanumbot/people_fusion` | `geometry_msgs/msg/PoseArray` | Fused map-frame positions; matched to the addressee by bearing, and used by `LookAround` to know when somebody is in view. |
 | `/amcl_pose` | `geometry_msgs/msg/PoseWithCovarianceStamped` | Robot pose, for turning and for anchoring goals. `RELIABLE` + `TRANSIENT_LOCAL` to match AMCL. |
 | `/navigate_to_pose/_action/status` | `action_msgs/msg/GoalStatusArray` | Goal outcome, matched by UUID; a dropped goal is resent. |
+| `/navigate_through_poses/_action/status` | `action_msgs/msg/GoalStatusArray` | Only whether nav2 is busy with a waypoint run, so neither a turn nor a new goal starts on top of one. |
 
 ### Services
 
@@ -115,7 +117,7 @@ tuples, no graph and no camera.
 | `keypoints.py` | yes | COCO-17 access, the two "joint not found" conventions, torso, body scale, the image mirror. |
 | `gestures.py` | yes | `raised_hand`, `WaveTracker`, `pointing_cue`, `azimuth_from_lateral_ratio`. |
 | `cue_geometry.py` | yes | Image column → bearing, cue azimuth → map bearing, goal placement, both association functions. |
-| `ros_interfaces.py` | no | `CamDetectionTracker`, `PersonObservation`, and the re-exports of the leading package's helpers. |
+| `ros_interfaces.py` | no | `CamDetectionTracker`, `PersonObservation`, and the re-exports of `mecanumbot_movement_behaviours`' helpers. |
 | `target_lock.py` | no | `TargetLock` (the addressee) and `TargetFollower` (the per-frame refresh). |
 | `blackboard_managers.py` | no | `OstensiveParamsToBlackboard`, `ClearTargetLock`. |
 | `attention.py` | no | `WaitForAttentionSignal`. |
@@ -134,8 +136,8 @@ tuples, no graph and no camera.
 | `FollowDirectionCue` | Sends the cued goal through nav2 and follows it to completion. |
 | `ClearTargetLock` | Releases the addressee. Used both to end an exchange and to absorb a failed one. |
 
-Reused unchanged from `mecanumbot_movement_behaviours`: `InPlaceTurn` and
-`SmoothTurner` (which `KeepTargetInFocus` inherits from), `FindPeople`,
+Reused unchanged from `mecanumbot_movement_behaviours`: `InPlaceTurn` (which
+`KeepTargetInFocus` inherits from) and its `SmoothTurner`, `FindPeople`,
 `RobotPoseTracker`, `PeopleTracker`, `Nav2GoalMonitor`, `AccessoryCommander` and
 `quaternion_from_yaw`. The constants loader is `mecanumbot_bt_config`'s.
 
@@ -201,8 +203,10 @@ goal        = person + cue_distance * (cos, sin)(cue_bearing)
 
 Worked example, and the test that holds it: the robot sits at the origin looking
 along +x, the person stands two metres ahead facing back at it, and points to
-their own left. Facing each other, their left is the robot's right, so the goal
-lands at `(2, -2)` and the robot arrives facing −90°.
+their own left. Facing each other, their left is the robot's right, so the cue
+bearing is −90°, the goal lands at `(2, -2)` with the default 2 m `cue_distance`,
+and the robot arrives facing −90°. (The tests pin the −90° bearing, and the
+placement with a 1.5 m distance, at `(2, -1.5)`.)
 
 The ray is anchored at the **person**, not the robot. "Over there" is said from
 where the speaker stands, and with the robot typically a metre or two off to one
@@ -297,7 +301,7 @@ name without the `_deg` suffix. No behaviour converts an angle twice.
 | | `detection_timeout` | `1.0` | How stale a camera frame may be and still be acted on. |
 | Attention | `attention_signal_mode` | `any` | `raised_hand`, `wave` or `any`. |
 | | `attention_dwell` | `1.0` | How long the signal is held before the robot commits. |
-| | `attention_timeout` | `30.0` | Give up watching and look elsewhere. |
+| | `attention_timeout` | `30.0` (`20.0` Eto) | Give up watching and look elsewhere. |
 | | `wrist_above_shoulder_margin` | `0.15` | Raise height, in body scales. |
 | | `wave_window` | `1.5` | Seconds of history the reversals are counted over. |
 | | `wave_min_amplitude` | `0.25` | Excursion below this is noise, in body scales. |

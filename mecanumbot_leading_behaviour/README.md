@@ -15,9 +15,12 @@ out of live in `mecanumbot_movement_behaviours` and the constants loader in
 | `doglike_leading_bt_node` | `tree_nodes/dog_tree.py`       | Dog-style lead loop (catch attention, point, move checkpoint-by-checkpoint).   |
 | `LED_leading_bt_node`     | `tree_nodes/LED_tree.py`       | LED-driven guidance sequence with approach + near-target signalling.           |
 | `bottom_up_tree_node`     | `tree_nodes/bottom_up_tree.py` | Baseline sequence combining approach and LED indication.                       |
+| `check_route`             | `tools/route_check.py`         | Not a tree: asks Nav2's planner whether the constants file's route can be driven (node `mecanumbot_route_check`; never sends a navigation goal). |
 
-All four call `tree_node.setup(node_name="bottom_up_tree_node")`, so every tree
-registers the same ROS node name regardless of which executable was started.
+All four trees go through `tree_common.run_tree()`, which calls
+`tree_node.setup(node_name="bottom_up_tree_node")`, so under `ros2 run` every tree
+registers the same ROS node name regardless of which executable was started. The
+launch file's `name=`/`namespace=` remap that to `/mecanumbot/<executable name>`.
 
 ## Node interfaces
 
@@ -32,7 +35,7 @@ interfaces a running leading tree has.
 | -------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | `/cmd_vel`           | `geometry_msgs/msg/Twist`            | Every in-place rotation (`TurnToward`, `RelativeTurnPattern`, `GlanceBack`, `ScanSpin`/`FindPeople`/`Spin360`), profiled.   |
 | `/cmd_accessory_pos` | `mecanumbot_msgs/msg/AccessMotorCmd` | Neck (camera tilt) and gripper commands: gesture sequences plus the lifted/level head poses.                                |
-| `/goal_pose`         | `geometry_msgs/msg/PoseStamped`      | Created by `Nav2GoalMonitor`, which the leading behaviours no longer use — it stays for the ostensive package's pointing goals. |
+| `/goal_pose`         | `geometry_msgs/msg/PoseStamped`      | Created by the `Nav2GoalMonitor` every turn holds for `busy()`, but never published on by the leading trees — publishing goal poses stays for the ostensive package's pointing goals. |
 
 ### Action clients used
 
@@ -126,16 +129,19 @@ adds is the three things a constants file cannot say about itself:
 * **what the checkpoint list means.** The first entry becomes `start_position`,
   the last becomes `target_position`, and the rest — the first included — is the
   route in `Dog_checkpoints`, copied to `patrol_checkpoints` for the search;
-* **what is state rather than configuration.** Seeded on every entry, so nothing
-  has to guess whether a key exists yet:
+* **what is state rather than configuration.** Seeded on every entry (the route
+  keys `Dog_current_checkpoint` / `Dog_max_checkpoint` / `patrol_checkpoints`
+  when the file is loaded in `setup()`), so nothing has to guess whether a key
+  exists yet:
 
 | Key | Meaning |
 | --- | --- |
 | `Dog_current_checkpoint` / `Dog_max_checkpoint` | Progress along the route the robot leads. |
 | `patrol_checkpoints` / `patrol_current_checkpoint` | Separate index used while searching for a lost human. |
-| `patrol_direction` | `+1` search forwards along the route, `-1` backwards (set by `WaitForPerson`). |
+| `patrol_direction` | `+1` search forwards along the route, `-1` backwards (set by `WaitForPerson`; seeded `-1`). |
 | `patrol_initialized` | `False` makes the next patrol snap to the nearest checkpoint. |
 | `search_spin_sign` | Handedness of the last turn made to look at a human; route turns unwind it. |
+| `check_in_checkpoints_since` / `check_in_last_time` | Look-back pacing: checkpoints driven and the time since the last check-in (`0.0` = clock not started yet). |
 | `last_distance` | Most recent robot-human distance from `DogCheckFollowing`. |
 
 ## Launch files
@@ -145,10 +151,11 @@ adds is the three things a constants file cannot say about itself:
 Functions:
 
 1. Detects active Wi-Fi SSID (`nmcli`, fallback `iwgetid`).
-2. Chooses default constants YAML based on SSID (`MecanumNet` → `behaviour_setting_constants.yaml`, `MecanumetoNet` → `Eto_behaviour_setting_constants.yaml`).
-3. Declares launch args: `params`, `yaml_path`, `namespace` (default `mecanumbot`), `condition` (default `Doglike`).
+2. Chooses default constants YAML based on SSID (`MecanumNet` → `behaviour_setting_constants.yaml`, `MecanumetoNet` → `Eto_behaviour_setting_constants.yaml`, anything else → `behaviour_setting_constants.yaml`).
+3. Declares launch args: `params`, `yaml_path` (both default to that SSID-chosen file), `namespace` (default `mecanumbot`), `condition` (default `Doglike`), `use_perception` (default `true`), `use_camera` (default `true`), `camera_width` / `camera_height` (default `1280` / `720`), `yolo_imgsz` (default `1280`), `yolo_model` (default `yolo26m-pose`).
 4. Exports `YAML_PATH` and `BEHAVIOUR_YAML_PATH` env vars for BT scripts.
-5. Starts exactly one node by `condition`: `Doglike` -> `doglike_leading_bt_node`, `Control` -> `control_leading_bt_node`, `LED` -> `LED_leading_bt_node`.
+5. Includes `mecanumbot_sensorprocess_smart/launch/perception.launch.py` with `detector:=pose` and the camera/model arguments above, unless `use_perception:=false`.
+6. Starts exactly one node by `condition`: `Doglike` -> `doglike_leading_bt_node`, `Control` -> `control_leading_bt_node`, `LED` -> `LED_leading_bt_node`.
 
 Each tree resolves its YAML in this order: `--yaml_path` argument, then `YAML_PATH`,
 then `BEHAVIOUR_YAML_PATH`, then a packaged fallback. `bottom_up_tree_node` is not
@@ -290,7 +297,7 @@ the same measurements.
 
 #### Pacing the look backs
 
-`behaviours/pacing.py` holds the rule and imports nothing, so it can be read and
+`mecanumbot_movement_behaviours/pacing.py` holds the rule and imports nothing, so it can be read and
 tested on its own. A look back is due when
 
 * the human has not been seen at all, or not for `visibility_time_threshold`
@@ -350,7 +357,11 @@ human who is merely two metres behind is fetched rather than searched for.
 2. Approach subject.
 3. Approach target.
 4. Indicate target with LED.
-5. Selector repeatedly alternates check/show behavior until close condition is satisfied.
+5. `ShowUntilSubjectClose` selector: SUCCESS at once when the subject is near the
+   target, otherwise the first show step that succeeds ends it — normally
+   `TurnTowardSubject`, so the catch-attention, turn-to-target and near-target LED
+   steps only run if the turns before them fail. The root then succeeds and is
+   ticked again from the top.
 
 ## Configuration model
 
@@ -378,8 +389,9 @@ gesture entries are `{n_pos, gl_pos, gr_pos}` dicts; checkpoints are `{X, Y, Z}`
 
 These describe the run, so a file that omits one fails to load rather than
 having a distance invented for it — they are `defaults.REQUIRED` plus the
-signalling scripts of the condition being run. Which scripts those are is the
-tree's `scripts=` argument, so the control condition needs none of them.
+signalling scripts of the condition being run, plus `LED_start_setting`, which
+every tree requires. Which scripts those are is the tree's `scripts=` argument, so
+the control condition needs none of the `*_seq`/`*_times` pairs.
 
 ### Tunables — optional, defaulted in Python
 
@@ -460,7 +472,9 @@ launch file**, which the base launch no longer does: it includes
 `/mecanumbot/people_fusion` and `/mecanumbot/cam_people_detections` are there.
 `use_perception:=false` when it is already running.
 
-`use_camera` defaults to **true** here and to false in every other behaviour launcher.
+`use_camera` defaults to **true** here and to false in the ostensive, seek and fetch
+launchers (`mecanumbot_autoslam`'s `use_camera` is a different switch — it starts the
+publisher itself).
 The camera can only be opened once, so it is a choice: either the DeepStream detector
 opens it directly (cheapest, but there is then no image topic at all) or
 `mecanumbot_camera_stream`'s compressed publisher owns it and the detector reads the

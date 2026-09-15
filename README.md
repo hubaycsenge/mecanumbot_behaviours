@@ -61,6 +61,7 @@ Provided executables:
 - `doglike_leading_bt_node` — `tree_nodes/dog_tree.py`
 - `LED_leading_bt_node` — `tree_nodes/LED_tree.py`
 - `bottom_up_tree_node` — `tree_nodes/bottom_up_tree.py`
+- `check_route` — `tools/route_check.py` (a route checker, not a tree)
 
 See the package README for full node interface tables and per-tree logic.
 
@@ -79,8 +80,8 @@ Provided executables:
 
 - `seek_bt_node` — `tree_nodes/seek_tree.py`
 
-The T2 half of the Deep3R seeking system (T1 is
-`mecanumbot_custom_nav2`'s autonomous exploration). Like the ostensive tree it
+The T2 half of the Deep3R seeking system (T1 is `mecanumbot_autoslam`'s
+autonomous exploration, reasoning with `mecanumbot_custom_nav2`). Like the ostensive tree it
 registers under its own node name, and like it it runs no detector: the target
 comes from the server on `/mecanumbot/seek/target` and the live detections from
 the perception stack on `/mecanumbot/seek/detections`, both
@@ -126,10 +127,12 @@ That detector is a **different network** from the pose one — a pose model has 
 class, so there is no threshold at which it finds tennis balls — and it replaces
 rather than joins it on the robot.
 
-Its search is two dimensions at once, as one parallel: `CircleSearch` drives
-widening circles facing the direction of travel, and `SweepHead` tilts the neck
-up and down throughout, because the camera at any one tilt sees a band of floor
-and nothing else. `WatchForBall` is the only child that can end the parallel, so
+Its search is two dimensions at once, as one parallel: the body search moves the
+robot — by default (`fetch_search_strategy: spin`) a full turn where it stands,
+then a hop to the next spot on rings around its start (`FetchScan` then
+`HopToNextSpot`, repeated), or with `circles` `CircleSearch`'s widening circles
+without stopping — and `SweepHead` tilts the neck up and down throughout,
+because the camera at any one tilt sees a band of floor and nothing else. `WatchForBall` is the only child that can end the parallel, so
 a sighting breaks off the search mid-drive.
 
 The branch that decides whether the ball can be had is its **height**, which the
@@ -168,6 +171,12 @@ Everything it reasons with is imported from `mecanumbot_custom_nav2` — the RRT
 the frontier scoring, the occupancy model, the exit criteria — and none of it
 moved. What moved is the part that commands motion.
 
+`launch_autoslam.launch.py` also starts the compressed camera publisher and the
+Deep3R client itself, in parallel with the preflight (which leaves both alone),
+and `mecanumbot_core`'s `mecanumbot_scan_grid_node` beside slam_toolbox;
+`launch_t1.launch.py` is the base launch with `use_nav2:=false` plus that file
+after `explorer_delay`.
+
 `autoslam_preflight` runs first and the pass waits for it to **exit**: T1
 replaces the navigation stack rather than using it, so it clears AMCL, the map
 server, the study nav2 stack and any behaviour tree it finds sending its own
@@ -185,14 +194,16 @@ Provided executables:
 
 - `ostensive_bt_node` — `tree_nodes/ostensive_tree.py`
 
-The only tree in this repository that registers under its own node name rather
-than `bottom_up_tree_node`, so it can run alongside a leading tree.
+It registers under its own node name rather than the leading trees' shared
+`bottom_up_tree_node` (as the seek, fetch and demo trees also do), so it can run
+alongside a leading tree. (The leading trees share that name under `ros2 run`;
+their launch file's `name=` renames each to its executable name.)
 
 It runs no detector: gestures are decoded from the COCO-17 keypoints on
 `/mecanumbot/cam_people_detections` and metric positions come from
 `/mecanumbot/people_fusion`, both from `mecanumbot_sensorprocess_smart`. The
-perception logic lives in three ROS-free modules (`keypoints.py`, `gestures.py`,
-`cue_geometry.py`) with 50 unit tests that run without a ROS graph — the fastest
+perception logic lives in three ROS-free modules (`behaviours/keypoints.py`,
+`behaviours/gestures.py`, `behaviours/cue_geometry.py`) with 57 unit tests that run without a ROS graph — the fastest
 feedback loop in this repository. See the package README for the sign conventions
 and the gesture thresholds.
 
@@ -232,7 +243,10 @@ declared by the tree that loads it, and there are two kinds of key:
 
 The defaults live with the behaviours that read them —
 `mecanumbot_movement_behaviours/defaults.py` for the movement ones, each
-experiment package's `behaviours/defaults.py` for its own — because a default is
+experiment package for its own (`behaviours/defaults.py` in the leading
+package, a package-root `defaults.py` in seek, fetch and autoslam,
+`OSTENSIVE_DEFAULTS` in the ostensive package's `behaviours/blackboard_managers.py`
+and `DEMO_DEFAULTS` in the demo package's `behaviours/movement_managers.py`) — because a default is
 a statement about a behaviour, not about a file format.
 
 Angles are declared in degrees with a `_deg` suffix and reach the blackboard in
@@ -258,9 +272,12 @@ own. Each package's README lists its keys; the mechanism itself is documented in
 | `mecanumbot_demo_behaviours/`     | Demo trees and their own movement/blackboard behaviours plus a map waypoint generator. |
 | `mecanumbot_seek/`                | The seek tree, the SEEKING circuit, the ring search, the unreachable-object alert, launch and config. |
 | `mecanumbot_ostensive_behaviour/` | Ostensive tree, its gesture-decoding library and the unit tests for it.                |
+| `mecanumbot_fetch_behaviour/`     | The fetch tree, the search patterns and head sweep, the ball approach and delivery, launch and config. |
+| `mecanumbot_autoslam/`            | The T1 exploration pass (`autoslam_node`), the preflight, `launch_autoslam` / `launch_t1` and config. |
 
 Each Python package additionally carries `resource/` (ROS 2 resource index marker)
-and `test/` (`flake8`, `pep257`, copyright lint scaffolding).
+and `test/` (`flake8`, `pep257`, copyright lint scaffolding, plus the unit tests
+named above in the packages that have them).
 
 ## Launch and runtime logic
 
@@ -275,9 +292,16 @@ What it does:
    `behaviour_setting_constants.yaml`, `MecanumetoNet` →
    `Eto_behaviour_setting_constants.yaml`, anything else → the former.
 3. Declares the `params`, `yaml_path`, `namespace` (default `mecanumbot`) and
-   `condition` (default `Doglike`) launch arguments.
+   `condition` (default `Doglike`) launch arguments, plus the perception ones:
+   `use_perception` (default `true`), `use_camera` (default `true`),
+   `camera_width` / `camera_height` (`1280` / `720`), `yolo_imgsz` (`1280`) and
+   `yolo_model` (`yolo26m-pose`).
 4. Exports `YAML_PATH` and `BEHAVIOUR_YAML_PATH` so the tree scripts can find the YAML.
-5. Starts exactly one BT node based on `condition` (`Doglike`, `Control`, or `LED`),
+5. Includes `mecanumbot_sensorprocess_smart/launch/perception.launch.py` with the
+   `pose` detector. Neither it nor perception starts the compressed camera
+   publisher, so with `use_camera:=true` start
+   `mecanumbot_camera_stream camera_compressed.launch.py` first.
+6. Starts exactly one BT node based on `condition` (`Doglike`, `Control`, or `LED`),
    remapping `/mecanumbot/cmd_vel` and `/mecanumbot/cmd_accessory_pos` out of the
    namespace.
 
@@ -288,11 +312,16 @@ instead.
 
 ## Dependencies
 
-All five Python packages need `py_trees`, `py_trees_ros`, `rclpy`,
-`geometry_msgs`, `action_msgs`, `nav2_msgs` and `mecanumbot_msgs` at runtime,
-except `mecanumbot_bt_config`, which needs only `python3-yaml`, `py_trees` and
-`ament_index_python` (its message decoders are optional and skip themselves
-without ROS). `utils/map_generate.py` in the demo package additionally needs
+The tree packages need `py_trees`, `py_trees_ros`, `rclpy`,
+`geometry_msgs`, `action_msgs`, `nav2_msgs` and `mecanumbot_msgs` at runtime (seek
+and fetch also `std_msgs` and `vision_msgs`, seek also `mecanumbot_custom_nav2`).
+`mecanumbot_autoslam` is not a tree and needs no `py_trees`; it needs `rclpy`,
+the nav/lifecycle/visualization message packages, `tf2_ros`, `numpy`,
+`mecanumbot_custom_nav2` and `mecanumbot_movement_behaviours`, and launches
+`slam_toolbox` and `nav2_bringup`. `mecanumbot_bt_config`'s loader needs only
+`python3-yaml` and `py_trees` (its message decoders are optional and skip
+themselves without ROS); its tree runner adds `rclpy`, `py_trees_ros` and
+`ament_index_python`. `utils/map_generate.py` in the demo package additionally needs
 `opencv-python` and `mecanumbot_description` (for the map files).
 
 `py_trees` and `py_trees_ros` are pip/apt installs that `rosdep` will not fetch
@@ -304,6 +333,7 @@ for the packages that do not name them; see the workspace `CLAUDE.md`.
 colcon build --symlink-install --packages-select \
   mecanumbot_bt_config mecanumbot_movement_behaviours \
   mecanumbot_leading_behaviour mecanumbot_demo_behaviours \
-  mecanumbot_ostensive_behaviour mecanumbot_behaviours
+  mecanumbot_ostensive_behaviour mecanumbot_seek mecanumbot_fetch_behaviour \
+  mecanumbot_autoslam mecanumbot_behaviours
 source install/setup.bash
 ```
