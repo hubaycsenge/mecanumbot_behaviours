@@ -55,7 +55,7 @@
        dependency cycle, since mecanumbot_bringup depends on mecanumbot_web,
        which depends on a behaviour package because it starts trees from the
        browser; and mecanumbot_deep3r has no remote, so it is not in every
-       checkout -- launch_autoslam only looks for it when use_deep3r is true. -->
+       checkout; launch_autoslam only looks for it when use_deep3r is true. -->
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
