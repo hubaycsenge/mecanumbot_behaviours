@@ -42,6 +42,8 @@
   <!-- The SLAM and exploration nav2 parameter files the launch file defaults
        to. -->
   <exec_depend>mecanumbot_description</exec_depend>
+  <!-- mecanumbot_scan_grid_node: slam_toolbox's scan, on a fixed grid. -->
+  <exec_depend>mecanumbot_core</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>python3-numpy</exec_depend>

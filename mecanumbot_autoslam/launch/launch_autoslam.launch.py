@@ -289,6 +289,17 @@ def generate_launch_description():
         away when there is no preflight -- so it is built rather than shared.
         """
         return [
+            # slam_toolbox reads the scan on a fixed grid, not the driver's own
+            # topic: the LD08's geometry changes every revolution, and slam_toolbox
+            # drops every scan that does not match the first. See
+            # mecanumbot_core/scan_grid.py.
+            Node(
+                package="mecanumbot_core",
+                executable="mecanumbot_scan_grid_node",
+                name="mecanumbot_scan_grid_node",
+                output="screen",
+                parameters=[{"use_sim_time": use_sim_time}],
+            ),
             Node(
                 package="slam_toolbox",
                 executable="async_slam_toolbox_node",

@@ -184,6 +184,14 @@ second run, for which the server wipes its reconstruction. The drivers are
 still not part of this file, so that it never becomes a second owner of the
 OpenCR link.
 
+**slam_toolbox reads `/mecanumbot/scan_grid`, not the driver's scan.** The launch file also starts
+`mecanumbot_core`'s `mecanumbot_scan_grid_node`, which republishes every LD08
+revolution on 200 fixed sectors. Without it slam_toolbox drops every scan whose
+reading count differs from the first one it saw, and the LD08's count changes
+every revolution. On an unlucky launch the map then stays 0 × 0, and nav2 reports
+`Robot is out of bounds of the costmap!` against a 5 × 5 m default square. See
+that package's README.
+
 The cluster server is **not** started by any of this and cannot be: it is a
 Slurm job behind an SSH tunnel. The canonical two-machine sequence is
 `mecanumbot_custom_nav2/README.md`, under "Starting T1".
@@ -209,7 +217,7 @@ ros2 run nav2_map_server map_saver_cli -f <maps>/AI_dept/AI_dept
 | `server` / `client_path` | `tcp://127.0.0.1:5555` / `~/robocam_client.py` | Passed to the client: the local end of the tunnel, and the deployed `robocam_client.py`. |
 | `run_id` | *(empty)* | Passed to the client. Empty starts a fresh reconstruction on the server; a previous run's id (the client logs it at startup) resumes that run across a restart. |
 | `use_agreement` | `true` | Start the 2D/3D comparison handler. `false` for a session that already has one from the T2 launch. |
-| `slam_params` / `nav2_params` | `mecanumbot_description/param/` | slam_toolbox and the exploration nav2 file, which has no AMCL block and no static layer. |
+| `slam_params` / `nav2_params` | `mecanumbot_description/param/` | slam_toolbox and the exploration nav2 file, which has no AMCL block. It does have a static layer: that is where the global costmap gets its size from slam_toolbox's map. |
 | `namespace` | `mecanumbot` | Namespace for the pass's node. |
 | `use_sim_time` | `false` | Set by `sim.launch.py`. |
 
