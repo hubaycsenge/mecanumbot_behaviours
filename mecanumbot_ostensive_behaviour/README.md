@@ -366,7 +366,9 @@ ros2 launch mecanumbot_ostensive_behaviour launch_ostensive.launch.py
 # ... with perception already running elsewhere
 ros2 launch mecanumbot_ostensive_behaviour launch_ostensive.launch.py use_perception:=false
 
-# ... and with /camera/image_raw/compressed published for a recording
+# ... with the detector reading /camera/image_raw/compressed, for a recording. The
+# launch does NOT start the camera (perception stopped including it), so start it first
+ros2 launch mecanumbot_camera_stream camera_compressed.launch.py width:=1280 height:=720
 ros2 launch mecanumbot_ostensive_behaviour launch_ostensive.launch.py use_camera:=true
 
 # or with an explicit YAML

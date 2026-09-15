@@ -464,9 +464,19 @@ launch file**, which the base launch no longer does: it includes
 The camera can only be opened once, so it is a choice: either the DeepStream detector
 opens it directly (cheapest, but there is then no image topic at all) or
 `mecanumbot_camera_stream`'s compressed publisher owns it and the detector reads the
-topic. A leading trial is scored afterwards from what the robot could see, so
-`/camera/image_raw/compressed` is published for the whole run, at the cost of a JPEG
-encode and decode per frame. `use_camera:=false` gives the old behaviour back.
+topic. A leading trial is scored afterwards from what the robot could see, which is why
+the default is the topic, at the cost of a JPEG encode and decode per frame.
+`use_camera:=false` gives the old behaviour back.
+
+**This launch file does not start that publisher.** `perception.launch.py` stopped
+including the camera on 2026-09-10 (`2f7aade` in `mecanumbot_sensorprocess_smart`), so
+with the default `use_camera:=true` nothing publishes `/camera/image_raw/compressed`:
+the pose detector gets no frames — no camera detections, only DR-SPAAM — and there is
+no image to score the trial from. Start the camera by hand before the trial:
+
+```bash
+ros2 launch mecanumbot_camera_stream camera_compressed.launch.py width:=1280 height:=720
+```
 
 ```bash
 # a trial with no image recording, and the smaller pose model

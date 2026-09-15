@@ -155,22 +155,34 @@ screen; refusing to explore over it would not be.
 ## Running
 
 ```bash
-# one terminal: drivers, the Deep3R client, then the pass, in that order
+# one terminal: drivers, then camera + Deep3R client + the pass
 ros2 launch mecanumbot_autoslam launch_t1.launch.py
 
-# or by hand, three terminals
+# or two terminals: the drivers, then everything else
 ros2 launch mecanumbot_bringup launch_mecanumbot_base.launch.py use_nav2:=false
-ros2 launch mecanumbot_deep3r deep3r.launch.py          # needs the tunnel up
-ros2 launch mecanumbot_autoslam launch_autoslam.launch.py
+ros2 launch mecanumbot_autoslam launch_autoslam.launch.py   # needs the tunnel up
 
 # mapping only, with no server at all
-ros2 launch mecanumbot_autoslam launch_autoslam.launch.py require_cloud:=false
+ros2 launch mecanumbot_autoslam launch_autoslam.launch.py require_cloud:=false use_deep3r:=false
 
 # watch
 ros2 topic echo /mecanumbot/exploration/state       # every criterion, with its reason
 ros2 topic echo /mecanumbot/exploration/finished    # latches true when T1 is over
 ros2 topic echo /mecanumbot/deep3r/map_agreement    # the server's verdict
 ```
+
+**`launch_autoslam.launch.py` starts the camera and the Deep3R client itself**,
+straight away and in parallel with the preflight, which leaves both alone. The
+web GUI's **Autoslam (T1)** runs the same file, so a pass started from the
+browser brings them up too. They are part of the pass because T1 cannot finish
+without them: no frames means no cloud, no `map_agreement`, and a `CLOUD`
+criterion that is never met, with no error anywhere. The camera is the robot's
+USB webcam, published on `/camera/image_raw/compressed`, which is where the
+client reads it. If either is already running, pass `use_camera:=false` /
+`use_deep3r:=false`: the camera can be opened once, and a second client is a
+second run, for which the server wipes its reconstruction. The drivers are
+still not part of this file, so that it never becomes a second owner of the
+OpenCR link.
 
 The cluster server is **not** started by any of this and cannot be: it is a
 Slurm job behind an SSH tunnel. The canonical two-machine sequence is
@@ -191,14 +203,21 @@ ros2 run nav2_map_server map_saver_cli -f <maps>/AI_dept/AI_dept
 | `preflight_strict` | `true` | Stop if the preflight could not clear a **name collision**. Those make nav2 bringup abort, so starting anyway wastes the run rather than degrading it. |
 | `require_cloud` | `true` | Whether the pass may only end once the server says the reconstruction is good enough. `false` is right for a dry run and wrong during a trial. |
 | `use_preflight` | `true` | Shut the contradicting nodes down first. |
+| `use_camera` | `true` | Start the compressed camera publisher (USB backend) on `/camera/image_raw/compressed`. `false` when something already publishes it. |
+| `camera_width` / `camera_height` / `camera_fps` | `1280` / `720` / `15.0` | The camera's frame; matches `deep3r.yaml`'s advertised size. |
+| `use_deep3r` | `true` | Start the Deep3R client (`mecanumbot_deep3r/deep3r.launch.py`). `false` when one is already running, or for a mapping-only run with `require_cloud:=false`. |
+| `server` / `client_path` | `tcp://127.0.0.1:5555` / `~/robocam_client.py` | Passed to the client: the local end of the tunnel, and the deployed `robocam_client.py`. |
+| `run_id` | *(empty)* | Passed to the client. Empty starts a fresh reconstruction on the server; a previous run's id (the client logs it at startup) resumes that run across a restart. |
 | `use_agreement` | `true` | Start the 2D/3D comparison handler. `false` for a session that already has one from the T2 launch. |
 | `slam_params` / `nav2_params` | `mecanumbot_description/param/` | slam_toolbox and the exploration nav2 file, which has no AMCL block and no static layer. |
 | `namespace` | `mecanumbot` | Namespace for the pass's node. |
 | `use_sim_time` | `false` | Set by `sim.launch.py`. |
 
-`launch_t1.launch.py` adds `use_deep3r`, `deep3r_delay`, `explorer_delay`,
-`server` and `client_path`, and hard-codes `use_nav2:=false` for the base
-launch, because there is no T1 in which the study nav2 stack is what you want.
+`launch_t1.launch.py` starts the base launch and, after `explorer_delay`
+(15 s), this file. It passes `require_cloud`, `use_camera`, the camera size,
+`use_deep3r`, `server`, `client_path` and `run_id` through, and hard-codes
+`use_nav2:=false` for the base launch, because there is no T1 in which the study
+nav2 stack is what you want.
 
 ## Node: `autoslam_node`
 

@@ -1,11 +1,22 @@
 """
-T1: clear the graph, then SLAM, nav2 without localization, and explore.
+T1: the camera and the Deep3R client, then clear the graph, SLAM, nav2 and explore.
 
-This is the whole first pass in one launch file. It shuts down whatever
-contradicts an exploration run, brings up slam_toolbox in mapping mode, nav2
-against the exploration parameter file in `mecanumbot_description`, the 2D/3D
-comparison handler, and the behaviours that drive the two of them around until
-the exit criteria are met.
+This is the whole first pass in one launch file. It starts the camera and the
+Deep3R client, shuts down whatever contradicts an exploration run, brings up
+slam_toolbox in mapping mode, nav2 against the exploration parameter file in
+`mecanumbot_description`, the 2D/3D comparison handler, and the behaviours that
+drive the two of them around until the exit criteria are met.
+
+**The camera and the Deep3R client start here, straight away.** T1 cannot finish
+without them -- no frames means no cloud, no `map_agreement`, and a `CLOUD`
+exit criterion that is never met, with no error anywhere -- and until they were
+part of this file, starting T1 from a terminal or from the web GUI brought up
+everything except the two things the pass waits on. They start in parallel with
+the preflight rather than behind it, because the preflight leaves both alone.
+`use_camera:=false` / `use_deep3r:=false` when they are already running: a
+second camera publisher cannot open the device, and a second client is a second
+session with its own `run_id`, which the server answers by wiping the
+reconstruction.
 
 **The preflight runs first and the rest waits for it to exit.** Not a timer: the
 stack below has to come up into a graph that has already been cleared, and a
@@ -34,17 +45,16 @@ slam_toolbox owns `map -> odom`; bringing AMCL up as well gives two things
 estimating the same transform, which is the single most confusing way for an
 exploration run to fail.
 
-It does **not** bring up the robot's drivers, its camera, or the Deep3R client.
-Those come from their own launch files, and starting them here would give two
-launch files that both own the OpenCR link:
+It does **not** bring up the robot's drivers: those are the base launch's, and
+starting them here as well would give two launch files that both own the
+OpenCR link. So T1 is two launch files, or one with `launch_t1.launch.py`:
 
     ros2 launch mecanumbot_bringup launch_mecanumbot_base.launch.py use_nav2:=false
-    ros2 launch mecanumbot_deep3r deep3r.launch.py
     ros2 launch mecanumbot_autoslam launch_autoslam.launch.py
 
 `use_nav2:=false` is still worth passing even though the preflight would clear
 it: not starting the study stack is cheaper and quieter than starting it and
-shutting it down. `launch_t1.launch.py` does all three in the right order.
+shutting it down.
 
 When the behaviours are satisfied they latch `/mecanumbot/exploration/finished`.
 Saving the map is deliberately not automatic -- the map T2 localizes against is
@@ -63,13 +73,21 @@ from launch.actions import (DeclareLaunchArgument, GroupAction,
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
 
 AUTOSLAM_SHARE = get_package_share_directory("mecanumbot_autoslam")
 DESCRIPTION_SHARE = get_package_share_directory("mecanumbot_description")
 CUSTOM_NAV2_SHARE = get_package_share_directory("mecanumbot_custom_nav2")
 NAV2_SHARE = get_package_share_directory("nav2_bringup")
+# Resolved only when included, not at import: mecanumbot_deep3r has no remote
+# and is not in every checkout, and a mapping-only run with use_deep3r:=false
+# should not need it installed.
+CAMERA_LAUNCH = PathJoinSubstitution(
+    [FindPackageShare("mecanumbot_camera_stream"), "launch", "camera_compressed.launch.py"])
+DEEP3R_LAUNCH = PathJoinSubstitution(
+    [FindPackageShare("mecanumbot_deep3r"), "launch", "deep3r.launch.py"])
 
 
 def generate_launch_description():
@@ -154,6 +172,51 @@ def generate_launch_description():
             ),
         ),
         DeclareLaunchArgument(
+            "use_camera",
+            default_value="true",
+            description=(
+                "Start the compressed camera publisher on "
+                "/camera/image_raw/compressed. false only when something else "
+                "already publishes it: the camera can be opened once."
+            ),
+        ),
+        DeclareLaunchArgument(
+            "camera_width", default_value="1280",
+            description="Frame width; matches deep3r.yaml's advertised_width.",
+        ),
+        DeclareLaunchArgument(
+            "camera_height", default_value="720",
+            description="Frame height; matches deep3r.yaml's advertised_height.",
+        ),
+        DeclareLaunchArgument(
+            "camera_fps", default_value="15.0",
+            description="Capture and publish rate. The server reconstructs at ~6 Hz.",
+        ),
+        DeclareLaunchArgument(
+            "use_deep3r",
+            default_value="true",
+            description=(
+                "Start the Deep3R client. false only when one is already "
+                "running, or for a mapping-only run -- and then require_cloud "
+                "must be false too, or the pass never finishes."
+            ),
+        ),
+        DeclareLaunchArgument(
+            "server", default_value="tcp://127.0.0.1:5555",
+            description="Local end of the forward tunnel, not a cluster address.",
+        ),
+        DeclareLaunchArgument(
+            "client_path", default_value="~/robocam_client.py",
+            description="Deployed robocam_client.py, or the directory holding it.",
+        ),
+        DeclareLaunchArgument(
+            "run_id", default_value="",
+            description=(
+                "Deep3R run id. Empty starts a fresh reconstruction; a previous "
+                "run's id resumes it."
+            ),
+        ),
+        DeclareLaunchArgument(
             "use_agreement",
             default_value="true",
             description=(
@@ -162,6 +225,29 @@ def generate_launch_description():
             ),
         ),
     ]
+
+    # The USB webcam is the robot's camera; csi cannot open it. The topic is the
+    # un-namespaced one perception also uses, and the one the client reads.
+    camera = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(CAMERA_LAUNCH),
+        condition=IfCondition(LaunchConfiguration("use_camera")),
+        launch_arguments={
+            "camera_backend": "usb",
+            "topic_name": "/camera/image_raw/compressed",
+            "width": LaunchConfiguration("camera_width"),
+            "height": LaunchConfiguration("camera_height"),
+            "fps": LaunchConfiguration("camera_fps"),
+        }.items(),
+    )
+    deep3r = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(DEEP3R_LAUNCH),
+        condition=IfCondition(LaunchConfiguration("use_deep3r")),
+        launch_arguments={
+            "server": LaunchConfiguration("server"),
+            "client_path": LaunchConfiguration("client_path"),
+            "run_id": LaunchConfiguration("run_id"),
+        }.items(),
+    )
 
     preflight = Node(
         package="mecanumbot_autoslam",
@@ -257,11 +343,14 @@ def generate_launch_description():
         + [
             LogInfo(
                 msg=(
-                    "autoslam (T1): preflight, then slam_toolbox + nav2 (no "
-                    "AMCL) + the 2D/3D comparison handler + the exploration "
-                    "behaviours"
+                    "autoslam (T1): camera + Deep3R client, then preflight, "
+                    "slam_toolbox + nav2 (no AMCL) + the 2D/3D comparison "
+                    "handler + the exploration behaviours. The cluster server "
+                    "is NOT started by this -- bring it and the tunnel up first."
                 )
             ),
+            camera,
+            deep3r,
             LogInfo(
                 msg=["constants from ", params,
                      " -- watch /mecanumbot/exploration/state"],

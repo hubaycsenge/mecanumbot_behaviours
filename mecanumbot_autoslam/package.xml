@@ -47,15 +47,15 @@
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
 
-  <!-- NOT declared, deliberately: mecanumbot_bringup and mecanumbot_deep3r.
-       launch_t1.launch.py includes both, and resolves them at launch time the
-       way its previous home in mecanumbot_custom_nav2 did. Declaring
+  <!-- NOT declared, deliberately: mecanumbot_bringup, mecanumbot_camera_stream
+       and mecanumbot_deep3r. launch_t1.launch.py includes the first, and
+       launch_autoslam.launch.py the other two, all resolved at launch time the
+       way launch_t1's previous home in mecanumbot_custom_nav2 did. Declaring
        mecanumbot_bringup would make this package one edit away from a
        dependency cycle, since mecanumbot_bringup depends on mecanumbot_web,
        which depends on a behaviour package because it starts trees from the
        browser; and mecanumbot_deep3r has no remote, so it is not in every
-       checkout.
-       launch_t1 is a convenience wrapper; launch_autoslam needs neither. -->
+       checkout -- launch_autoslam only looks for it when use_deep3r is true. -->
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

@@ -141,9 +141,10 @@ def generate_launch_description():
                 "use_camera",
                 default_value="false",
                 description=(
-                    "Publish /camera/image_raw/compressed and feed the detector "
-                    "from it, instead of letting the detector open the camera "
-                    "directly. The camera can only be opened once -- and in T2 "
+                    "Feed the detector from /camera/image_raw/compressed instead "
+                    "of letting it open the camera directly. Does NOT start the "
+                    "publisher: run camera_compressed.launch.py first. The "
+                    "camera can only be opened once -- and in T2 "
                     "the Deep3R client wants the camera stream too, so set this "
                     "true whenever the cloud is being updated during the run"
                 ),

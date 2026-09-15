@@ -14,8 +14,14 @@ the one thing about this launcher worth knowing. The camera can only be opened
 once: either the DeepStream detector opens it directly (cheapest, but there is
 then no image topic at all) or the compressed publisher owns it and the detector
 reads the topic. A leading trial is scored afterwards from what the robot could
-see, so the recording is not optional here -- `/camera/image_raw/compressed` is
-published for the whole run, at the cost of a JPEG encode and decode per frame.
+see, so the recording is not optional here.
+
+**This launcher does not start the compressed publisher, and neither does
+perception any more** (its camera include has been commented out since
+`2f7aade`). With the default `use_camera:=true`, start the camera first --
+`ros2 launch mecanumbot_camera_stream camera_compressed.launch.py width:=1280
+height:=720` -- or nothing publishes `/camera/image_raw/compressed`, the pose
+detector gets no frames, and there is no image to score the trial from.
 
 Still needed, already running: the base launch (drivers, nav2 with AMCL
 localized against the room's map, the LED service for the LED condition).
@@ -125,11 +131,12 @@ def generate_launch_description():
                 "use_camera",
                 default_value="true",
                 description=(
-                    "Publish /camera/image_raw/compressed for the whole trial "
-                    "and feed the detector from it. True here because a leading "
-                    "trial is scored afterwards from what the robot could see; "
-                    "false lets the detector open the camera directly, which is "
-                    "cheaper but leaves no image topic at all"
+                    "Feed the detector from /camera/image_raw/compressed. True "
+                    "here because a leading trial is scored afterwards from what "
+                    "the robot could see. Does NOT start the publisher: run "
+                    "camera_compressed.launch.py first. false lets the detector "
+                    "open the camera directly, which is cheaper but leaves no "
+                    "image topic at all"
                 ),
             ),
             DeclareLaunchArgument(
