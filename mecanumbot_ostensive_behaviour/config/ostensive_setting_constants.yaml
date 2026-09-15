@@ -14,10 +14,12 @@ ostensive_bt_node:
   ros__parameters:
     # ----- Camera geometry ---------------------------------------------------
     # Must match `camera_params.camera_fov` of whichever detector in
-    # mecanumbot_sensorprocess_smart is running (both default to 60 degrees).
+    # mecanumbot_sensorprocess_smart is running (both default to 51 degrees,
+    # the lens as measured on 2026-09-15; 60 was assumed before, and
+    # overstated every bearing towards a person by 60/51).
     # This is what converts an image column into a bearing, so getting it wrong
     # scales every turn the robot makes towards a person.
-    camera_hfov_deg: 60.0
+    camera_hfov_deg: 51.0
 
     # Does the camera hand over a mirrored view of the room? Everything this
     # tree decides about direction -- which way to turn to keep somebody

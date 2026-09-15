@@ -5,9 +5,10 @@ Where the robot points its camera at a ball: before it has seen one, and after.
 ## Before: one tilt, held
 
 The camera sits on the neck about 0.2 m above the floor with a vertical field
-of view of about 36 degrees. That is low enough that a single tilt sees almost
-all the floor there is: pitched so the top edge of the frame sits just above the
-horizon, the bottom edge meets the floor about 0.3 m in front of the lens, and
+of view of about 30 degrees (51 horizontally, measured). That is low enough
+that a single tilt sees almost all the floor there is: pitched so the top edge
+of the frame sits just above the horizon, the bottom edge meets the floor about
+0.35 m in front of the lens, and
 everything from there out to the far wall is in view at once
 (`floor_band` computes it). So the search holds the head at that tilt,
 `fetch_head_search`, and does not sweep.
@@ -36,7 +37,8 @@ ball whatever the neck's zero is.
 
 As the robot closes on the ball, the ball sinks in the frame and the neck
 follows it down, so the near floor comes into view exactly when it is needed;
-the lower limit `fetch_head_low` is the pose that looks between the grabbers.
+the lower limit `fetch_head_low` is the pose that looks at the floor just
+beyond the lens, where a ball about to be gripped is.
 
 No ROS: the behaviours hand these functions pixel boxes and neck positions.
 """

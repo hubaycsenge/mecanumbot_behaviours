@@ -116,13 +116,13 @@ round is given up. `fetch_search_timeout` was raised to 900 s for it in both shi
 `spin` replaced `circles` as the default on 2026-09-14 because the circles missed balls: a
 tangent-facing robot only ever looks along its direction of travel, so a ball lying beside
 it is never in view. A full turn looks at every bearing; at `full_scan_spin_speed: 0.3` a
-bearing stays in the 60° view for about 3.5 s. (With `fetch_head_search_mode: sweep` the
+bearing stays in the 51° view for about 3 s. (With `fetch_head_search_mode: sweep` the
 turn must also stay below ~0.35 rad/s, or a ball passes through the view while the head
 looks at the wrong band.)
 
 **`CircleSearch` (`circles`) covers the floor.** Widening circles around wherever the robot was
 standing when it started looking. A circle rather than a lawnmower sweep because the
-constraint is the camera's ~60°, not the floor: what matters is ending up pointed in
+constraint is the camera's ~51°, not the floor: what matters is ending up pointed in
 every direction from a spread of places, and going round is the cheapest way to do that
 one nav2 goal at a time. Everything at radius *r* is looked at before anything at
 *r + step*, so the near floor comes first.
@@ -141,17 +141,18 @@ it. A search that only ever widens is a search for a stationary object, which is
 `mecanumbot_seek`'s problem and not this one.
 
 **The head is held still, at the tilt that sees the most floor (`HoldSearchGaze`).** The
-camera is on the neck about 0.2 m up with a vertical field of view of about 36°. That is
+camera is on the neck about 0.2 m up with a vertical field of view of about 30°. That is
 low enough that **one tilt sees nearly all of the floor**: with the top edge of the frame
-just above the horizon, the bottom edge meets the floor about 0.3 m in front of the lens,
+just above the horizon, the bottom edge meets the floor about 0.35 m in front of the lens,
 and everything from there to the far wall is in view at once. So there is no band left
 over for a sweep to cover. Holding the horizon inside the frame is also what finds a ball
 **as far away as possible**, because a far ball sits just below the horizon.
 `fetch_head_search` is that tilt, in board units.
 
-**Check `fetch_head_search` on the robot.** 4.3 was estimated from frames taken during a
-sweep, not measured with the head still. With the head there, the top of
-`cam_object_detections/debug_image` should just show the base of the far wall.
+`fetch_head_search: 5.5` (550 ticks) is −9.8° by the calibration below: the top edge
++5° above the horizon, the floor in view from ~0.36 m out. `5.4` gains a few centimetres
+of near floor for a 2° horizon margin. `fetch_head_low: 4.0` (−53°) looks at the floor
+5–17 cm beyond the lens, where a ball about to be gripped is.
 
 Until 2026-09-15 the head swept up and down between `fetch_head_low` and `fetch_head_high`
 (`SweepHead`, still available as `fetch_head_search_mode: sweep`). The sweep made the
@@ -193,7 +194,7 @@ neck's zero is.
   oscillate. As the robot closes in, the ball sinks in the frame and the head follows it
   down. If the ball goes out of view (`fetch_head_track_lost`) while the robot is within
   `fetch_head_close_range` of it, it has gone under the lens, and the head drops to
-  `fetch_head_low`, the pose that looks between the grabbers. Otherwise the head holds
+  `fetch_head_low`, the pose that looks just beyond the lens. Otherwise the head holds
   where it is.
 * **The body** turns on `/cmd_vel`, in place, proportional to the ball's bearing, until
   it is within `fetch_face_tolerance` on two frames. nav2's rotation shim already faces a
@@ -215,19 +216,28 @@ positions. So the delivery opened the grabbers the moment it looked up for a per
 (`GripperCommander.keep_grippers`), and `ReleaseBall` and `ClearFetchEpisode` hand the
 open ones back.
 
-## The neck calibration is unmeasured, and it is wrong
+## The neck and lens calibration (measured 2026-09-15)
 
 `CheckBallReachable` turns on the ball's height, and that height is only as right as
-`ball.neck.pitch_at_level_deg` in `mecanumbot_sensorprocess_smart`'s config, which is
-still the unmeasured 0. The same model gives `head_joint` in `mecanumbot_sensorproc_node`
-(the TF) and `camera.pitch_at_level` in `mecanumbot_deep3r`, so all three are off
-together. Frames taken on 2026-09-15 show the camera looking at a wall at `pos_n` ≈ 460
-and at the ceiling lights at ≈ 610, where the model says −40° and +4°. The real camera
-looks well above what the model claims over the upper half of the neck's range.
-Measure it with the head still and a ball on the floor: `ball_locating.floor_pitch` turns
-one box into the pitch. Then set all three together. Until that is done, expect
-`CheckBallReachable` to call balls on the floor unreachable. The centring above does not
-depend on it.
+the neck model and the lens. Both were measured on 2026-09-15 with a ball on the floor
+about 1 m in front of the robot:
+
+* **Neck:** the neck was held still at 500–600 ticks in 0.1-unit steps, up and then
+  down, and every box went through `ball_locating.floor_pitch`. The slope is the AX-12A's
+  0.005061 rad/tick (a free fit gave 0.005115). At 600 ticks the camera looks **+4.7°**
+  up (+4.4° coming down, +5.0° going up, so a couple of ticks of backlash), which puts
+  optical level at ~584 ticks. It was 0 before.
+* **Lens:** **51°** horizontal, not the assumed 60°. The robot turned ±0.2 rad in place,
+  and the ball's pixel shift against odometry yaw gave a ~1340 px focal length. At 60°
+  the neck slope came out 1.2× the datasheet's and the ball ranged 20 % short; at 51°
+  both are right.
+
+The offset is set in all three places that share the model:
+`ball.neck.pitch_at_level_deg` in `mecanumbot_sensorprocess_smart`, `head_joint` in
+`mecanumbot_sensorproc_node` (the TF), and `camera.pitch_at_level_deg` in
+`mecanumbot_deep3r`. The lens is `camera_hfov_deg` in `perception.launch.py`, and
+`fetch_camera_hfov_deg` here. The centring does not depend on the offset, but the
+reachability check does.
 
 ## Height is what decides whether the ball can be had
 
@@ -294,7 +304,8 @@ describes this robot's body and the people in the room:
 
 Neck positions (`fetch_head_search`, `fetch_head_low`, `fetch_head_high`) are the
 accessory board's own units, about 2.0 to 8.6, where larger looks further up. They are
-**not** angles, because the calibration to radians is the unmeasured part, so they
+**not** angles, because they are the numbers the neck is commanded in (the calibration to
+radians is in the section above), so they
 carry no `_deg` suffix. The centring angles (`fetch_camera_hfov_deg`,
 `fetch_head_track_deadband_deg`, `fetch_face_tolerance_deg`) are angles in the image,
 and do. `fetch_head_approach` is gone: the grab keeps the head where the tracker left it.

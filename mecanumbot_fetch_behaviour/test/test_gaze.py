@@ -21,7 +21,7 @@ from mecanumbot_fetch_behaviour.gaze import (
     vertical_fov,
 )
 
-WIDTH, HEIGHT, HFOV = 1280, 720, math.radians(60.0)
+WIDTH, HEIGHT, HFOV = 1280, 720, math.radians(51.0)
 VFOV = vertical_fov(WIDTH, HEIGHT, HFOV)
 # About where the lens is, and where a tennis ball's centre is [m].
 LENS_HEIGHT = 0.2
@@ -29,9 +29,9 @@ BALL_CENTRE = 0.0335
 RAD_PER_UNIT = 0.5061
 
 
-def test_the_frame_is_about_36_degrees_tall():
-    """The vertical view every other claim here rests on."""
-    assert math.degrees(VFOV) == pytest.approx(36.0, abs=0.5)
+def test_the_frame_is_about_30_degrees_tall():
+    """The vertical view every other claim here rests on: 51 deg across, 16:9."""
+    assert math.degrees(VFOV) == pytest.approx(30.0, abs=0.5)
 
 
 def test_one_tilt_sees_from_near_the_grabbers_to_the_horizon():
@@ -45,7 +45,7 @@ def test_one_tilt_sees_from_near_the_grabbers_to_the_horizon():
     pitch = -(VFOV / 2.0) + math.radians(4.0)
     near, far = floor_band(LENS_HEIGHT, pitch, VFOV, BALL_CENTRE)
     assert far == math.inf
-    assert near < 0.35
+    assert near < 0.4
 
 
 def test_a_level_camera_misses_the_floor_in_front_of_the_robot():

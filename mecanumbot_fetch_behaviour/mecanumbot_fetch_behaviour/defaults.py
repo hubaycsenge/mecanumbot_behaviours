@@ -98,14 +98,15 @@ FETCH_DEFAULTS = {
     "fetch_head_search_mode": "hold",
     # The search tilt, in the accessory board's units: the one that puts the
     # top edge of the frame just above the horizon, so the far floor is in view
-    # and the near floor is too, from ~0.3 m out.
-    "fetch_head_search": 4.3,
+    # and the near floor is too, from ~0.36 m out. 550 ticks is -9.8 deg by the
+    # neck calibration of 2026-09-15.
+    "fetch_head_search": 5.5,
     # How often the held tilt is re-sent [s].
     "fetch_head_hold_resend": 2.0,
-    # The range the head may move in, in board units. Low looks down between
-    # the grabbers, which is where a ball about to be gripped is; high is well
-    # above the horizon.
-    "fetch_head_low": 3.0,
+    # The range the head may move in, in board units. Low (-53 deg) looks at
+    # the floor just beyond the lens, which is where a ball about to be gripped
+    # is; high is well above the horizon.
+    "fetch_head_low": 4.0,
     "fetch_head_high": 6.5,
     # `sweep` only: one down-and-up lap [s], and how often the neck is
     # commanded along it [s].
@@ -115,12 +116,14 @@ FETCH_DEFAULTS = {
     # ===== Keeping the ball centred ===========================================
     # The frame the fetch detector's boxes are in, and its horizontal field of
     # view -- what turns a pixel offset into an angle. Must match
-    # `camera_params` in the perception layer.
+    # `camera_params` in the perception layer; 51 deg is the lens as measured
+    # on 2026-09-15.
     "fetch_camera_width": 1280,
     "fetch_camera_height": 720,
-    "fetch_camera_hfov": math.radians(60.0),
+    "fetch_camera_hfov": math.radians(51.0),
     # Radians of tilt per board unit of neck: the AX-12A's 0.005061 rad per
-    # tick, 100 ticks to the unit. Only the tracking step's size depends on it.
+    # tick, 100 ticks to the unit, which the 2026-09-15 calibration confirmed.
+    # Only the tracking step's size depends on it.
     "fetch_neck_rad_per_unit": 0.5061,
     # The head's step towards the ball, as a fraction of the ball's elevation;
     # below one because the frame is a little old by the time it is acted on.

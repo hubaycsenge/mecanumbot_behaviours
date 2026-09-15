@@ -14,7 +14,7 @@ and notices at the next stop.
 head. (`HopToNextSpot` is `CircleSearch` cut into single drives, for the search
 that turns a full circle at each place it stops.) The head is *held*, at the
 tilt that puts the horizon just inside the top of the frame: the camera is low
-enough that one tilt sees the floor from about 0.3 m out to the far wall, so
+enough that one tilt sees the floor from about 0.35 m out to the far wall, so
 there is no band left for a sweep to add -- see `gaze.py`. `SweepHead` is the
 sweep it replaced, kept behind `fetch_head_search_mode: sweep`.
 
@@ -198,8 +198,8 @@ class HoldSearchGaze(py_trees.behaviour.Behaviour):
     search, and must not be able to end or fail the parallel it sits in.
 
     `fetch_head_search` is the tilt that puts the top edge of the frame just
-    above the horizon. From a lens 0.2 m up with a ~36 degree vertical view,
-    that one tilt sees the floor from about 0.3 m out to the far wall, so the
+    above the horizon. From a lens 0.2 m up with a ~30 degree vertical view,
+    that one tilt sees the floor from about 0.35 m out to the far wall, so the
     furthest ball the detector can resolve is in view and so is nearly all the
     floor in front of it. A still head also gives the detector unsmeared
     frames, and gives the fusion node a neck reading that is where the head

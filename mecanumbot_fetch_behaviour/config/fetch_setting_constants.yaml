@@ -71,8 +71,8 @@ fetch_bt_node:
 
     # The full turn's speed [rad/s] and how long one may take [s] -- the
     # movement library's full-scan constants, which `FetchScan` reads. A bearing
-    # stays in the ~60 deg view for 1.05 / speed seconds, so at 0.3 the detector
-    # gets ~3.5 s of frames of every ball the turn passes. (With
+    # stays in the ~51 deg view for 0.89 / speed seconds, so at 0.3 the detector
+    # gets ~3 s of frames of every ball the turn passes. (With
     # fetch_head_search_mode: sweep the speed must also stay below ~0.35, or a
     # ball passes through the view while the head looks at the wrong band.)
     full_scan_spin_speed: 0.3
@@ -83,7 +83,7 @@ fetch_bt_node:
     # ==========================================================================
     # Widening circles around wherever the robot was standing when it started
     # looking. A circle rather than a lawnmower sweep because the constraint is
-    # the camera's 60 degrees, not the floor: what matters is ending up pointed
+    # the camera's 51 degrees, not the floor: what matters is ending up pointed
     # in every direction from a spread of places.
 
     # Radius of the first circle, what each one adds, and how far out it goes [m].
@@ -129,7 +129,7 @@ fetch_bt_node:
     # The head while searching
     # ==========================================================================
     # hold | sweep. The camera is on the neck about 0.2 m up with a vertical
-    # view of ~36 deg, low enough that ONE tilt sees the floor from ~0.3 m out
+    # view of ~30 deg, low enough that ONE tilt sees the floor from ~0.35 m out
     # to the far wall -- so `hold` keeps the head still at fetch_head_search
     # for the whole search. `sweep` is the up-and-down sweep it replaced
     # (2026-09-15), kept for comparison: half of each lap looked at the ceiling
@@ -140,16 +140,19 @@ fetch_bt_node:
     fetch_head_search_mode: hold
     # The search tilt [board units]: the top edge of the frame just above the
     # horizon, which is what sees a ball as far away as the detector can.
-    # CHECK IT ON THE ROBOT: with the head here, the top of
-    # cam_object_detections/debug_image should just show the base of the far
-    # wall. 4.3 is estimated from frames taken mid-sweep, not measured.
-    fetch_head_search: 4.3
+    # 5.5 is 550 ticks, which the neck calibration of 2026-09-15 puts at -9.8
+    # deg: the top edge +5 deg above the horizon, the floor in view from
+    # ~0.36 m out. Frames at that tilt show the far wall's base just below the
+    # top edge. Lower it (5.4 is +2 deg) to see nearer floor, at the cost of
+    # the horizon margin.
+    fetch_head_search: 5.5
     # How often the held tilt is re-sent [s].
     fetch_head_hold_resend: 2.0
-    # The range the head may move in [board units]. Low looks down between the
-    # grabbers, where a ball about to be gripped is; high is well above the
-    # horizon, for a ball somebody is holding up.
-    fetch_head_low: 3.0
+    # The range the head may move in [board units]. Low (400 ticks, -53 deg)
+    # looks at the floor 5-17 cm beyond the lens, where a ball about to be
+    # gripped is; 3.0 was straight down at the grabbers' hinges. High is well
+    # above the horizon, for a ball somebody is holding up.
+    fetch_head_low: 4.0
     fetch_head_high: 6.5
     # `sweep` only: seconds for one down-and-up lap, and how often the neck is
     # commanded along it.
@@ -166,11 +169,12 @@ fetch_bt_node:
     # calibration too. As the robot closes in, the ball sinks in the frame and
     # the head follows it down to fetch_head_low.
     #
-    # The frame the fetch detector's boxes are in -- must match camera_params in
-    # the perception config -- and its horizontal field of view.
+    # The frame the fetch detector's boxes are in, and its horizontal field of
+    # view -- both must match camera_params in the perception config. 51 deg
+    # was measured on 2026-09-15 (60 was assumed before).
     fetch_camera_width: 1280
     fetch_camera_height: 720
-    fetch_camera_hfov_deg: 60.0
+    fetch_camera_hfov_deg: 51.0
     # Tilt per board unit of neck [rad]: the AX-12A's 0.005061 rad per tick.
     fetch_neck_rad_per_unit: 0.5061
     # The neck's step as a fraction of the ball's elevation; below one because

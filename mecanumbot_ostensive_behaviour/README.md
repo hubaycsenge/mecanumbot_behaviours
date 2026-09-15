@@ -296,7 +296,7 @@ name without the `_deg` suffix. No behaviour converts an angle twice.
 
 | Group | Parameter | Default | Meaning |
 | --- | --- | --- | --- |
-| Camera | `camera_hfov_deg` | `60.0` | Must match `camera_params.camera_fov` of the running detector. Getting it wrong scales every turn towards a person. |
+| Camera | `camera_hfov_deg` | `51.0` | Must match `camera_params.camera_fov` of the running detector. Getting it wrong scales every turn towards a person. 51 was measured on 2026-09-15; it was 60 (assumed) before. |
 | | `mirror_image_x` | `true` | The camera shows a mirrored view of the room, so every pose is reflected on arrival. Set the wrong way, the robot turns away from the addressee and drives to the mirror image of where they pointed. Optional; omitting it keeps the default. |
 | | `detection_timeout` | `1.0` | How stale a camera frame may be and still be acted on. |
 | Attention | `attention_signal_mode` | `any` | `raised_hand`, `wave` or `any`. |

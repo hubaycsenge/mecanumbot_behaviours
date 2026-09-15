@@ -12,7 +12,7 @@ long as the robot closes in, tilting the neck by a fraction of the ball's
 elevation each time a frame taken *after* the last move arrives. As the robot
 nears the ball it sinks in the frame and the head follows it down; when the
 ball drops out under the camera's chin close to the robot, the head goes to
-`fetch_head_low`, the pose that looks between the grabbers.
+`fetch_head_low`, the pose that looks at the floor just beyond the lens.
 
 `FaceBall` is the horizontal axis: an in-place turn on `/cmd_vel` until the ball
 is centred left-to-right. nav2's rotation shim already faces a ball the approach
@@ -66,7 +66,7 @@ class TrackBallWithHead(py_trees.behaviour.Behaviour):
     stays where it is -- the ball is most likely a frame or two from coming
     back -- unless the robot is within `fetch_head_close_range` of where the
     ball was last placed. Then the ball has gone out under the lens, and the
-    head drops to `fetch_head_low` to find it between the grabbers.
+    head drops to `fetch_head_low` to find it just in front of the grabbers.
     """
 
     def __init__(self, name="TrackBallWithHead"):
@@ -122,10 +122,10 @@ class TrackBallWithHead(py_trees.behaviour.Behaviour):
                 if self._position > self.low + 1e-3:
                     self.node.get_logger().info(
                         f"{self.name}: ball out of view close by, looking down "
-                        f"between the grabbers ({self.low:.2f})"
+                        f"just beyond the lens ({self.low:.2f})"
                     )
                     self._move(self.low, now)
-                self.feedback_message = "looking between the grabbers"
+                self.feedback_message = "looking just beyond the lens"
             else:
                 self.feedback_message = f"holding at {self._position:.2f}"
             return py_trees.common.Status.RUNNING

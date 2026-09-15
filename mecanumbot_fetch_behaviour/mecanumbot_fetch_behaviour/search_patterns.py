@@ -9,7 +9,7 @@ three facts settle the shape of the search.
 
 The robot walks a **circle** and then a wider circle, out from where it started.
 A circle rather than a lawnmower sweep because the constraint here is the
-camera, not the floor: the lens sees about 60 degrees, so what matters is that
+camera, not the floor: the lens sees about 51 degrees, so what matters is that
 the robot ends up pointing in every direction from a spread of places, and going
 round is the cheapest way to do that with a differential goal at a time. It is
 also the pattern `mecanumbot_seek` uses for the same reason, and the same
@@ -28,7 +28,7 @@ searching" is a question a trial might want to answer differently.
 ## Height on the head
 
 The camera is on a tilting neck about 0.2 m up, with a vertical field of view of
-roughly 36 degrees. At one tilt it sees a band of floor and nothing else: tilted
+roughly 30 degrees. At one tilt it sees a band of floor and nothing else: tilted
 down it sees from its own feet out to a couple of metres; level it sees from a
 couple of metres to the far wall but not the floor in front of it. A ball
 outside the current band is invisible, however good the detector is, so a single
