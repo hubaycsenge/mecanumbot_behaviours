@@ -152,7 +152,7 @@ Functions:
 
 1. Detects active Wi-Fi SSID (`nmcli`, fallback `iwgetid`).
 2. Chooses default constants YAML based on SSID (`MecanumNet` → `behaviour_setting_constants.yaml`, `MecanumetoNet` → `Eto_behaviour_setting_constants.yaml`, anything else → `behaviour_setting_constants.yaml`).
-3. Declares launch args: `params`, `yaml_path` (both default to that SSID-chosen file), `namespace` (default `mecanumbot`), `condition` (default `Doglike`), `use_perception` (default `true`), `use_camera` (default `true`), `debug_image` (default `true`: the pose detector's annotated frame on `/mecanumbot/cam_people_detections/debug_image/compressed`), `camera_width` / `camera_height` (default `1280` / `720`), `yolo_imgsz` (default `1280`), `yolo_model` (default `yolo26m-pose`).
+3. Declares launch args: `params`, `yaml_path` (both default to that SSID-chosen file), `namespace` (default `mecanumbot`), `condition` (default `Doglike`), `use_perception` (default `true`), `camera_source` (default `direct`: the detector opens the webcam itself, no ROS image topic in the frame path; `topic` reads `/camera/image_raw/compressed`, which is not started), `debug_image` (default `true`: the pose detector's annotated frame on `/mecanumbot/cam_people_detections/debug_image/compressed`), `camera_width` / `camera_height` (default `1280` / `720`), `yolo_imgsz` (default `1280`), `yolo_model` (default `yolo26m-pose`).
 4. Exports `YAML_PATH` and `BEHAVIOUR_YAML_PATH` env vars for BT scripts.
 5. Includes `mecanumbot_sensorprocess_smart/launch/perception.launch.py` with `detector:=pose` and the camera/model/debug arguments above, unless `use_perception:=false`.
 6. Starts exactly one node by `condition`: `Doglike` -> `doglike_leading_bt_node`, `Control` -> `control_leading_bt_node`, `LED` -> `LED_leading_bt_node`.
@@ -472,28 +472,34 @@ launch file**, which the base launch no longer does: it includes
 `/mecanumbot/people_fusion` and `/mecanumbot/cam_people_detections` are there.
 `use_perception:=false` when it is already running.
 
-`use_camera` defaults to **true** here and to false in the ostensive, seek and fetch
-launchers (`mecanumbot_autoslam`'s `use_camera` is a different switch — it starts the
-publisher itself).
-The camera can only be opened once, so it is a choice: either the DeepStream detector
-opens it directly (cheapest, but there is then no image topic at all) or
-`mecanumbot_camera_stream`'s compressed publisher owns it and the detector reads the
-topic. A leading trial is scored afterwards from what the robot could see, which is why
-the default is the topic, at the cost of a JPEG encode and decode per frame.
-`use_camera:=false` gives the old behaviour back.
+**`camera_source` defaults to `direct`**, as in every behaviour launcher. The
+DeepStream detector opens the USB webcam itself (`v4l2src` on `/dev/video0`), so no
+camera node runs and no frame passes through ROS 2 on its way to the network. Nothing
+needs starting by hand. This is the cheapest path on the Orin Nano.
 
-**This launch file does not start that publisher.** `perception.launch.py` stopped
-including the camera on 2026-09-10 (`2f7aade` in `mecanumbot_sensorprocess_smart`), so
-with the default `use_camera:=true` nothing publishes `/camera/image_raw/compressed`:
-the pose detector gets no frames — no camera detections, only DR-SPAAM — and there is
-no image to score the trial from. Start the camera by hand before the trial:
+With `direct` there is no `/camera/image_raw/compressed`. What the robot saw is on the
+detector's annotated frame, `/mecanumbot/cam_people_detections/debug_image/compressed`
+(`debug_image`, on by default), with the boxes and skeletons drawn on it. **Record that
+topic to score a trial afterwards.**
+
+`camera_source:=topic` makes the detector read `/camera/image_raw/compressed`, for an
+unannotated recording, at the cost of a camera node, a JPEG encode and a decode per
+frame. **This launch file does not start that camera.** Until 2026-09-15 `topic` was
+the default here, under the name `use_camera:=true`. Nothing started the publisher, so
+the detector got no frames and the leading trees ran on DR-SPAAM alone, with no error.
+If you want it, start the camera first:
 
 ```bash
 ros2 launch mecanumbot_camera_stream camera_compressed.launch.py width:=1280 height:=720
+ros2 launch mecanumbot_leading_behaviour launch_wifi_condition_sequence.launch.py \
+  condition:=Doglike camera_source:=topic
 ```
 
+`mecanumbot_autoslam`'s `use_camera` is a different switch: it starts the camera
+publisher itself. The old perception `use_camera` passed here stops the launch.
+
 ```bash
-# a trial with no image recording, and the smaller pose model
+# the default path, with the smaller pose model
 ros2 launch mecanumbot_leading_behaviour launch_wifi_condition_sequence.launch.py \
-  condition:=Doglike use_camera:=false yolo_imgsz:=640
+  condition:=Doglike yolo_imgsz:=640
 ```

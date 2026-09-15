@@ -293,13 +293,15 @@ What it does:
    `Eto_behaviour_setting_constants.yaml`, anything else → the former.
 3. Declares the `params`, `yaml_path`, `namespace` (default `mecanumbot`) and
    `condition` (default `Doglike`) launch arguments, plus the perception ones:
-   `use_perception` (default `true`), `use_camera` (default `true`),
+   `use_perception` (default `true`), `camera_source` (default `direct`),
    `camera_width` / `camera_height` (`1280` / `720`), `yolo_imgsz` (`1280`) and
    `yolo_model` (`yolo26m-pose`).
 4. Exports `YAML_PATH` and `BEHAVIOUR_YAML_PATH` so the tree scripts can find the YAML.
 5. Includes `mecanumbot_sensorprocess_smart/launch/perception.launch.py` with the
-   `pose` detector. Neither it nor perception starts the compressed camera
-   publisher, so with `use_camera:=true` start
+   `pose` detector. With `camera_source:=direct`, the default, the detector opens the
+   webcam itself: no camera node and no ROS image topic in the frame path.
+   `camera_source:=topic` reads `/camera/image_raw/compressed`, which neither this
+   file nor perception starts, so run
    `mecanumbot_camera_stream camera_compressed.launch.py` first.
 6. Starts exactly one BT node based on `condition` (`Doglike`, `Control`, or `LED`),
    remapping `/mecanumbot/cmd_vel` and `/mecanumbot/cmd_accessory_pos` out of the

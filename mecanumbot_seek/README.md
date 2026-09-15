@@ -357,16 +357,16 @@ Besides the tree, `launch_seek.launch.py` starts two things:
   `map_agreement.yaml`). `use_agreement:=false` when a T1 session is still
   running one.
 
-`use_camera` (default false) feeds the detector from
-`/camera/image_raw/compressed` instead of letting it open the camera directly.
-The launch does **not** start that publisher — perception stopped including it —
-so start it first. The camera can only be opened once, and the Deep3R client
-wants the stream too, so this is the setting whenever the cloud is being updated
-during T2:
+`camera_source` defaults to `direct`: the detector opens the webcam itself, with no
+camera node and no ROS image topic in the frame path. `camera_source:=topic` makes it
+read `/camera/image_raw/compressed` instead. The launch does **not** start that
+publisher (perception stopped including it), so start it first. The camera can only be
+opened once, and the Deep3R client wants the stream too, so `topic` is the setting
+whenever the cloud is being updated during T2:
 
 ```bash
 ros2 launch mecanumbot_camera_stream camera_compressed.launch.py width:=1280 height:=720
-ros2 launch mecanumbot_seek launch_seek.launch.py use_camera:=true
+ros2 launch mecanumbot_seek launch_seek.launch.py camera_source:=topic
 ```
 
 The node runs in `namespace` (default `mecanumbot`) with `/mecanumbot/cmd_vel`

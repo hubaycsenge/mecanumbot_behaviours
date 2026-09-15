@@ -211,7 +211,7 @@ ros2 run nav2_map_server map_saver_cli -f <maps>/AI_dept/AI_dept
 | `preflight_strict` | `true` | Stop if the preflight could not clear a **name collision**. Those make nav2 bringup abort, so starting anyway wastes the run rather than degrading it. |
 | `require_cloud` | `true` | Whether the pass may only end once the server says the reconstruction is good enough. `false` is right for a dry run and wrong during a trial. |
 | `use_preflight` | `true` | Shut the contradicting nodes down first. |
-| `use_camera` | `true` | Start the compressed camera publisher (USB backend) on `/camera/image_raw/compressed`. `false` when something already publishes it. |
+| `use_camera` | `true` | Start the compressed camera publisher (USB backend) on `/camera/image_raw/compressed`. `false` when something already publishes it. Not the same switch as perception's `camera_source`: T1 runs no people detector, and the Deep3R client needs the frames as a ROS topic. |
 | `camera_width` / `camera_height` / `camera_fps` | `1280` / `720` / `15.0` | The camera's frame; matches `deep3r.yaml`'s advertised size. |
 | `use_deep3r` | `true` | Start the Deep3R client (`mecanumbot_deep3r/deep3r.launch.py`). `false` when one is already running, or for a mapping-only run with `require_cloud:=false`. |
 | `server` / `client_path` | `tcp://127.0.0.1:5555` / `~/robocam_client.py` | Passed to the client: the local end of the tunnel, and the deployed `robocam_client.py`. |

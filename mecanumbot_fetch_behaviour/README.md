@@ -59,10 +59,12 @@ ros2 run rqt_image_view rqt_image_view /mecanumbot/cam_object_detections/debug_i
 
 The launch starts the detector with `debug_image:=true`, so it publishes the frame the
 network was given with every box on it: people blue, balls yellow, and a refused box red
-with the check it failed (`score`, `size`, `shape`, `unconfirmed`). With `use_camera`
-false, the default, this is the only view of the camera there is. (`use_camera:=true`
-makes the detector read `/camera/image_raw/compressed` but does not start a publisher
-for it — start `mecanumbot_camera_stream`'s `camera_compressed.launch.py` by hand.) It costs a copy of
+with the check it failed (`score`, `size`, `shape`, `unconfirmed`). With
+`camera_source:=direct`, the default, the detector opens the webcam itself (no camera
+node, no ROS image topic in the frame path), and this is the only view of the camera
+there is. (`camera_source:=topic` makes the detector read `/camera/image_raw/compressed`
+but does not start a publisher for it. Start `mecanumbot_camera_stream`'s
+`camera_compressed.launch.py` by hand.) It costs a copy of
 the frame out of GPU memory and a JPEG encode per frame; switch it off for runs that
 need the GPU and CPU headroom.
 

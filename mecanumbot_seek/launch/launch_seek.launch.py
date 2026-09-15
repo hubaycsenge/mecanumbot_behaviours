@@ -138,15 +138,17 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument(
-                "use_camera",
-                default_value="false",
+                "camera_source",
+                default_value="direct",
+                choices=["direct", "topic"],
                 description=(
-                    "Feed the detector from /camera/image_raw/compressed instead "
-                    "of letting it open the camera directly. Does NOT start the "
-                    "publisher: run camera_compressed.launch.py first. The "
-                    "camera can only be opened once -- and in T2 "
-                    "the Deep3R client wants the camera stream too, so set this "
-                    "true whenever the cloud is being updated during the run"
+                    "direct (default): the detector opens the webcam itself, no "
+                    "ROS 2 middleware in the frame path. topic: read "
+                    "/camera/image_raw/compressed -- does NOT start the camera, "
+                    "run camera_compressed.launch.py first. The camera can only "
+                    "be opened once, and in T2 the Deep3R client wants the "
+                    "stream too, so use topic whenever the cloud is being "
+                    "updated during the run"
                 ),
             ),
             DeclareLaunchArgument(
@@ -212,7 +214,7 @@ def generate_launch_description():
                 launch_arguments={
                     "namespace": namespace,
                     "detector": "pose",
-                    "use_camera": LaunchConfiguration("use_camera"),
+                    "camera_source": LaunchConfiguration("camera_source"),
                     "debug_image": LaunchConfiguration("debug_image"),
                     "camera_width": LaunchConfiguration("camera_width"),
                     "camera_height": LaunchConfiguration("camera_height"),

@@ -9,19 +9,19 @@ detector, so `cam_people_detections` and `people_fusion` are there for the
 robot to find the human it is leading. `use_perception:=false` if it is already
 running.
 
-`use_camera` defaults to **true** here and to false everywhere else, and that is
-the one thing about this launcher worth knowing. The camera can only be opened
-once: either the DeepStream detector opens it directly (cheapest, but there is
-then no image topic at all) or the compressed publisher owns it and the detector
-reads the topic. A leading trial is scored afterwards from what the robot could
-see, so the recording is not optional here.
+`camera_source` defaults to **direct**, as in every behaviour launcher: the
+DeepStream detector opens the USB webcam itself (`v4l2src`), so no camera node
+runs and no frame passes through ROS 2 on its way to the network. Nothing needs
+starting by hand. There is then no `/camera/image_raw/compressed`; what the
+robot saw during a trial is on the detector's annotated frame,
+`/mecanumbot/cam_people_detections/debug_image/compressed` (`debug_image`, on
+by default), and that is the topic to record for scoring it afterwards.
 
-**This launcher does not start the compressed publisher, and neither does
-perception any more** (its camera include has been commented out since
-`2f7aade`). With the default `use_camera:=true`, start the camera first --
+`camera_source:=topic` reads `/camera/image_raw/compressed` instead, for a
+clean, unannotated recording, at the cost of a camera node, a JPEG encode and a
+decode per frame. **It does not start the camera** -- run
 `ros2 launch mecanumbot_camera_stream camera_compressed.launch.py width:=1280
-height:=720` -- or nothing publishes `/camera/image_raw/compressed`, the pose
-detector gets no frames, and there is no image to score the trial from.
+height:=720` first, or the detector gets no frames and publishes nothing.
 
 Still needed, already running: the base launch (drivers, nav2 with AMCL
 localized against the room's map, the LED service for the LED condition).
@@ -128,15 +128,15 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument(
-                "use_camera",
-                default_value="true",
+                "camera_source",
+                default_value="direct",
+                choices=["direct", "topic"],
                 description=(
-                    "Feed the detector from /camera/image_raw/compressed. True "
-                    "here because a leading trial is scored afterwards from what "
-                    "the robot could see. Does NOT start the publisher: run "
-                    "camera_compressed.launch.py first. false lets the detector "
-                    "open the camera directly, which is cheaper but leaves no "
-                    "image topic at all"
+                    "direct (default): the detector opens the webcam itself, no "
+                    "ROS 2 middleware in the frame path; record debug_image to "
+                    "score the trial. topic: read /camera/image_raw/compressed "
+                    "-- does NOT start the camera, run "
+                    "camera_compressed.launch.py first"
                 ),
             ),
             DeclareLaunchArgument(
@@ -186,7 +186,7 @@ def generate_launch_description():
                 launch_arguments={
                     "namespace": namespace,
                     "detector": "pose",
-                    "use_camera": LaunchConfiguration("use_camera"),
+                    "camera_source": LaunchConfiguration("camera_source"),
                     "debug_image": LaunchConfiguration("debug_image"),
                     "camera_width": LaunchConfiguration("camera_width"),
                     "camera_height": LaunchConfiguration("camera_height"),
