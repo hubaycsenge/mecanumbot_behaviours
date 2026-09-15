@@ -160,7 +160,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "yolo_imgsz",
-                default_value="1280",
+                default_value="640",
                 description="Input size the pose model was exported at",
             ),
             DeclareLaunchArgument(
