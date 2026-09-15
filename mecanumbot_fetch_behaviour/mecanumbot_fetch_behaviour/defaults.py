@@ -15,6 +15,8 @@ tilts are **not** angles: they are the accessory board's own units (about 2.0 to
 8.6, larger looks further up), and there is no calibration to radians.
 """
 
+import math
+
 from mecanumbot_bt_config.blackboard import Tunables
 
 FETCH_DEFAULTS = {
@@ -89,23 +91,60 @@ FETCH_DEFAULTS = {
     "fetch_search_laps": 3,
     "fetch_search_timeout": 300.0,
 
-    # ===== The head sweep =====================================================
-    # Neck positions the sweep runs between, and how long one down-and-up lap
-    # takes [s]. The low end looks at the floor immediately in front of the
-    # robot, the high end at the far side of the room; a ball outside the
-    # current band is invisible however good the detector is, which is why the
-    # tilt moves at all.
+    # ===== The head while searching ==========================================
+    # hold | sweep. `hold` keeps the head at `fetch_head_search` for the whole
+    # search; `sweep` is the triangle wave between `fetch_head_low` and
+    # `fetch_head_high` it replaced, kept for comparison. See `gaze.py`.
+    "fetch_head_search_mode": "hold",
+    # The search tilt, in the accessory board's units: the one that puts the
+    # top edge of the frame just above the horizon, so the far floor is in view
+    # and the near floor is too, from ~0.3 m out.
+    "fetch_head_search": 4.3,
+    # How often the held tilt is re-sent [s].
+    "fetch_head_hold_resend": 2.0,
+    # The range the head may move in, in board units. Low looks down between
+    # the grabbers, which is where a ball about to be gripped is; high is well
+    # above the horizon.
     "fetch_head_low": 3.0,
     "fetch_head_high": 6.5,
+    # `sweep` only: one down-and-up lap [s], and how often the neck is
+    # commanded along it [s].
     "fetch_head_sweep_period": 6.0,
-    # How often the neck is actually commanded during the sweep [s]. The sweep
-    # is continuous; the commands are not, because every one is a serial write
-    # to the accessory board.
     "fetch_head_command_interval": 0.3,
-    # Where the head is held once the robot has committed to a ball: down, so
-    # the ball stays in frame as the robot closes on it and the box stays big
-    # enough to range from.
-    "fetch_head_approach": 2.6,
+
+    # ===== Keeping the ball centred ===========================================
+    # The frame the fetch detector's boxes are in, and its horizontal field of
+    # view -- what turns a pixel offset into an angle. Must match
+    # `camera_params` in the perception layer.
+    "fetch_camera_width": 1280,
+    "fetch_camera_height": 720,
+    "fetch_camera_hfov": math.radians(60.0),
+    # Radians of tilt per board unit of neck: the AX-12A's 0.005061 rad per
+    # tick, 100 ticks to the unit. Only the tracking step's size depends on it.
+    "fetch_neck_rad_per_unit": 0.5061,
+    # The head's step towards the ball, as a fraction of the ball's elevation;
+    # below one because the frame is a little old by the time it is acted on.
+    "fetch_head_track_gain": 0.6,
+    # Elevation not worth moving the neck for [rad].
+    "fetch_head_track_deadband": math.radians(4.0),
+    # Frames stamped this long after a neck command are ignored [s]: they were
+    # taken with the head still moving.
+    "fetch_head_track_settle": 0.5,
+    # How long the ball may be out of view before the head does anything
+    # about it [s], and how close the robot must be to where it was last
+    # placed for "out of view" to mean "under the lens" [m].
+    "fetch_head_track_lost": 1.0,
+    "fetch_head_close_range": 0.6,
+    # Turning in place to centre the ball left-to-right: how close to the
+    # centre counts [rad], the proportional gain [1/s], the rate limits
+    # [rad/s], how long the ball may be out of view before the turn gives up
+    # on it [s], and the backstop [s].
+    "fetch_face_tolerance": math.radians(4.0),
+    "fetch_face_gain": 1.5,
+    "fetch_face_max_rate": 0.4,
+    "fetch_face_min_rate": 0.15,
+    "fetch_face_lost": 1.5,
+    "fetch_face_timeout": 6.0,
 
     # ===== Approaching and gripping ===========================================
     # Where the approach stops short of the ball [m]. Far enough that the ball

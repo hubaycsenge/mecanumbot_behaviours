@@ -70,11 +70,11 @@ fetch_bt_node:
     fetch_spot_max_stops: 8
 
     # The full turn's speed [rad/s] and how long one may take [s] -- the
-    # movement library's full-scan constants, which `FetchScan` reads. The speed
-    # is tied to the head sweep: a bearing stays in the ~60 deg view for
-    # 1.05 / speed seconds, and the head needs half of `fetch_head_sweep_period`
-    # (3 s) to go from floor to far wall, so above ~0.35 a ball can pass through
-    # the view while the head is looking at the wrong band.
+    # movement library's full-scan constants, which `FetchScan` reads. A bearing
+    # stays in the ~60 deg view for 1.05 / speed seconds, so at 0.3 the detector
+    # gets ~3.5 s of frames of every ball the turn passes. (With
+    # fetch_head_search_mode: sweep the speed must also stay below ~0.35, or a
+    # ball passes through the view while the head looks at the wrong band.)
     full_scan_spin_speed: 0.3
     full_scan_timeout: 45.0
 
@@ -126,32 +126,74 @@ fetch_bt_node:
     fetch_search_timeout: 900.0
 
     # ==========================================================================
-    # The head sweep
+    # The head while searching
     # ==========================================================================
-    # The camera sits on a tilting neck at about 0.2 m with a vertical field of
-    # view of roughly 36 degrees, so at any one tilt it sees a band of floor and
-    # nothing else: down it sees from its own feet to a couple of metres, level
-    # it sees the far wall but not the floor in front of it. A ball outside the
-    # current band is invisible however good the detector is, so a search with a
-    # fixed head is a search for balls at one distance.
-    #
-    # `ball.range_source` in the perception layer stays on `size`, whose range
-    # does not depend on the tilt. The ball's height does, so the fusion node
-    # places each frame with the neck position it was taken at (`ball.neck.*`
-    # there) rather than with one fixed pitch.
+    # hold | sweep. The camera is on the neck about 0.2 m up with a vertical
+    # view of ~36 deg, low enough that ONE tilt sees the floor from ~0.3 m out
+    # to the far wall -- so `hold` keeps the head still at fetch_head_search
+    # for the whole search. `sweep` is the up-and-down sweep it replaced
+    # (2026-09-15), kept for comparison: half of each lap looked at the ceiling
+    # or the grabbers, every frame came from a moving camera, and the fusion
+    # node placed each ball with a neck goal the head had not reached, so balls
+    # on the floor came out under it and were judged unreachable. Like
+    # fetch_search_strategy, this is a choice about what the robot attends to.
+    fetch_head_search_mode: hold
+    # The search tilt [board units]: the top edge of the frame just above the
+    # horizon, which is what sees a ball as far away as the detector can.
+    # CHECK IT ON THE ROBOT: with the head here, the top of
+    # cam_object_detections/debug_image should just show the base of the far
+    # wall. 4.3 is estimated from frames taken mid-sweep, not measured.
+    fetch_head_search: 4.3
+    # How often the held tilt is re-sent [s].
+    fetch_head_hold_resend: 2.0
+    # The range the head may move in [board units]. Low looks down between the
+    # grabbers, where a ball about to be gripped is; high is well above the
+    # horizon, for a ball somebody is holding up.
     fetch_head_low: 3.0
     fetch_head_high: 6.5
-    # Seconds for one down-and-up lap. Slow enough that the detector gets
-    # several frames in each band.
+    # `sweep` only: seconds for one down-and-up lap, and how often the neck is
+    # commanded along it.
     fetch_head_sweep_period: 6.0
-    # How often the neck is actually commanded [s]. The sweep is continuous --
-    # the position is a function of elapsed time -- but every command is a
-    # serial write to the accessory board and the tree ticks at 10 Hz.
     fetch_head_command_interval: 0.3
-    # Where the head is held once the robot has committed to a ball: down, so
-    # the ball stays in frame as the robot closes and the box stays big enough
-    # to range from.
-    fetch_head_approach: 2.6
+
+    # ==========================================================================
+    # Keeping the ball in the middle of the picture
+    # ==========================================================================
+    # Once a ball is sighted the neck keeps it centred vertically (beside the
+    # approach) and the body turns in place to centre it horizontally (before
+    # the grab). Both work from the ball's pixel box, not from its map position:
+    # an image offset needs only the lens, a map position needs the neck's
+    # calibration too. As the robot closes in, the ball sinks in the frame and
+    # the head follows it down to fetch_head_low.
+    #
+    # The frame the fetch detector's boxes are in -- must match camera_params in
+    # the perception config -- and its horizontal field of view.
+    fetch_camera_width: 1280
+    fetch_camera_height: 720
+    fetch_camera_hfov_deg: 60.0
+    # Tilt per board unit of neck [rad]: the AX-12A's 0.005061 rad per tick.
+    fetch_neck_rad_per_unit: 0.5061
+    # The neck's step as a fraction of the ball's elevation; below one because
+    # the frame is a little old by the time it is acted on.
+    fetch_head_track_gain: 0.6
+    # Elevation not worth moving the neck for.
+    fetch_head_track_deadband_deg: 4.0
+    # Frames stamped this long after a neck command are ignored [s] -- they were
+    # taken with the head still moving. This is what stops the loop oscillating.
+    fetch_head_track_settle: 0.5
+    # Ball out of view this long [s] while the robot is within this distance of
+    # where it was last placed [m] means it went under the lens: look down.
+    fetch_head_track_lost: 1.0
+    fetch_head_close_range: 0.6
+    # The in-place turn that centres the ball left-to-right: how close to the
+    # centre counts, gain [1/s], rate limits [rad/s], how long the ball may be
+    # out of view before grabbing on the approach's heading [s], and backstop [s].
+    fetch_face_tolerance_deg: 4.0
+    fetch_face_gain: 1.5
+    fetch_face_max_rate: 0.4
+    fetch_face_min_rate: 0.15
+    fetch_face_lost: 1.5
+    fetch_face_timeout: 6.0
 
     # ==========================================================================
     # Approaching and gripping

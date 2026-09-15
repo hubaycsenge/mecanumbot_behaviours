@@ -256,10 +256,14 @@ class GraspBall(py_trees.behaviour.Behaviour):
     they close -- which is why the tree wraps the approach and the grab in a
     `Retry` rather than treating one miss as a failed episode.
 
-    The neck is held at `fetch_head_approach` rather than sent to a neutral
-    pose, which is why this uses `GripperCommander` and not the movement
-    library's `AccessoryCommander`: lifting the head mid-grasp loses sight of
-    the ball at exactly the wrong moment.
+    The neck is held wherever `TrackBallWithHead` left it -- on the ball --
+    rather than sent to a fixed pose, which is why this uses `GripperCommander`
+    and not the movement library's `AccessoryCommander`: moving the head
+    mid-grasp loses sight of the ball at exactly the wrong moment.
+
+    A confirmed grab also hands the closed grippers to every later head
+    command (`GripperCommander.keep_grippers`), so the delivery's head lifts do
+    not open the grabbers and drop the ball.
     """
 
     def __init__(self, name="GraspBall"):
@@ -269,6 +273,9 @@ class GraspBall(py_trees.behaviour.Behaviour):
         self.blackboard.register_key(
             key="fetch_grasped", access=py_trees.common.Access.WRITE
         )
+        self.blackboard.register_key(
+            key="fetch_head_position", access=py_trees.common.Access.READ
+        )
 
     def setup(self, **kwargs):
         """Build the gripper commander and the held-object tracker."""
@@ -277,7 +284,7 @@ class GraspBall(py_trees.behaviour.Behaviour):
         self.confirm_timeout = float(
             constant(self.blackboard, "fetch_grasp_confirm_timeout")
         )
-        self.neck = float(constant(self.blackboard, "fetch_head_approach"))
+        self.low = float(constant(self.blackboard, "fetch_head_low"))
         self.open_left = float(constant(self.blackboard, "fetch_gripper_open_left"))
         self.open_right = float(constant(self.blackboard, "fetch_gripper_open_right"))
         self.closed_left = float(constant(self.blackboard, "fetch_gripper_closed_left"))
@@ -290,9 +297,11 @@ class GraspBall(py_trees.behaviour.Behaviour):
         return True
 
     def initialise(self):
-        """Open the grabbers and start the close."""
+        """Open the grabbers and start the close, with the head where it is."""
         self._start = self.node.get_clock().now()
         self._closed = False
+        head = self.blackboard.fetch_head_position
+        self.neck = self.low if head is None else float(head)
         self.gripper.send(self.neck, self.open_left, self.open_right)
 
     def terminate(self, new_status):
@@ -318,6 +327,7 @@ class GraspBall(py_trees.behaviour.Behaviour):
 
         if self.held.has_ball:
             self.blackboard.fetch_grasped = True
+            self.gripper.keep_grippers(self.closed_left, self.closed_right)
             self.node.get_logger().info(f"{self.name}: got the ball")
             return py_trees.common.Status.SUCCESS
 

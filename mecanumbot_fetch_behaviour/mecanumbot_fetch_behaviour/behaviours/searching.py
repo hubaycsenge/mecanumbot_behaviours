@@ -10,14 +10,16 @@ parallel and the tree drops into the approach. Checking for the ball between
 search steps instead would mean the robot drives straight past a ball it can see
 and notices at the next stop.
 
-`CircleSearch` is where it drives, and `SweepHead` is where it points its head.
-(`HopToNextSpot` is `CircleSearch` cut into single drives, for the search that
-turns a full circle at each place it stops.)
-They are separate because they search different dimensions and neither can do
-the other's job: circling covers the floor, sweeping covers the *band* of that
-floor the camera can see at all. A ball outside the current tilt's band is
-invisible however good the detector is, so a search with a fixed head is a
-search that finds balls at one distance.
+`CircleSearch` is where it drives, and `HoldSearchGaze` is where it points its
+head. (`HopToNextSpot` is `CircleSearch` cut into single drives, for the search
+that turns a full circle at each place it stops.) The head is *held*, at the
+tilt that puts the horizon just inside the top of the frame: the camera is low
+enough that one tilt sees the floor from about 0.3 m out to the far wall, so
+there is no band left for a sweep to add -- see `gaze.py`. `SweepHead` is the
+sweep it replaced, kept behind `fetch_head_search_mode: sweep`.
+
+Neither head behaviour moves the head when the search ends. The ball was just
+seen at the tilt the head is at, and `TrackBallWithHead` takes it from there.
 """
 
 import math
@@ -29,12 +31,14 @@ from mecanumbot_movement_behaviours.geometry import distance_xy, quaternion_from
 from mecanumbot_movement_behaviours.ros_interfaces import (
     GOAL_ACTIVE_STATUSES,
     STATUS_SUCCEEDED,
-    AccessoryCommander,
     Nav2PoseNavigator,
     RobotPoseTracker,
 )
 
-from mecanumbot_fetch_behaviour.behaviours.ros_interfaces import BallDetectionTracker
+from mecanumbot_fetch_behaviour.behaviours.ros_interfaces import (
+    BallDetectionTracker,
+    GripperCommander,
+)
 from mecanumbot_fetch_behaviour.defaults import constant, register_param_keys
 from mecanumbot_fetch_behaviour.search_patterns import (
     FACING_TANGENT,
@@ -186,9 +190,73 @@ class WatchForBall(py_trees.behaviour.Behaviour):
         )
 
 
+class HoldSearchGaze(py_trees.behaviour.Behaviour):
+    """
+    Hold the head at the search tilt for as long as the search runs.
+
+    Always RUNNING, for the same reason as `SweepHead`: it is a modifier on the
+    search, and must not be able to end or fail the parallel it sits in.
+
+    `fetch_head_search` is the tilt that puts the top edge of the frame just
+    above the horizon. From a lens 0.2 m up with a ~36 degree vertical view,
+    that one tilt sees the floor from about 0.3 m out to the far wall, so the
+    furthest ball the detector can resolve is in view and so is nearly all the
+    floor in front of it. A still head also gives the detector unsmeared
+    frames, and gives the fusion node a neck reading that is where the head
+    actually is -- it places each ball with the neck's goal, which is only the
+    true tilt when the head is not moving.
+
+    The command is repeated every `fetch_head_hold_resend` seconds: it costs
+    nothing, and a serial write that did not arrive would otherwise leave the
+    head wherever the last behaviour put it for the whole search.
+
+    Leaves the head where it is on the way out: the ball was seen at this tilt.
+    """
+
+    def __init__(self, name="HoldSearchGaze"):
+        super().__init__(name)
+        self.blackboard = self.attach_blackboard_client(name=name)
+        register_param_keys(self.blackboard)
+        self.blackboard.register_key(
+            key="fetch_head_position", access=py_trees.common.Access.WRITE
+        )
+
+    def setup(self, **kwargs):
+        """Read the search tilt and build the neck commander."""
+        self.node = kwargs["node"]
+        self.position = float(constant(self.blackboard, "fetch_head_search"))
+        self.resend = float(constant(self.blackboard, "fetch_head_hold_resend"))
+        self.neck = GripperCommander(self.node)
+        self.logger.info(f"{self.name}: Setup complete")
+        return True
+
+    def initialise(self):
+        """Put the head at the search tilt."""
+        self._sent_at = None
+        self.node.get_logger().info(
+            f"{self.name}: holding the head at {self.position:.2f} while searching"
+        )
+
+    def update(self):
+        """Command the search tilt, again every `fetch_head_hold_resend` s."""
+        now = self.node.get_clock().now().nanoseconds / 1e9
+        if self._sent_at is None or now - self._sent_at >= self.resend:
+            self.neck.look(self.position)
+            self.blackboard.fetch_head_position = self.position
+            self._sent_at = now
+        self.feedback_message = f"head held at {self.position:.2f}"
+        return py_trees.common.Status.RUNNING
+
+
 class SweepHead(py_trees.behaviour.Behaviour):
     """
     Tilt the head slowly up and down for as long as the search runs.
+
+    The search gaze before `HoldSearchGaze`, selected with
+    `fetch_head_search_mode: sweep`. Kept so a run can be compared against it,
+    not because it searches better: half of each lap looks at the ceiling or
+    the grabbers, every frame is taken by a moving camera, and the fusion node
+    places balls seen mid-sweep with a tilt the head does not have yet.
 
     Always RUNNING: it is a modifier on whatever its siblings are doing, and it
     must not be able to end or fail the parallel it sits in.
@@ -199,18 +267,22 @@ class SweepHead(py_trees.behaviour.Behaviour):
     function of elapsed time, not of how many commands have been sent -- so the
     interval changes how smooth the motion is, not how far or how fast it goes.
 
-    On the way out the head is left at the *low* pose rather than centred: the
-    behaviour that follows a successful search is the approach, which wants the
-    ball in frame at close range, and that is where the head has to be anyway.
+    On the way out the head is left where it is. It used to be sent to the low
+    pose, which pointed the camera at the floor under the robot the moment a
+    ball was sighted -- a ball seen across the room was out of frame before the
+    approach began.
     """
 
     def __init__(self, name="SweepHead"):
         super().__init__(name)
         self.blackboard = self.attach_blackboard_client(name=name)
         register_param_keys(self.blackboard)
+        self.blackboard.register_key(
+            key="fetch_head_position", access=py_trees.common.Access.WRITE
+        )
 
     def setup(self, **kwargs):
-        """Build the accessory commander and read the sweep's shape."""
+        """Build the neck commander and read the sweep's shape."""
         self.node = kwargs["node"]
         self.low = float(constant(self.blackboard, "fetch_head_low"))
         self.high = float(constant(self.blackboard, "fetch_head_high"))
@@ -218,7 +290,7 @@ class SweepHead(py_trees.behaviour.Behaviour):
         self.interval = float(
             constant(self.blackboard, "fetch_head_command_interval")
         )
-        self.accessories = AccessoryCommander(self.node)
+        self.neck = GripperCommander(self.node)
         self.logger.info(f"{self.name}: Setup complete")
         return True
 
@@ -231,11 +303,6 @@ class SweepHead(py_trees.behaviour.Behaviour):
             f"{self.high:.1f} every {self.period:.0f} s"
         )
 
-    def terminate(self, new_status):
-        """Leave the head down, which is where the approach wants it."""
-        if new_status != py_trees.common.Status.RUNNING:
-            self.accessories.send(self.low)
-
     def update(self):
         """Command the tilt the sweep is currently at, and keep running."""
         now = self.node.get_clock().now()
@@ -246,7 +313,8 @@ class SweepHead(py_trees.behaviour.Behaviour):
 
         elapsed = (now - self._start).nanoseconds / 1e9
         position = head_sweep(elapsed, self.low, self.high, self.period)
-        self.accessories.send(position)
+        self.neck.look(position)
+        self.blackboard.fetch_head_position = position
         self._last_command = now
         self.feedback_message = f"head at {position:.2f}"
         return py_trees.common.Status.RUNNING

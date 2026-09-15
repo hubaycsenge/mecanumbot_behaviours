@@ -9,12 +9,13 @@ round repeated for ever:
          b. it turns a full circle, drives to another spot and turns again
             (`fetch_search_strategy: spin`, the default), or drives widening
             circles around where it started without stopping (`circles`),
-            sweeping its head up and down either way;
-    2. the moment (a) succeeds, (b) is abandoned mid-drive;
-    3. it drives up to the ball, checks the ball is on the floor and not on a
-       table or in a hand, and closes the grabbers -- retried as a whole,
-       because the usual way a grab fails is that the ball rolls off the
-       shafts as they close;
+            holding its head at the tilt that sees the most floor either way;
+    2. the moment (a) succeeds, (b) is abandoned mid-drive, and the head stays
+       on the ball it just saw;
+    3. it drives up to the ball with the neck following it, turns in place to
+       centre it, checks the ball is on the floor and not on a table or in a
+       hand, and closes the grabbers -- retried as a whole, because the usual
+       way a grab fails is that the ball rolls off the shafts as they close;
     4. it looks for the first person it can see, drives to them, faces them,
        and opens the grabbers;
     5. it backs off, waits, and starts looking again.
@@ -35,9 +36,21 @@ succeeded, and the tree would fall into the approach with nothing sighted. Here
 the search branch cannot succeed at all -- it only ever runs or gives up -- so
 the policy is a statement about what is true afterwards: a ball has been seen.
 
-`SweepHead` is the third child and always returns RUNNING, so the head keeps
-moving for as long as the search lasts and the sweep neither ends it nor fails
-it.
+The head behaviour (`HoldSearchGaze`, or `SweepHead` with
+`fetch_head_search_mode: sweep`) is the third child and always returns RUNNING,
+so it lasts as long as the search and neither ends it nor fails it.
+
+## Why the ball is kept centred, and why in the image
+
+From the sighting to the grab the robot keeps the ball in the middle of its
+view: `TrackBallWithHead` runs beside the approach and tilts the neck after it,
+and `FaceBall` turns the body in place to centre it left-to-right before the
+grab. Both close the loop on the ball's pixel box, which needs only the lens's
+field of view -- not on its map position, which also needs the neck's
+calibration. See `behaviours/centring.py` and `gaze.py`.
+
+The head tracker stops before `CheckBallReachable` and `GraspBall`, because
+every neck command is also a gripper command and the grab owns the grippers.
 
 ## Why this tree does not model SEEKING
 
@@ -76,6 +89,7 @@ from mecanumbot_fetch_behaviour.behaviours.blackboard_managers import (
     ClearFetchEpisode,
     FetchParamsToBlackboard,
 )
+from mecanumbot_fetch_behaviour.behaviours.centring import FaceBall, TrackBallWithHead
 from mecanumbot_fetch_behaviour.behaviours.delivery import (
     BackAway,
     ReleaseBall,
@@ -83,12 +97,14 @@ from mecanumbot_fetch_behaviour.behaviours.delivery import (
 )
 from mecanumbot_fetch_behaviour.behaviours.searching import (
     CircleSearch,
+    HoldSearchGaze,
     HopToNextSpot,
     SweepHead,
     WatchForBall,
 )
 from mecanumbot_fetch_behaviour.behaviours.signalling import AnnouncePhase
 from mecanumbot_fetch_behaviour.defaults import TUNABLES
+from mecanumbot_fetch_behaviour.gaze import GAZE_HOLD, GAZE_SWEEP, SEARCH_GAZES
 from mecanumbot_fetch_behaviour.keys import (
     FetchApproach,
     FetchFindPeople,
@@ -141,9 +157,20 @@ def create_body_search(strategy):
     )
 
 
-def create_search(strategy=SEARCH_SPIN):
+def create_search_gaze(mode):
+    """Build the head behaviour for the search: hold the search tilt, or sweep."""
+    if mode == GAZE_HOLD:
+        return HoldSearchGaze(name="HoldSearchGaze")
+    if mode == GAZE_SWEEP:
+        return SweepHead(name="SweepHead")
+    raise ValueError(
+        f"fetch_head_search_mode '{mode}', expected one of {SEARCH_GAZES}"
+    )
+
+
+def create_search(strategy=SEARCH_SPIN, gaze=GAZE_HOLD):
     """
-    Look for a ball: watch for one, turn or circle for one, and sweep the head.
+    Look for a ball: watch for one, turn or circle for one, and aim the head.
 
     Ends SUCCESS only when `WatchForBall` succeeds; ends FAILURE when the body
     search gives up after its laps. See the module docstring for why the
@@ -158,7 +185,7 @@ def create_search(strategy=SEARCH_SPIN):
     )
     search.add_children(
         [
-            SweepHead(name="SweepHead"),
+            create_search_gaze(gaze),
             watch,
             create_body_search(strategy),
         ]
@@ -183,11 +210,28 @@ def create_secure(attempts):
     blackboard, because `Retry` wants its count while the tree is being built,
     which is before any parameter has been loaded. Same reason as the tick
     period.
+
+    Closing in is a parallel on the same pattern as the search: the drive and
+    the centring turn are the selected sequence, and the head tracker beside
+    them only ever runs, so it lasts exactly as long as they do and is stopped
+    before the grab takes the grippers.
     """
+    close_in = py_trees.composites.Sequence(name="DriveAndFace", memory=True)
+    close_in.add_children(
+        [ApproachBall(name="ApproachBall"), FaceBall(name="FaceBall")]
+    )
+    watching = py_trees.composites.Parallel(
+        name="CloseInOnBall",
+        policy=py_trees.common.ParallelPolicy.SuccessOnSelected(
+            children=[close_in], synchronise=False
+        ),
+    )
+    watching.add_children([TrackBallWithHead(name="TrackBallWithHead"), close_in])
+
     attempt = py_trees.composites.Sequence(name="ApproachAndGrab", memory=True)
     attempt.add_children(
         [
-            ApproachBall(name="ApproachBall"),
+            watching,
             CheckBallReachable(name="CheckBallReachable"),
             GraspBall(name="GraspBall"),
         ]
@@ -255,12 +299,12 @@ def create_delivery(turn_timeout):
     return handover
 
 
-def create_episode(attempts, turn_timeout, strategy=SEARCH_SPIN):
+def create_episode(attempts, turn_timeout, strategy=SEARCH_SPIN, gaze=GAZE_HOLD):
     """Build one full round of fetch, from looking to letting go."""
     episode = py_trees.composites.Sequence(name="FetchEpisode", memory=True)
     episode.add_children(
         [
-            create_search(strategy),
+            create_search(strategy, gaze),
             create_secure(attempts),
             create_delivery(turn_timeout),
             ClearFetchEpisode(name="EndEpisode", reason="ball delivered"),
@@ -306,6 +350,7 @@ def create_root(yaml_path=None):
     turn_timeout = float(TUNABLES.file_constant(params, "fetch_offer_turn_timeout"))
     # The search's shape is structure too: which subtree the body search is.
     strategy = str(TUNABLES.file_constant(params, "fetch_search_strategy"))
+    gaze = str(TUNABLES.file_constant(params, "fetch_head_search_mode"))
 
     root = py_trees.composites.Sequence("ROOT", memory=True)
     root.add_children(
@@ -313,7 +358,7 @@ def create_root(yaml_path=None):
             FetchParamsToBlackboard(name="LoadFetchParams", yaml_path=yaml_path),
             py_trees.decorators.Repeat(
                 name="FetchLoop",
-                child=create_episode(attempts, turn_timeout, strategy),
+                child=create_episode(attempts, turn_timeout, strategy, gaze),
                 num_success=-1,
             ),
         ]

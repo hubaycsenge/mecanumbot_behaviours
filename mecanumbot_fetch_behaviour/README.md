@@ -13,22 +13,27 @@ ROOT (memory)
         ├── FetchEpisode
         │   ├── FindBall
         │   │   └── SearchUntilSighted            parallel, SuccessOnSelected([WatchForBall])
-        │   │       ├── SweepHead                 always RUNNING — tilts the neck up and down
+        │   │       ├── HoldSearchGaze            always RUNNING — head still at fetch_head_search
+        │   │       │   (or SweepHead)            fetch_head_search_mode: sweep — the old up-and-down sweep
         │   │       ├── WatchForBall              the only child that can end the parallel
         │   │       └── SpinAndHop  (repeat)       fetch_search_strategy: spin (default)
         │   │           └── TurnThenMove
-        │   │               ├── FullCircle        one revolution where it stands (Spin360, head left to SweepHead)
+        │   │               ├── FullCircle        one revolution where it stands (Spin360, head left alone)
         │   │               └── HopToNextSpot     nav2 to the next spot; fails when the laps run out
         │   │       (or CircleSearch)             fetch_search_strategy: circles — widening circles, no stops
         │   ├── SecureBall
         │   │   └── RetryTheGrab  ×fetch_grasp_attempts
-        │   │       ├── ApproachBall              nav2, re-aimed as the estimate refines
+        │   │       ├── CloseInOnBall             parallel, SuccessOnSelected([DriveAndFace])
+        │   │       │   ├── TrackBallWithHead     always RUNNING — neck keeps the ball centred vertically
+        │   │       │   └── DriveAndFace
+        │   │       │       ├── ApproachBall      nav2, re-aimed as the estimate refines
+        │   │       │       └── FaceBall          in-place turn until the ball is centred left-to-right
         │   │       ├── CheckBallReachable        is it on the floor, or on a table?
-        │   │       └── GraspBall                 close, settle, read /mecanumbot/has_object
+        │   │       └── GraspBall                 close (head where the tracker left it), read has_object
         │   ├── HandOver
         │   │   ├── FindSomeone                   SomebodyIsHere, else LookForSomebody (scan)
         │   │   ├── GoToThePerson                 Approach(SUBJECT, fixed_distance)
-        │   │   ├── FaceThePerson                 TurnToward(SUBJECT) — lifts the head
+        │   │   ├── FaceThePerson                 TurnToward(SUBJECT) — lifts the head, grabbers stay shut
         │   │   ├── OfferPause / ReleaseBall / LetThemTakeIt
         │   │   └── BackOffIfWeCan → BackAway
         │   ├── EndEpisode
@@ -110,9 +115,10 @@ round is given up. `fetch_search_timeout` was raised to 900 s for it in both shi
 
 `spin` replaced `circles` as the default on 2026-09-14 because the circles missed balls: a
 tangent-facing robot only ever looks along its direction of travel, so a ball lying beside
-it is never in view. A full turn looks at every bearing, at every tilt of the head sweep
-provided the turn stays below ~0.35 rad/s (a bearing is in the 60° view for 1.05/speed s,
-and the head needs half its 6 s period to cross the bands).
+it is never in view. A full turn looks at every bearing; at `full_scan_spin_speed: 0.3` a
+bearing stays in the 60° view for about 3.5 s. (With `fetch_head_search_mode: sweep` the
+turn must also stay below ~0.35 rad/s, or a ball passes through the view while the head
+looks at the wrong band.)
 
 **`CircleSearch` (`circles`) covers the floor.** Widening circles around wherever the robot was
 standing when it started looking. A circle rather than a lawnmower sweep because the
@@ -134,21 +140,94 @@ at the robot's feet a minute ago is quite likely to be there now, because somebo
 it. A search that only ever widens is a search for a stationary object, which is
 `mecanumbot_seek`'s problem and not this one.
 
-**`SweepHead` covers the height band.** The camera is on a tilting neck about 0.2 m up
-with a vertical field of view of roughly 36°, so at any one tilt it sees a band of floor
-and nothing else: tilted down it sees from its own feet out to a couple of metres; level
-it sees the far wall but not the floor in front of it. A ball outside the current band is
-invisible however good the detector is, so a search with a fixed head is a search for
-balls at one distance. The sweep is a **triangle** wave and not a sine, because a sine
-lingers at both ends and hurries through the middle — and the middle of this range is the
-band a ball two metres away sits in.
+**The head is held still, at the tilt that sees the most floor (`HoldSearchGaze`).** The
+camera is on the neck about 0.2 m up with a vertical field of view of about 36°. That is
+low enough that **one tilt sees nearly all of the floor**: with the top edge of the frame
+just above the horizon, the bottom edge meets the floor about 0.3 m in front of the lens,
+and everything from there to the far wall is in view at once. So there is no band left
+over for a sweep to cover. Holding the horizon inside the frame is also what finds a ball
+**as far away as possible**, because a far ball sits just below the horizon.
+`fetch_head_search` is that tilt, in board units.
+
+**Check `fetch_head_search` on the robot.** 4.3 was estimated from frames taken during a
+sweep, not measured with the head still. With the head there, the top of
+`cam_object_detections/debug_image` should just show the base of the far wall.
+
+Until 2026-09-15 the head swept up and down between `fetch_head_low` and `fetch_head_high`
+(`SweepHead`, still available as `fetch_head_search_mode: sweep`). The sweep made the
+ball *harder* to find, in three ways:
+
+* Half of each lap pointed the camera at the ceiling or at the grabbers, where no ball on
+  the floor can be.
+* Every frame came from a moving camera, so the ball was smeared.
+* The fusion node places each ball with the neck's *goal*: the firmware echoes the last
+  command as `pos_n` and never reads the servo. Mid-sweep the goal is ahead of the head,
+  so a ball on the floor was placed along a ray steeper than the real one. On
+  2026-09-15 that put a ball 63 cm *under* the floor, and `CheckBallReachable` threw away
+  every round it found.
+
+When a sighting ended the search, `SweepHead` also sent the head to `fetch_head_low`,
+which pointed the camera at the robot's own feet. A ball seen across the room was out of
+frame before the approach started. Neither head behaviour moves the head at the end of
+the search now; the ball was just seen at the tilt the head is at.
 
 `ball.range_source` in the perception layer stays on `size`, whose range does not depend
-on the tilt. The ball's **height** does — it is that range along a ray the tilt points —
-so the fusion node places every frame with the neck position it was taken at
-(`ball.neck.*` there), not with one fixed pitch. Placed as if the camera looked level, a
-ball on the floor seen with the head down comes out as high as the camera, and
-`CheckBallReachable` calls it out of reach.
+on the tilt. The ball's **height** does, because it is that range along a ray the tilt
+points. So the fusion node places every frame with the neck position it was taken at
+(`ball.neck.*` there), and that position is only right while the head is still, and
+only if `ball.neck.pitch_at_level_deg` is (see below).
+
+## From the sighting to the grab, the ball stays in the middle of the picture
+
+`TrackBallWithHead` runs beside the approach and tilts the neck to keep the ball centred
+vertically. `FaceBall` then turns the body in place until the ball is centred
+left-to-right. Both close the loop on the ball's **pixel box**
+(`/mecanumbot/cam_ball_boxes`), not on its map position. A pixel offset becomes an angle
+with nothing but the lens's field of view; a map position also needs the neck's
+calibration, which is the number that has been wrong. So the centring works whatever the
+neck's zero is.
+
+* **The head** takes a step of `fetch_head_track_gain` × the ball's elevation. It ignores
+  frames stamped within `fetch_head_track_settle` of its last move, because those were
+  taken with the head still moving, and correcting on them makes a visual servo
+  oscillate. As the robot closes in, the ball sinks in the frame and the head follows it
+  down. If the ball goes out of view (`fetch_head_track_lost`) while the robot is within
+  `fetch_head_close_range` of it, it has gone under the lens, and the head drops to
+  `fetch_head_low`, the pose that looks between the grabbers. Otherwise the head holds
+  where it is.
+* **The body** turns on `/cmd_vel`, in place, proportional to the ball's bearing, until
+  it is within `fetch_face_tolerance` on two frames. nav2's rotation shim already faces a
+  ball the approach drives to, but not one closer than `fetch_approach_stop`. For those,
+  `pose_to_goal` returns the robot's own pose, nav2 reports the goal reached at once,
+  and the robot would grab at a ball off to one side. `FaceBall` never fails: when the
+  ball is out of view for `fetch_face_lost` or the turn times out, the grab goes ahead on
+  the approach's heading.
+
+The tracker stops before `CheckBallReachable` and `GraspBall`, because every neck command
+is also a gripper command and the grab owns the grippers. `GraspBall` keeps the head
+where the tracker left it.
+
+**The grabbers stay shut while the head moves during delivery.** Every accessory message
+carries the neck and both grippers, and the movement library's head lifts (`FindPeople`,
+`TurnToward(SUBJECT)`) sent `gripper_*_neutral`, which in these files are the open
+positions. So the delivery opened the grabbers the moment it looked up for a person.
+`GraspBall` now hands the closed positions to every later head command
+(`GripperCommander.keep_grippers`), and `ReleaseBall` and `ClearFetchEpisode` hand the
+open ones back.
+
+## The neck calibration is unmeasured, and it is wrong
+
+`CheckBallReachable` turns on the ball's height, and that height is only as right as
+`ball.neck.pitch_at_level_deg` in `mecanumbot_sensorprocess_smart`'s config, which is
+still the unmeasured 0. The same model gives `head_joint` in `mecanumbot_sensorproc_node`
+(the TF) and `camera.pitch_at_level` in `mecanumbot_deep3r`, so all three are off
+together. Frames taken on 2026-09-15 show the camera looking at a wall at `pos_n` ≈ 460
+and at the ceiling lights at ≈ 610, where the model says −40° and +4°. The real camera
+looks well above what the model claims over the upper half of the neck's range.
+Measure it with the head still and a ball on the floor: `ball_locating.floor_pitch` turns
+one box into the pitch. Then set all three together. Until that is done, expect
+`CheckBallReachable` to call balls on the floor unreachable. The centring above does not
+depend on it.
 
 ## Height is what decides whether the ball can be had
 
@@ -213,22 +292,26 @@ describes this robot's body and the people in the room:
 | `fetch_gripper_open_left/right`, `fetch_gripper_closed_left/right` | this robot's grabber positions |
 | `robot_approach_distance`, `robot_closeness_threshold` | how close a robot may drive to a person |
 
-Neck tilts (`fetch_head_low`, `fetch_head_high`, `fetch_head_approach`) are the accessory
-board's own units — about 2.0 to 8.6, larger looks further up — and are **not** angles;
-there is no calibration to radians, which is why they carry no `_deg` suffix.
+Neck positions (`fetch_head_search`, `fetch_head_low`, `fetch_head_high`) are the
+accessory board's own units, about 2.0 to 8.6, where larger looks further up. They are
+**not** angles, because the calibration to radians is the unmeasured part, so they
+carry no `_deg` suffix. The centring angles (`fetch_camera_hfov_deg`,
+`fetch_head_track_deadband_deg`, `fetch_face_tolerance_deg`) are angles in the image,
+and do. `fetch_head_approach` is gone: the grab keeps the head where the tracker left it.
 
 ## Topics
 
 | Topic | Direction | Type | Use |
 | --- | --- | --- | --- |
 | `/mecanumbot/ball_detections` | in | `vision_msgs/Detection3DArray` | where the ball is, in `map`, with a score and a height |
+| `/mecanumbot/cam_ball_boxes` | in | `vision_msgs/Detection2DArray` | the same balls as pixel boxes; what the head and `FaceBall` centre on |
 | `/mecanumbot/people_fusion` | in | `geometry_msgs/PoseArray` | who is there to give it to |
 | `/amcl_pose` | in | `geometry_msgs/PoseWithCovarianceStamped` | where the robot is |
 | `/mecanumbot/has_object` | in | `std_msgs/Bool` | whether anything is actually held |
 | `/mecanumbot/fetch/state` | out | `std_msgs/String` | phase label per transition, for the trial record |
-| `/cmd_accessory_pos` | out | `mecanumbot_msgs/AccessMotorCmd` | neck sweep and grabbers |
+| `/cmd_accessory_pos` | out | `mecanumbot_msgs/AccessMotorCmd` | search tilt, ball tracking, grabbers |
 | `navigate_to_pose` | out | action | every drive |
-| `/cmd_vel` | out | `geometry_msgs/Twist` | in-place turns only, via the movement library |
+| `/cmd_vel` | out | `geometry_msgs/Twist` | in-place turns only: the scans, and `FaceBall` |
 
 `/mecanumbot/fetch/state` publishes `searching`, `approaching`, `delivering`,
 `handover`, `abandoned`. A `std_msgs/String` and not a new message type on purpose:
@@ -242,21 +325,24 @@ phase name is a label.
 | `tree_nodes/fetch_tree.py` | The tree. Every structural decision is argued in its module docstring. |
 | `tree_nodes/tree_common.py` | The package name and the node name; everything else is `mecanumbot_bt_config`'s. |
 | `search_patterns.py` | The circles (and the spots, laid out the same way), the search strategies and the head sweep. Pure geometry, no ROS. |
+| `gaze.py` | Where the camera points: the floor band one tilt sees, image offsets, the neck step and the turn rate that centre a ball. Pure geometry, no ROS. |
 | `defaults.py` | Every tunable and the value it has when the YAML does not say. |
 | `keys.py` | Binds `fetch_ball_position` onto the movement library's `target_position`: `FetchApproach`, `FetchTurnToward`, `FetchFindPeople`, `FetchScan`. |
-| `behaviours/searching.py` | `WatchForBall`, `SweepHead`, `CircleSearch`, `HopToNextSpot`. |
+| `behaviours/searching.py` | `WatchForBall`, `HoldSearchGaze`, `SweepHead`, `CircleSearch`, `HopToNextSpot`. |
+| `behaviours/centring.py` | `TrackBallWithHead`, `FaceBall`. |
 | `behaviours/approach.py` | `ApproachBall`, `CheckBallReachable`, `GraspBall`. |
 | `behaviours/delivery.py` | `SomeoneToGiveTo`, `ReleaseBall`, `BackAway`. |
 | `behaviours/signalling.py` | `AnnouncePhase`. |
 | `behaviours/blackboard_managers.py` | Constants loading, required keys, per-episode state. |
-| `behaviours/ros_interfaces.py` | `BallDetectionTracker`, `GripperCommander`, `FetchStatePublisher`. |
+| `behaviours/ros_interfaces.py` | `BallDetectionTracker`, `BallBoxTracker`, `GripperCommander`, `FetchStatePublisher`. |
 | `test/test_search_patterns.py` | 21 tests over the circles and the sweep; no ROS needed. |
+| `test/test_gaze.py` | 19 tests over the search tilt's floor band and the centring steps; no ROS needed. |
 
 ## Tests
 
 ```bash
 cd src/mecanumbot_behaviours/mecanumbot_fetch_behaviour
-PYTHONPATH=.:$PYTHONPATH python3 -m pytest test/test_search_patterns.py -q -p no:launch_testing
+PYTHONPATH=.:$PYTHONPATH python3 -m pytest test/test_search_patterns.py test/test_gaze.py -q -p no:launch_testing
 ```
 
 `colcon test` is broken workspace-wide on this machine (the installed `launch_testing`

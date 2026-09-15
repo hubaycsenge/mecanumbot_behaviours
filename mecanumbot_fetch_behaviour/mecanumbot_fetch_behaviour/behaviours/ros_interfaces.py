@@ -13,6 +13,11 @@ accessory commander. What is here is only what is specific to playing fetch:
         `z` is not decoration -- it is what separates a ball on the floor from
         a ball in somebody's hand, and the grabbers have no lift.
 
+    /mecanumbot/cam_ball_boxes   (in)   vision_msgs/Detection2DArray
+        the same balls as pixel boxes, straight from the fetch detector. What
+        the head and the body centre on: an image offset needs only the lens,
+        where a map position also needs the neck's calibration.
+
     /mecanumbot/fetch/state      (out)  std_msgs/String
         what the robot is doing, one word per transition, for the record and
         for anybody watching a trial without a terminal on the tree. A String
@@ -29,14 +34,18 @@ needs it, it belongs in `mecanumbot_movement_behaviours` next to
 
 from rclpy.time import Time
 from std_msgs.msg import String
-from vision_msgs.msg import Detection3DArray
+from vision_msgs.msg import Detection2DArray, Detection3DArray
 
+from mecanumbot_movement_behaviours.ros_interfaces import AccessoryCommander
 from mecanumbot_msgs.msg import AccessMotorCmd
+
+from mecanumbot_fetch_behaviour.gaze import pick_ball
 
 # Absolute, like every topic the other trees use: the tree runs in the
 # `mecanumbot` namespace and nav2 does not, so a relative name would be looked
 # for under the tree's own namespace and never found.
 BALL_DETECTIONS_TOPIC = "/mecanumbot/ball_detections"
+BALL_BOXES_TOPIC = "/mecanumbot/cam_ball_boxes"
 FETCH_STATE_TOPIC = "/mecanumbot/fetch/state"
 ACCESSORY_TOPIC = "/cmd_accessory_pos"
 
@@ -174,15 +183,83 @@ class BallDetectionTracker:
         ) ** 0.5
 
 
+class BallBoxTracker:
+    """
+    The fetch detector's latest ball boxes, in image pixels, with their stamp.
+
+    `mecanumbot_locate_detections` turns the same boxes into map positions, and
+    the tree drives to those. The head and the body centre on the boxes
+    themselves instead, because a pixel offset needs only the lens's field of
+    view to become an angle, and the map position needs the neck's calibration
+    too.
+    """
+
+    def __init__(self, node, timeout=1.0, topic=BALL_BOXES_TOPIC):
+        self.node = node
+        self.timeout = float(timeout)
+        self.boxes = []
+        self.stamp = None
+        self.received = None
+        self._subscription = node.create_subscription(
+            Detection2DArray, topic, self._callback, 10
+        )
+
+    def best(self, threshold, newer_than=None):
+        """
+        Return `(box, stamp)` for the ball to centre on, or `(None, None)`.
+
+        None when the last message is older than `timeout`, carried no ball at
+        or above `threshold`, or was stamped before `newer_than` [s] -- the
+        caller's way of refusing a frame taken before the head last moved.
+        """
+        if self.received is None:
+            return None, None
+        age = (self.node.get_clock().now() - self.received).nanoseconds / 1e9
+        if age > self.timeout:
+            return None, None
+        if newer_than is not None and self.stamp < newer_than:
+            return None, None
+        box = pick_ball(self.boxes, threshold)
+        return (box, self.stamp) if box is not None else (None, None)
+
+    def _callback(self, msg):
+        self.received = self.node.get_clock().now()
+        stamp = msg.header.stamp
+        self.stamp = (
+            stamp.sec + stamp.nanosec * 1e-9
+            if stamp.sec or stamp.nanosec
+            else self.received.nanoseconds / 1e9
+        )
+        self.boxes = [
+            (
+                float(detection.bbox.center.position.x),
+                float(detection.bbox.center.position.y),
+                float(detection.bbox.size_x),
+                float(detection.bbox.size_y),
+                max(
+                    [float(result.hypothesis.score) for result in detection.results]
+                    or [0.0]
+                ),
+            )
+            for detection in msg.detections
+        ]
+
+
 class GripperCommander:
     """
-    Open and close the grabbers, leaving the neck where it is.
+    Command the neck and the grabbers together, and keep the two consistent.
 
-    The movement library's `AccessoryCommander` owns the neck and sends a
-    neutral gripper pose with every command, which is right for a tree that
-    never grips anything. Closing on a ball needs the opposite: the gripper
-    positions are the message and the neck must not move, or the camera loses
-    sight of the ball at exactly the wrong moment.
+    Every accessory message carries all three positions, so every neck command
+    is also a gripper command. The movement library's `AccessoryCommander` sends
+    its configured *neutral* grippers with each one -- which in the fetch
+    constants are the open positions -- so a head lift from the library while
+    the robot holds the ball would open the grabbers and drop it. That is what
+    `FindPeople` and `TurnToward(SUBJECT)` did at the start of every delivery.
+
+    So `keep_grippers()` hands the library's commander the grippers to carry:
+    the closed ones after a grab, the open ones again after the release. `send`
+    also records the neck there, so the library's `look()` does not skip a lift
+    because it believes the head is already up.
     """
 
     def __init__(self, node):
@@ -196,6 +273,22 @@ class GripperCommander:
         cmd.gl_pos = float(left)
         cmd.gr_pos = float(right)
         self._publisher.publish(cmd)
+        AccessoryCommander._last_neck_pos = cmd.n_pos
+
+    @staticmethod
+    def keep_grippers(left, right):
+        """Make every later head command, the library's included, carry these grippers."""
+        AccessoryCommander.configure(gripper_left=left, gripper_right=right)
+
+    @staticmethod
+    def grippers():
+        """Return the grippers every head command currently carries."""
+        return AccessoryCommander.gripper_left, AccessoryCommander.gripper_right
+
+    def look(self, neck):
+        """Move only the neck, with the grippers left as they are."""
+        left, right = self.grippers()
+        self.send(neck, left, right)
 
 
 class FetchStatePublisher:

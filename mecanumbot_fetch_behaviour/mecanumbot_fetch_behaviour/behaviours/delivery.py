@@ -137,6 +137,9 @@ class ReleaseBall(py_trees.behaviour.Behaviour):
 
     def update(self):
         """Look up, open the grabbers, and record the handover."""
+        # From here on every head command, the library's included, carries the
+        # open grippers again.
+        self.gripper.keep_grippers(self.open_left, self.open_right)
         self.accessories.look(HEAD_SEEK)
         self.gripper.send(self.neck, self.open_left, self.open_right)
         self.blackboard.fetch_grasped = False

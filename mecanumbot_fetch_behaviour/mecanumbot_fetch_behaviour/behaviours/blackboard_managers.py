@@ -24,7 +24,9 @@ from mecanumbot_movement_behaviours.defaults import (
     configure_accessories,
 )
 
-from mecanumbot_fetch_behaviour.defaults import FETCH_DEFAULTS
+from mecanumbot_fetch_behaviour.behaviours.ros_interfaces import GripperCommander
+from mecanumbot_fetch_behaviour.defaults import FETCH_DEFAULTS, constant
+from mecanumbot_fetch_behaviour.gaze import SEARCH_GAZES
 from mecanumbot_fetch_behaviour.search_patterns import FACINGS
 
 # What describes this robot and the people in the room rather than the
@@ -63,6 +65,10 @@ RUN_STATE = {
     "fetch_grasped": False,
     "fetch_person_position": None,
     "fetch_delivered": False,
+    # The neck position the fetch behaviours last commanded, so the one that
+    # takes the head over starts from where it is. Not cleared between
+    # episodes: it describes the head, not the ball.
+    "fetch_head_position": None,
     # Belongs to the movement library's `InPlaceTurn`, which the scan borrows.
     "search_spin_sign": 0,
 }
@@ -104,8 +110,19 @@ def check_fetch_geometry(node, blackboard, values):
     if values["fetch_head_low"] > values["fetch_head_high"]:
         node.get_logger().warn(
             f"fetch_head_low ({values['fetch_head_low']}) is above fetch_head_high "
-            f"({values['fetch_head_high']}); the sweep still runs, but 'low' and "
-            "'high' now mean the opposite of what they say"
+            f"({values['fetch_head_high']}); the head cannot follow a ball, and "
+            "'low' and 'high' now mean the opposite of what they say"
+        )
+    if not values["fetch_head_low"] <= values["fetch_head_search"] <= values["fetch_head_high"]:
+        node.get_logger().warn(
+            f"fetch_head_search ({values['fetch_head_search']}) is outside "
+            f"fetch_head_low..fetch_head_high; the first step after a sighting "
+            "will jump the head into that range"
+        )
+    if values["fetch_head_search_mode"] not in SEARCH_GAZES:
+        node.get_logger().warn(
+            f"fetch_head_search_mode '{values['fetch_head_search_mode']}' is not "
+            f"one of {SEARCH_GAZES}; the tree will refuse to build"
         )
 
 
@@ -132,12 +149,18 @@ class ClearFetchEpisode(py_trees.behaviour.Behaviour):
     answer to either is the same -- let this ball go and start looking again.
     An episode that kept the last ball's position would send the robot straight
     back to where the ball used to be, which is exactly where it is not.
+
+    It also hands the open grippers back to every head command, so a round
+    abandoned with the ball held does not leave the next search commanding
+    closed grabbers.
     """
 
     def __init__(self, name="ClearFetchEpisode", reason=""):
         super().__init__(name)
         self.reason = reason
         self.blackboard = self.attach_blackboard_client(name=name)
+        for key in ("fetch_gripper_open_left", "fetch_gripper_open_right"):
+            self.blackboard.register_key(key=key, access=py_trees.common.Access.READ)
         for key in (
             "fetch_ball_position",
             "fetch_ball_score",
@@ -174,4 +197,8 @@ class ClearFetchEpisode(py_trees.behaviour.Behaviour):
         self.blackboard.fetch_grasped = False
         self.blackboard.fetch_person_position = None
         self.blackboard.fetch_delivered = False
+        GripperCommander.keep_grippers(
+            constant(self.blackboard, "fetch_gripper_open_left"),
+            constant(self.blackboard, "fetch_gripper_open_right"),
+        )
         return py_trees.common.Status.SUCCESS
