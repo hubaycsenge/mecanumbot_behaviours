@@ -152,9 +152,9 @@ Functions:
 
 1. Detects active Wi-Fi SSID (`nmcli`, fallback `iwgetid`).
 2. Chooses default constants YAML based on SSID (`MecanumNet` → `behaviour_setting_constants.yaml`, `MecanumetoNet` → `Eto_behaviour_setting_constants.yaml`, anything else → `behaviour_setting_constants.yaml`).
-3. Declares launch args: `params`, `yaml_path` (both default to that SSID-chosen file), `namespace` (default `mecanumbot`), `condition` (default `Doglike`), `use_perception` (default `true`), `use_camera` (default `true`), `camera_width` / `camera_height` (default `1280` / `720`), `yolo_imgsz` (default `1280`), `yolo_model` (default `yolo26m-pose`).
+3. Declares launch args: `params`, `yaml_path` (both default to that SSID-chosen file), `namespace` (default `mecanumbot`), `condition` (default `Doglike`), `use_perception` (default `true`), `use_camera` (default `true`), `debug_image` (default `true`: the pose detector's annotated frame on `/mecanumbot/cam_people_detections/debug_image/compressed`), `camera_width` / `camera_height` (default `1280` / `720`), `yolo_imgsz` (default `1280`), `yolo_model` (default `yolo26m-pose`).
 4. Exports `YAML_PATH` and `BEHAVIOUR_YAML_PATH` env vars for BT scripts.
-5. Includes `mecanumbot_sensorprocess_smart/launch/perception.launch.py` with `detector:=pose` and the camera/model arguments above, unless `use_perception:=false`.
+5. Includes `mecanumbot_sensorprocess_smart/launch/perception.launch.py` with `detector:=pose` and the camera/model/debug arguments above, unless `use_perception:=false`.
 6. Starts exactly one node by `condition`: `Doglike` -> `doglike_leading_bt_node`, `Control` -> `control_leading_bt_node`, `LED` -> `LED_leading_bt_node`.
 
 Each tree resolves its YAML in this order: `--yaml_path` argument, then `YAML_PATH`,

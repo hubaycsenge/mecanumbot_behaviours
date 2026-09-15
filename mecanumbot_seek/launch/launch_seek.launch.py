@@ -150,6 +150,16 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument(
+                "debug_image",
+                default_value="true",
+                description=(
+                    "Publish the pose detector's annotated frame (boxes and "
+                    "skeletons) on "
+                    "/mecanumbot/cam_people_detections/debug_image/compressed. "
+                    "false saves a frame copy and a JPEG encode per frame"
+                ),
+            ),
+            DeclareLaunchArgument(
                 "camera_width", default_value="1280", description="Frame width"
             ),
             DeclareLaunchArgument(
@@ -203,6 +213,7 @@ def generate_launch_description():
                     "namespace": namespace,
                     "detector": "pose",
                     "use_camera": LaunchConfiguration("use_camera"),
+                    "debug_image": LaunchConfiguration("debug_image"),
                     "camera_width": LaunchConfiguration("camera_width"),
                     "camera_height": LaunchConfiguration("camera_height"),
                     "yolo_imgsz": LaunchConfiguration("yolo_imgsz"),

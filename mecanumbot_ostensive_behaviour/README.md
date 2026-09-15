@@ -375,6 +375,10 @@ ros2 launch mecanumbot_ostensive_behaviour launch_ostensive.launch.py use_percep
 ros2 launch mecanumbot_camera_stream camera_compressed.launch.py width:=1280 height:=720
 ros2 launch mecanumbot_ostensive_behaviour launch_ostensive.launch.py use_camera:=true
 
+# what the detector saw -- boxes and skeletons, on by default; debug_image:=false
+# saves the per-frame JPEG encode
+ros2 run rqt_image_view rqt_image_view /mecanumbot/cam_people_detections/debug_image/compressed
+
 # or with an explicit YAML
 ros2 launch mecanumbot_ostensive_behaviour launch_ostensive.launch.py \
   yaml_path:=/absolute/path/to/ostensive_setting_constants.yaml

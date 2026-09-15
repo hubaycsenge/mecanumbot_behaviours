@@ -349,7 +349,9 @@ Besides the tree, `launch_seek.launch.py` starts two things:
   for the alert: without `people_fusion` the branch that goes to tell somebody
   never finds an audience. `use_perception:=false` when it is already running;
   `camera_width` / `camera_height` / `yolo_imgsz` / `yolo_model` (1280 / 720 /
-  1280 / `yolo26m-pose`) pass through to it.
+  1280 / `yolo26m-pose`) pass through to it, and so does `debug_image` (default
+  true), which publishes the detector's annotated frame on
+  `/mecanumbot/cam_people_detections/debug_image/compressed`.
 - **the 2D/3D comparison handler**, `mecanumbot_custom_nav2`'s
   `mecanumbot_map_agreement_node` with `agreement_params` (default
   `map_agreement.yaml`). `use_agreement:=false` when a T1 session is still
