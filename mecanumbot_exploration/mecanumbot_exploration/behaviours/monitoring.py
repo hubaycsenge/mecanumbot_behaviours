@@ -51,9 +51,11 @@ class UncertaintyMonitor:
             ExploreClient, NavClient)
         self._node = node
         self._threshold = params["uncertainty_threshold"]
+        self._check_period = float(params["check_period"])
         self._revisit_x = params["revisit_x"]
         self._revisit_y = params["revisit_y"]
         self._revisiting = False
+        self._last_check = None
         self._explore = ExploreClient(node, params["explore_resume_service"])
         self._nav = NavClient(node, params["nav2_action"])
 
@@ -62,6 +64,10 @@ class UncertaintyMonitor:
         return self._revisiting
 
     def update(self, context):
+        if (self._last_check is not None
+                and context.now - self._last_check < self._check_period):
+            return
+        self._last_check = context.now
         if context.covariance_trace > self._threshold and not self._revisiting:
             self._node.get_logger().warn(
                 "covariance trace {:.4f} exceeds threshold {:.4f}; pausing "
