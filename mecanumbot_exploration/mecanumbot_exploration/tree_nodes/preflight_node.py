@@ -105,13 +105,26 @@ class ExplorationPreflight(Node):
                 "AMCL may still be running")
             return False
 
-        # Verify: check the graph again.
-        remaining = self._live_node_names()
-        amcl_alive = any(n.endswith("/amcl") for n in remaining)
+        # Poll until AMCL deregisters from the graph. The lifecycle manager
+        # reports success once all transition callbacks have returned, but the
+        # node may still be visible briefly while its process tears down.
+        post_timeout = float(self.get_parameter("preflight_timeout").value)
+        deadline = time.time() + post_timeout
+        amcl_alive = True
+        while time.time() < deadline:
+            rclpy.spin_once(self, timeout_sec=0.2)
+            names = [
+                "{}/{}".format(ns.rstrip("/"), name)
+                for name, ns in self.get_node_names_and_namespaces()
+            ]
+            if not any(n.endswith("/amcl") for n in names):
+                amcl_alive = False
+                break
+
         if amcl_alive:
             self.get_logger().error(
-                "AMCL is still on the graph after shutdown; "
-                "slam_toolbox will conflict with it")
+                "AMCL is still on the graph after {:.0f}s; "
+                "slam_toolbox will conflict with it".format(post_timeout))
             return False
 
         self.get_logger().info(
