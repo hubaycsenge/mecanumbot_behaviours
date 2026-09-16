@@ -7,6 +7,7 @@ in monitoring.py and exploration_node.py.
 
 import math
 
+from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
@@ -104,7 +105,8 @@ class NavClient:
             on_done(success=False)
             return
         handle.get_result_async().add_done_callback(
-            lambda _f: on_done(success=True))
+            lambda f: on_done(
+                success=f.result().status == GoalStatus.STATUS_SUCCEEDED))
 
 
 class ExplorationSignals:
