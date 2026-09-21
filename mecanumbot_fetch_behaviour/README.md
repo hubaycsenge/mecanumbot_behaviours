@@ -27,7 +27,8 @@ ROOT (memory)
         │   │       │   ├── TrackBallWithHead     always RUNNING — neck keeps the ball centred vertically
         │   │       │   └── DriveAndFace
         │   │       │       ├── ApproachBall      nav2, re-aimed as the estimate refines
-        │   │       │       └── FaceBall          in-place turn until the ball is centred left-to-right
+        │   │       │       ├── FaceBall          in-place turn until the ball is centred left-to-right
+        │   │       │       └── CreepToBall       slow straight drive on /cmd_vel to fetch_grasp_distance
         │   │       ├── CheckBallReachable        is it on the floor, or on a table?
         │   │       └── GraspBall                 close (head where the tracker left it), read has_object
         │   ├── HandOver
@@ -203,6 +204,18 @@ neck's zero is.
   and the robot would grab at a ball off to one side. `FaceBall` never fails: when the
   ball is out of view for `fetch_face_lost` or the turn times out, the grab goes ahead on
   the approach's heading.
+* **The last stretch** is `CreepToBall`, straight ahead on `/cmd_vel` at `fetch_creep_speed`,
+  steering on the ball's image bearing while it is in view and by odometry
+  (`/mecanumbot/odom`) once it has gone under the lens. nav2 cannot do this part: its
+  `xy_goal_tolerance` is 0.30 m, so it parks anywhere from about 0.15 to 0.75 m from the
+  ball, and a goal nearer than 0.30 m counts as reached before the robot moves at all.
+  Before this step existed, the robot centred the ball from 0.7 m and closed the
+  grabbers on air. The distance is fixed once, at the start (ball range minus
+  `fetch_grasp_distance`), and capped at `fetch_creep_max`. That cap matters because
+  this is the **one forward drive in the repository that bypasses the costmap**, an
+  exception to the "`/cmd_vel` only for in-place turns" rule, kept in this package
+  rather than in the movement library for that reason. A tennis ball is below the lidar
+  plane, so the costmap could not see it anyway. Like `FaceBall`, it never fails.
 
 The tracker stops before `CheckBallReachable` and `GraspBall`, because every neck command
 is also a gripper command and the grab owns the grippers. `GraspBall` keeps the head
@@ -318,11 +331,12 @@ and do. `fetch_head_approach` is gone: the grab keeps the head where the tracker
 | `/mecanumbot/cam_ball_boxes` | in | `vision_msgs/Detection2DArray` | the same balls as pixel boxes; what the head and `FaceBall` centre on |
 | `/mecanumbot/people_fusion` | in | `geometry_msgs/PoseArray` | who is there to give it to |
 | `/amcl_pose` | in | `geometry_msgs/PoseWithCovarianceStamped` | where the robot is |
+| `/mecanumbot/odom` | in | `nav_msgs/Odometry` | how far `CreepToBall` has driven |
 | `/mecanumbot/has_object` | in | `std_msgs/Bool` | whether anything is actually held |
 | `/mecanumbot/fetch/state` | out | `std_msgs/String` | phase label per transition, for the trial record |
 | `/cmd_accessory_pos` | out | `mecanumbot_msgs/AccessMotorCmd` | search tilt, ball tracking, grabbers |
 | `navigate_to_pose` | out | action | every drive |
-| `/cmd_vel` | out | `geometry_msgs/Twist` | in-place turns only: the scans, and `FaceBall` |
+| `/cmd_vel` | out | `geometry_msgs/Twist` | in-place turns (the scans, `FaceBall`), plus `CreepToBall`'s capped straight drive |
 
 `/mecanumbot/fetch/state` publishes `searching`, `approaching`, `delivering`,
 `handover`, `abandoned`. A `std_msgs/String` and not a new message type on purpose:
@@ -336,12 +350,12 @@ phase name is a label.
 | `tree_nodes/fetch_tree.py` | The tree. Every structural decision is argued in its module docstring. |
 | `tree_nodes/tree_common.py` | The package name and the node name; everything else is `mecanumbot_bt_config`'s. |
 | `search_patterns.py` | The circles (and the spots, laid out the same way), the search strategies and the head sweep. Pure geometry, no ROS. |
-| `gaze.py` | Where the camera points: the floor band one tilt sees, image offsets, the neck step and the turn rate that centre a ball. Pure geometry, no ROS. |
+| `gaze.py` | Where the camera points: the floor band one tilt sees, image offsets, the neck step and the turn rate that centre a ball, and the creep into the grabbers. Pure geometry, no ROS. |
 | `defaults.py` | Every tunable and the value it has when the YAML does not say. |
 | `keys.py` | Binds `fetch_ball_position` onto the movement library's `target_position`: `FetchApproach`, `FetchTurnToward`, `FetchFindPeople`, `FetchScan`. |
 | `behaviours/searching.py` | `WatchForBall`, `HoldSearchGaze`, `SweepHead`, `CircleSearch`, `HopToNextSpot`. |
 | `behaviours/centring.py` | `TrackBallWithHead`, `FaceBall`. |
-| `behaviours/approach.py` | `ApproachBall`, `CheckBallReachable`, `GraspBall`. |
+| `behaviours/approach.py` | `ApproachBall`, `CreepToBall`, `CheckBallReachable`, `GraspBall`. |
 | `behaviours/delivery.py` | `SomeoneToGiveTo`, `ReleaseBall`, `BackAway`. |
 | `behaviours/signalling.py` | `AnnouncePhase`. |
 | `behaviours/blackboard_managers.py` | Constants loading, required keys, per-episode state. |

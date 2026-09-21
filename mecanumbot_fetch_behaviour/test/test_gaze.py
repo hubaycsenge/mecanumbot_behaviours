@@ -13,6 +13,8 @@ import math
 import pytest
 
 from mecanumbot_fetch_behaviour.gaze import (
+    creep_command,
+    creep_distance,
     floor_band,
     image_offset,
     neck_step,
@@ -163,3 +165,36 @@ def test_the_last_degrees_are_not_left_to_a_stalled_wheel():
 def test_the_turn_is_slow_enough_to_keep_seeing_the_ball():
     """A ball at the frame edge does not whip the robot round."""
     assert turn_rate(HFOV / 2.0, 5.0, 0.4, 0.15, math.radians(4.0)) == pytest.approx(0.4)
+
+
+# --- the last move into the grabbers ----------------------------------------
+
+
+def test_creep_covers_the_gap_nav2_left():
+    # The case seen on the robot: parked 0.70 m out, grab needs 0.28 m.
+    assert creep_distance(0.70, 0.28, 0.6) == pytest.approx(0.42)
+
+
+def test_creep_never_drives_backwards():
+    assert creep_distance(0.20, 0.28, 0.6) == 0.0
+
+
+def test_creep_is_capped_whatever_the_range_estimate_says():
+    assert creep_distance(3.0, 0.28, 0.6) == 0.6
+
+
+def test_creep_steers_towards_the_ball_and_within_the_limit():
+    _, left = creep_command(0.3, math.radians(10.0), 0.08, 1.0, 0.3)
+    _, right = creep_command(0.3, math.radians(-10.0), 0.08, 1.0, 0.3)
+    assert left > 0.0 > right
+    _, hard = creep_command(0.3, math.radians(40.0), 0.08, 1.0, 0.3)
+    assert hard == pytest.approx(0.3)
+
+
+def test_creep_holds_its_heading_once_the_ball_is_under_the_lens():
+    assert creep_command(0.1, None, 0.08, 1.0, 0.3) == (0.08, 0.0)
+
+
+def test_creep_stops_when_the_distance_is_used_up():
+    assert creep_command(0.0, 0.2, 0.08, 1.0, 0.3) == (0.0, 0.0)
+    assert creep_command(-0.02, None, 0.08, 1.0, 0.3) == (0.0, 0.0)

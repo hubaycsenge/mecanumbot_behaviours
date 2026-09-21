@@ -24,15 +24,20 @@ from mecanumbot_movement_behaviours.ros_interfaces import (
     GOAL_ACTIVE_STATUSES,
     STATUS_SUCCEEDED,
     BallTracker,
+    Nav2GoalMonitor,
     Nav2PoseNavigator,
     RobotPoseTracker,
 )
 
 from mecanumbot_fetch_behaviour.behaviours.ros_interfaces import (
+    BallBoxTracker,
     BallDetectionTracker,
+    CreepCommander,
     GripperCommander,
+    OdometryTracker,
 )
 from mecanumbot_fetch_behaviour.defaults import constant, register_param_keys
+from mecanumbot_fetch_behaviour.gaze import creep_command, creep_distance, image_offset
 
 # How far the estimate has to move before the goal is worth re-sending [m].
 # Below the approach's own stop tolerance, so a refinement that matters is acted
@@ -133,7 +138,9 @@ class ApproachBall(py_trees.behaviour.Behaviour):
 
         status = self.nav2.status()
         if status == STATUS_SUCCEEDED:
-            self.node.get_logger().info(f"{self.name}: nav2 says we are there")
+            self.node.get_logger().info(
+                f"{self.name}: nav2 says we are there ({remaining:.2f} m from the ball)"
+            )
             return py_trees.common.Status.SUCCESS
         if status is None or status in GOAL_ACTIVE_STATUSES:
             self.feedback_message = f"{remaining:.2f} m to go"
@@ -189,6 +196,126 @@ class ApproachBall(py_trees.behaviour.Behaviour):
         self.feedback_message = (
             f"goal at x={goal.position.x:.2f} y={goal.position.y:.2f}"
         )
+
+
+class CreepToBall(py_trees.behaviour.Behaviour):
+    """
+    Drive the last stretch into the grabbers, straight ahead; always SUCCESS.
+
+    nav2 parks the robot `fetch_approach_stop` short of the ball give or take
+    its 0.30 m goal tolerance -- and a goal nearer than that tolerance counts
+    as reached before the robot moves at all -- while the grab needs the ball
+    within `fetch_grasp_distance`. So after `FaceBall` has pointed the robot at
+    the ball, this drives the difference on `/cmd_vel`: slowly, steering on the
+    ball's image bearing while it is still in view, and by odometry once it has
+    gone under the lens, which it does for the last few centimetres.
+
+    The distance is settled once, at the start, from the located ball and the
+    AMCL pose -- both taken with the robot standing still, and an in-place turn
+    does not change the range. Capped at `fetch_creep_max`, because this is the
+    one forward drive in the repository that bypasses the costmap.
+
+    Never FAILURE, for `FaceBall`'s reason: the grab after it is what finds out
+    whether the ball is between the grabbers.
+    """
+
+    def __init__(self, name="CreepToBall"):
+        super().__init__(name)
+        self.blackboard = self.attach_blackboard_client(name=name)
+        register_param_keys(self.blackboard)
+        self.blackboard.register_key(
+            key="fetch_ball_position", access=py_trees.common.Access.READ
+        )
+
+    def setup(self, **kwargs):
+        """Read the creep's constants and build the trackers and the commander."""
+        self.node = kwargs["node"]
+        self.grasp_distance = float(constant(self.blackboard, "fetch_grasp_distance"))
+        self.speed = float(constant(self.blackboard, "fetch_creep_speed"))
+        self.gain = float(constant(self.blackboard, "fetch_creep_gain"))
+        self.max_rate = float(constant(self.blackboard, "fetch_creep_max_rate"))
+        self.cap = float(constant(self.blackboard, "fetch_creep_max"))
+        self.timeout = float(constant(self.blackboard, "fetch_creep_timeout"))
+        self.threshold = float(constant(self.blackboard, "fetch_detection_threshold"))
+        self.width = float(constant(self.blackboard, "fetch_camera_width"))
+        self.height = float(constant(self.blackboard, "fetch_camera_height"))
+        self.hfov = float(constant(self.blackboard, "fetch_camera_hfov"))
+        timeout = constant(self.blackboard, "fetch_detection_timeout")
+        self.pose = RobotPoseTracker(self.node)
+        self.balls = BallDetectionTracker(
+            self.node,
+            timeout=timeout,
+            class_id=str(constant(self.blackboard, "fetch_ball_class")) or None,
+        )
+        self.boxes = BallBoxTracker(self.node, timeout=timeout)
+        self.odom = OdometryTracker(self.node)
+        self.velocity = CreepCommander(self.node)
+        self.nav2 = Nav2GoalMonitor(self.node)
+        self.logger.info(f"{self.name}: Setup complete")
+        return True
+
+    def initialise(self):
+        """Start the clock; the distance is settled on the first usable tick."""
+        self._start = self._now()
+        self._goal = None
+
+    def terminate(self, new_status):
+        """Stop, whatever ended the behaviour."""
+        if new_status != py_trees.common.Status.RUNNING:
+            self.velocity.stop()
+
+    def update(self):
+        """Settle the distance, then drive it."""
+        now = self._now()
+        if now - self._start > self.timeout:
+            return self._done(f"still creeping after {self.timeout:.0f} s, grabbing")
+
+        if self._goal is None:
+            if self.nav2.busy() and now - self._start < 1.0:
+                self.feedback_message = "waiting for nav2 to let go"
+                return py_trees.common.Status.RUNNING
+            if self.pose.pose is None or not self.odom.mark():
+                self.feedback_message = "waiting for AMCL pose and odometry"
+                return py_trees.common.Status.RUNNING
+            ball = self._ball_position()
+            if ball is None:
+                return self._done("no position for the ball, grabbing from here")
+            distance = distance_xy(self.pose.pose.position, ball)
+            self._goal = creep_distance(distance, self.grasp_distance, self.cap)
+            self.node.get_logger().info(
+                f"{self.name}: ball {distance:.2f} m away, driving "
+                f"{self._goal:.2f} m to {self.grasp_distance:.2f} m"
+            )
+
+        remaining = self._goal - self.odom.travelled()
+        box, _ = self.boxes.best(self.threshold)
+        bearing = None
+        if box is not None:
+            bearing, _ = image_offset(box[0], box[1], self.width, self.height, self.hfov)
+        linear, angular = creep_command(
+            remaining, bearing, self.speed, self.gain, self.max_rate
+        )
+        if linear == 0.0:
+            return self._done("ball within grasping range")
+        self.velocity.drive(linear, angular)
+        self.feedback_message = f"{remaining:.2f} m to go" + (
+            "" if bearing is not None else ", ball under the lens"
+        )
+        return py_trees.common.Status.RUNNING
+
+    def _ball_position(self):
+        self.balls.look_from(self.pose.pose.position)
+        if self.balls.visible(self.threshold):
+            return self.balls.hypothesis.position
+        return self.blackboard.fetch_ball_position
+
+    def _done(self, reason):
+        self.velocity.stop()
+        self.node.get_logger().info(f"{self.name}: {reason}")
+        return py_trees.common.Status.SUCCESS
+
+    def _now(self):
+        return self.node.get_clock().now().nanoseconds / 1e9
 
 
 class CheckBallReachable(py_trees.behaviour.Behaviour):

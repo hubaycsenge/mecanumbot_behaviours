@@ -148,6 +148,17 @@ FETCH_DEFAULTS = {
     "fetch_face_min_rate": 0.15,
     "fetch_face_lost": 1.5,
     "fetch_face_timeout": 6.0,
+    # The last move into the grabbers: straight ahead on /cmd_vel from where
+    # nav2 parked (it cannot place the robot closer than its 0.30 m goal
+    # tolerance) to `fetch_grasp_distance` from the ball. Speed [m/s], the
+    # steering gain on the ball's image bearing [1/s] and its limit [rad/s],
+    # the most it may drive [m] -- the backstop, since this bypasses the
+    # costmap -- and how long it may take [s].
+    "fetch_creep_speed": 0.08,
+    "fetch_creep_gain": 1.0,
+    "fetch_creep_max_rate": 0.3,
+    "fetch_creep_max": 0.6,
+    "fetch_creep_timeout": 12.0,
 
     # ===== Approaching and gripping ===========================================
     # Where the approach stops short of the ball [m]. Far enough that the ball

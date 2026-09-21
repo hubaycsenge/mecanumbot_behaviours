@@ -190,6 +190,18 @@ fetch_bt_node:
     fetch_face_min_rate: 0.15
     fetch_face_lost: 1.5
     fetch_face_timeout: 6.0
+    # The last move into the grabbers, after the ball is centred: straight
+    # ahead on /cmd_vel, steering on the ball's image bearing, until the ball
+    # is fetch_grasp_distance away. nav2 cannot do this part -- its goal
+    # tolerance is 0.30 m, so a goal that close counts as reached before the
+    # robot moves. It bypasses the costmap (a tennis ball is under the lidar
+    # plane anyway), so it is slow and capped: speed [m/s], steering gain
+    # [1/s] and limit [rad/s], the most it drives [m], and a backstop [s].
+    fetch_creep_speed: 0.08
+    fetch_creep_gain: 1.0
+    fetch_creep_max_rate: 0.3
+    fetch_creep_max: 0.6
+    fetch_creep_timeout: 12.0
 
     # ==========================================================================
     # Approaching and gripping

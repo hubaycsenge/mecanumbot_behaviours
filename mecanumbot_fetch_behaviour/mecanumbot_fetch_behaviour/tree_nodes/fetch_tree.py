@@ -13,8 +13,8 @@ round repeated for ever:
     2. the moment (a) succeeds, (b) is abandoned mid-drive, and the head stays
        on the ball it just saw;
     3. it drives up to the ball with the neck following it, turns in place to
-       centre it, checks the ball is on the floor and not on a table or in a
-       hand, and closes the grabbers -- retried as a whole, because the usual
+       centre it, creeps the last stretch into the grabbers, checks the ball is
+       on the floor and not on a table or in a hand, and closes the grabbers -- retried as a whole, because the usual
        way a grab fails is that the ball rolls off the shafts as they close;
     4. it looks for the first person it can see, drives to them, faces them,
        and opens the grabbers;
@@ -83,6 +83,7 @@ from mecanumbot_movement_behaviours.targets import SUBJECT
 from mecanumbot_fetch_behaviour.behaviours.approach import (
     ApproachBall,
     CheckBallReachable,
+    CreepToBall,
     GraspBall,
 )
 from mecanumbot_fetch_behaviour.behaviours.blackboard_managers import (
@@ -218,7 +219,11 @@ def create_secure(attempts):
     """
     close_in = py_trees.composites.Sequence(name="DriveAndFace", memory=True)
     close_in.add_children(
-        [ApproachBall(name="ApproachBall"), FaceBall(name="FaceBall")]
+        [
+            ApproachBall(name="ApproachBall"),
+            FaceBall(name="FaceBall"),
+            CreepToBall(name="CreepToBall"),
+        ]
     )
     watching = py_trees.composites.Parallel(
         name="CloseInOnBall",

@@ -20,6 +20,7 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>action_msgs</exec_depend>
   <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
   <!-- The located ball. A standard type: a labelled pose with a confidence is
        exactly what Detection3DArray carries, and the z is what tells a ball on
        the floor from a ball in somebody's hand. -->

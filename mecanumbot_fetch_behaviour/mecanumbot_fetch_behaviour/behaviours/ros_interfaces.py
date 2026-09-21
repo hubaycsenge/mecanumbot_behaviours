@@ -18,6 +18,18 @@ accessory commander. What is here is only what is specific to playing fetch:
         the head and the body centre on: an image offset needs only the lens,
         where a map position also needs the neck's calibration.
 
+    /mecanumbot/odom             (in)   nav_msgs/Odometry
+        how far the robot has driven during the last move into the grabbers.
+        Odometry and not AMCL, because AMCL only updates after the robot has
+        moved further than that whole move.
+
+    /cmd_vel                     (out)  geometry_msgs/Twist
+        that last move itself, straight ahead. The one place a tree here
+        drives forward on /cmd_vel rather than through nav2, and it is here
+        and not in the movement library so that it stays the exception: nav2
+        cannot place the robot to within its 0.30 m goal tolerance, and the
+        grab needs it within a few centimetres.
+
     /mecanumbot/fetch/state      (out)  std_msgs/String
         what the robot is doing, one word per transition, for the record and
         for anybody watching a trial without a terminal on the tree. A String
@@ -32,6 +44,10 @@ needs it, it belongs in `mecanumbot_movement_behaviours` next to
 `AccessoryCommander`, not in whichever experiment wrote it first.
 """
 
+import math
+
+from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 from rclpy.time import Time
 from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray, Detection3DArray
@@ -48,6 +64,8 @@ BALL_DETECTIONS_TOPIC = "/mecanumbot/ball_detections"
 BALL_BOXES_TOPIC = "/mecanumbot/cam_ball_boxes"
 FETCH_STATE_TOPIC = "/mecanumbot/fetch/state"
 ACCESSORY_TOPIC = "/cmd_accessory_pos"
+ODOM_TOPIC = "/mecanumbot/odom"
+CMD_VEL_TOPIC = "/cmd_vel"
 
 
 def class_filter(value):
@@ -289,6 +307,52 @@ class GripperCommander:
         """Move only the neck, with the grippers left as they are."""
         left, right = self.grippers()
         self.send(neck, left, right)
+
+
+class OdometryTracker:
+    """How far the robot has driven since `mark()`, by wheel odometry [m]."""
+
+    def __init__(self, node, topic=ODOM_TOPIC):
+        self.position = None
+        self._mark = None
+        self._subscription = node.create_subscription(
+            Odometry, topic, self._callback, 10
+        )
+
+    def mark(self):
+        """Start measuring from here; False while no odometry has arrived."""
+        self._mark = self.position
+        return self._mark is not None
+
+    def travelled(self):
+        """Return the straight-line distance from the mark, or 0.0 without one."""
+        if self._mark is None or self.position is None:
+            return 0.0
+        return math.hypot(
+            self.position[0] - self._mark[0], self.position[1] - self._mark[1]
+        )
+
+    def _callback(self, msg):
+        position = msg.pose.pose.position
+        self.position = (position.x, position.y)
+
+
+class CreepCommander:
+    """Forward-and-steer `/cmd_vel`, for the last move into the grabbers only."""
+
+    def __init__(self, node, topic=CMD_VEL_TOPIC):
+        self._publisher = node.create_publisher(Twist, topic, 10)
+
+    def drive(self, linear_x, angular_z):
+        """Command a forward speed [m/s] and a turn rate [rad/s]."""
+        cmd = Twist()
+        cmd.linear.x = float(linear_x)
+        cmd.angular.z = float(angular_z)
+        self._publisher.publish(cmd)
+
+    def stop(self):
+        """Command zero velocity."""
+        self._publisher.publish(Twist())
 
 
 class FetchStatePublisher:

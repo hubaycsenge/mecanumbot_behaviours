@@ -143,3 +143,31 @@ def floor_band(camera_height, pitch, vfov, target_height=0.0):
     near = drop / math.tan(-bottom) if bottom < 0.0 else None
     far = drop / math.tan(-top) if top < 0.0 else math.inf
     return near, far
+
+
+def creep_distance(ball_distance, grasp_distance, cap):
+    """
+    Return how far the last move into the grabbers drives [m].
+
+    From where the robot stands to where the ball is `grasp_distance` away,
+    never backwards and never more than `cap` -- which is what keeps a bad
+    range estimate from driving the robot across the room with no costmap.
+    """
+    return min(max(float(ball_distance) - float(grasp_distance), 0.0), float(cap))
+
+
+def creep_command(remaining, bearing, speed, gain, max_rate):
+    """
+    Return `(linear, angular)` for the last move into the grabbers.
+
+    Straight ahead at `speed` until `remaining` [m] is used up, steering by the
+    ball's image `bearing` [rad, positive left] while it is in view; `bearing`
+    is None once it has gone under the lens, and the robot then keeps the
+    heading it has, which `FaceBall` left on the ball.
+    """
+    if remaining <= 0.0:
+        return 0.0, 0.0
+    angular = 0.0
+    if bearing is not None:
+        angular = max(-float(max_rate), min(float(max_rate), float(gain) * bearing))
+    return float(speed), angular
