@@ -14,14 +14,15 @@ DEFAULT_YAML_FILENAME = "fear_hri_constants.yaml"
 
 
 def create_fear_tick() -> py_trees.composites.Sequence:
+    # Log before execute so fear is always printed each tick.
     return py_trees.composites.Sequence(
         name="FearTick",
-        memory=True,
+        memory=False,
         children=[
             UpdateFearFromScan(),
             SelectFearAction(),
-            ExecuteSelectedAction(),
             LogFearState(),
+            ExecuteSelectedAction(),
         ],
     )
 

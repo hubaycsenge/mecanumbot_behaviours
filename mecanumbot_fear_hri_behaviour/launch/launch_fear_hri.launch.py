@@ -1,4 +1,4 @@
-"""Launch Fear HRI tree for sim or robot."""
+"""Launch Fear HRI tree alongside Mecanumbot simulation or the robot."""
 
 import os
 
@@ -27,7 +27,9 @@ def generate_launch_description():
             namespace=namespace,
             output="screen",
             remappings=[
-                ("/mecanumbot/cmd_vel", "/cmd_vel"),
+                ("scan", "/mecanumbot/scan"),
+                ("/mecanumbot/scan", "/mecanumbot/scan"),
+                ("cmd_vel", "/cmd_vel"),
             ],
         ),
     ])
