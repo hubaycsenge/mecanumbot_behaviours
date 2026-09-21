@@ -88,6 +88,21 @@ def create_root(yaml_path=None):
         ]
     )
 
+    # The ball is asked about first on every cycle, as in the dog tree. It used
+    # to come after the show loop in the root sequence, and that loop fails
+    # whenever the human is not at the target -- restarting the root -- so the
+    # ball reaction could never be reached. Neither applying still restarts the
+    # root: find the human, ask for attention and show the target again.
+    ball_or_show = py_trees.composites.Selector("BallOrShowSelector", memory=True)
+    ball_or_show.add_children(
+        [
+            py_trees.decorators.Repeat(
+                name="BallReactionRepeat", child=ball_reaction, num_success=-1
+            ),
+            show_while_close,
+        ]
+    )
+
     root = py_trees.composites.Sequence("ROOT", memory=True)
     root.add_children(
         [
@@ -104,10 +119,7 @@ def create_root(yaml_path=None):
             Approach(name="ApproachTarget", target_type=LAST_CHECKPOINT),
             LEDBehaviourSequence("LShow", "indicate_target"),
             py_trees.decorators.Repeat(
-                name="ShowWhileCloseLoop", child=show_while_close, num_success=-1
-            ),
-            py_trees.decorators.Repeat(
-                name="BallReactionRepeat", child=ball_reaction, num_success=-1
+                name="BallOrShowLoop", child=ball_or_show, num_success=-1
             ),
         ]
     )

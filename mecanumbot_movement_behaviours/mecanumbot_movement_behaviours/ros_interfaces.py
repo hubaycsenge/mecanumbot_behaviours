@@ -350,6 +350,12 @@ class Nav2Navigator:
     def __init__(self, node):
         self.node = node
         self._client = ActionClient(node, self.ACTION_TYPE, self.ACTION_NAME)
+        # Which goal the callbacks are allowed to report on. A goal that is
+        # replaced still gets its response, feedback and result delivered, and
+        # nav2 aborts a preempted goal -- so without this the ABORTED of the
+        # goal just replaced lands on the new one, and the behaviour gives up
+        # on a goal nav2 is still driving.
+        self._generation = 0
         self.reset()
 
     # --- lifecycle -----------------------------------------------------------
@@ -374,10 +380,13 @@ class Nav2Navigator:
     def send(self, goal):
         """Start a goal; `goal` is the action's own goal message."""
         self.reset()
+        self._generation += 1
+        generation = self._generation
         self._send_time = self.node.get_clock().now()
-        self._client.send_goal_async(goal, feedback_callback=self._on_feedback).add_done_callback(
-            self._on_goal_response
-        )
+        self._client.send_goal_async(
+            goal,
+            feedback_callback=lambda message: self._on_feedback(message, generation),
+        ).add_done_callback(lambda future: self._on_goal_response(future, generation))
 
     def cancel(self):
         """Ask nav2 to stop driving; safe to call at any point of a goal."""
@@ -404,9 +413,15 @@ class Nav2Navigator:
 
     # --- callbacks -----------------------------------------------------------
 
-    def _on_goal_response(self, future):
+    def _current(self, generation):
+        """Say whether a callback is about the goal this navigator now follows."""
+        return generation == self._generation
+
+    def _on_goal_response(self, future, generation):
         # A goal that never reached nav2 at all is reported the same way as one
         # nav2 turned down: the behaviour retries it or gives up on it.
+        if not self._current(generation):
+            return
         try:
             handle = future.result()
             accepted = handle.accepted
@@ -421,19 +436,25 @@ class Nav2Navigator:
         self._goal_handle = handle
         if self._status is None:
             self._status = STATUS_ACCEPTED
-        handle.get_result_async().add_done_callback(self._on_result)
+        handle.get_result_async().add_done_callback(
+            lambda result: self._on_result(result, generation)
+        )
         if self._cancel_requested:
             self._cancel_requested = False
             self.cancel()
 
-    def _on_result(self, future):
+    def _on_result(self, future, generation):
+        if not self._current(generation):
+            return
         try:
             self._status = future.result().status
         except Exception as error:
             self._status = STATUS_ABORTED
             self.node.get_logger().warn(f"{self.ACTION_NAME}: no result ({error})")
 
-    def _on_feedback(self, message):
+    def _on_feedback(self, message, generation):
+        if not self._current(generation):
+            return
         self.feedback = message.feedback
         if self._status in (None, STATUS_ACCEPTED):
             self._status = STATUS_EXECUTING

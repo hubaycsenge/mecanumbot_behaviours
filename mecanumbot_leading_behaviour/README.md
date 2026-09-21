@@ -358,8 +358,12 @@ human who is merely two metres behind is fetched rather than searched for.
 2. `SeekOrFind` selector — approach the subject, or run lost recovery then approach.
 3. Turn toward the subject and catch attention with the LEDs.
 4. Approach the target and indicate it.
-5. Loop near-target indication while the subject stays close.
-6. Endless ball-reaction loop (has-ball → find person → thank pattern).
+5. Endless `BallOrShowLoop`, asking about the ball first on every cycle (as the dog
+   tree does): while the robot holds the ball, find the person and play the thank
+   pattern; otherwise play the near-target indication while the subject is at the
+   target. Neither applying restarts the root (steps 2–4). Until 2026-09-21 the ball
+   reaction came *after* the show loop, which fails whenever the subject is not at the
+   target and so restarted the root every time — the robot never thanked for the ball.
 
 ### `bottom_up_tree.py` logic
 
