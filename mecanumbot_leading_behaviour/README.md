@@ -261,8 +261,18 @@ it does not ignore its person for the whole walk either.
            `check_in_catch_up_timeout` seconds, and only when that runs out does the
            robot walk back (`create_seek_attention()`) and `DogResumeLeading` pick up
            the route again from wherever the pair now are;
-       - `ShowOrLeadStepSelector`: if the human is near the target
-         (`CheckSubjectTargetSuccess`), run the show/point sequence; otherwise lead a
+       - `ShowOrLeadStepSelector`: once the pair has arrived — the robot is at the
+         last route checkpoint (`CheckRobotAtLastCheckpoint`) or the human already
+         stands at the target (`CheckSubjectTargetSuccess`) — and the human is with
+         the robot (`DogCheckFollowing`), run the show sequence: face the human,
+         `catch_attention`, `show_turn_delay`, face the target, `indicate_target`
+         (the gripper gesture). The loop replays it every cycle, which is the
+         human–target gaze alternation of dog showing (Lakatos et al. 2025 after
+         Koay et al. 2013: shown *on reaching* the target, until the person takes
+         it). Until 2026-09-21 the only trigger was the human within
+         `target_reached_threshold` of the target, which a human following behind a
+         robot parked short of the target practically never met, so the gesture
+         never played. Otherwise lead a
          leg — turn to face the next checkpoint by the smaller angle
          (`direction="shortest"`, head levelled, and only if the route really bends by
          more than `route_turn_min`), then `FollowRoute`;

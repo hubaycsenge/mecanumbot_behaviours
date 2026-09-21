@@ -4,7 +4,7 @@ Dog-inspired leading behaviour.
 The robot leads a human from the start of the route to the target the way a dog
 leads a person: it walks a stretch, looks back to check it is still being
 followed, waits for them or goes back and fetches them when it is not, and
-points the target out once they are close to it.
+points the target out once the pair has reached the end of the route.
 
 What the loop is built around is that **walking and checking are different
 things, and the walking is most of it**. A dog does not stop at every step to
@@ -64,6 +64,7 @@ from mecanumbot_leading_behaviour.behaviours.dog_behaviours import (
 )
 from mecanumbot_leading_behaviour.behaviours.route_behaviours import (
     Approach,
+    CheckRobotAtLastCheckpoint,
     CheckRobotHasBall,
     CheckSubjectTargetSuccess,
     FollowRoute,
@@ -208,13 +209,35 @@ def create_root(yaml_path=None):
         ]
     )
 
-    # --- the human is at the target: point it out ---------------------------
+    # --- the pair has arrived: point the target out -------------------------
+    # A dog shows the target once it has *reached* it with its person along
+    # (Lakatos et al. 2025 after Koay et al. 2013: on reaching the ball, orient
+    # to the Experimenter, to the ball, to the Experimenter again, until they
+    # take it), not once the person already stands at it. The route ends at the
+    # last checkpoint, short of the target, so that is "reached"; the human
+    # having got to the target on their own still counts as well. Showing needs
+    # the human with the robot -- "indicating the target when the subject is
+    # close" -- and a human who is not is dealt with by the check-in.
+    #
+    # Each pass faces the human, asks for attention, then faces the target and
+    # makes the gripper gesture; the loop plays it again every cycle, which is
+    # the human-target gaze alternation.
+    arrived = py_trees.composites.Selector(name="ArrivedSelector", memory=True)
+    arrived.add_children(
+        [
+            CheckRobotAtLastCheckpoint(name="CheckRobotAtRouteEnd"),
+            CheckSubjectTargetSuccess(name="CheckSubjectNearTarget"),
+        ]
+    )
+
     show_target = py_trees.composites.Sequence(
         name="ShowWhileSubjectCloseSeq", memory=True
     )
     show_target.add_children(
         [
-            CheckSubjectTargetSuccess(name="CheckSubjectNearTarget"),
+            arrived,
+            DogCheckFollowing(name="ShowCheckSubjectWithRobot"),
+            TurnToward(name="TurnTowardSubjectShow", target_type=SUBJECT),
             DogBehaviourSequence("DogCatchAttentionShow", "catch_attention"),
             ConfiguredTimer(name="TurnDelayTimer", key="show_turn_delay"),
             TurnToward(name="TurnTowardTargetShow", target_type=TARGET),
