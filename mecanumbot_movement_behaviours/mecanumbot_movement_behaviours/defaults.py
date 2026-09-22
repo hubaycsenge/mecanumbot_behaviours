@@ -104,6 +104,13 @@ MOVEMENT_DEFAULTS = {
     # first: a bend of a few degrees is the navigation stack's to drive out, and
     # stopping to rotate for it only breaks the movement up.
     "route_turn_min": math.radians(30.0),
+    # A route goal that has not brought the robot `route_stall_progress` metres
+    # closer to its checkpoint in `route_stall_timeout` seconds is treated as
+    # dropped. nav2 does not give up on a checkpoint it cannot reach -- its
+    # recoveries back up 0.2 m and retry, so the robot rocks back and forth in
+    # front of it for as long as the goal lives.
+    "route_stall_timeout": 10.0,
+    "route_stall_progress": 0.2,
     # Times a dropped nav2 goal is sent again before the behaviour gives up.
     "nav_goal_retries": 3,
     # --- accessory poses -------------------------------------------------------

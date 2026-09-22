@@ -14,10 +14,15 @@ has not been built yet has no blackboard to read them from.
 
 import argparse
 import os
+import signal
 
+import py_trees
 import py_trees_ros
 import rclpy
 from ament_index_python.packages import get_package_share_directory
+from geometry_msgs.msg import Twist
+from rclpy.executors import ExternalShutdownException
+from rclpy.signals import SignalHandlerOptions
 
 from mecanumbot_bt_config.blackboard import Tunables
 from mecanumbot_bt_config.params import load_params
@@ -28,6 +33,11 @@ RUNTIME_DEFAULTS = {
 }
 
 RUNTIME = Tunables(RUNTIME_DEFAULTS)
+
+# Where the trees' in-place turns go (`VelocityCommander` in the movement
+# library). Spelled here too because this package sits below that one.
+CMD_VEL_TOPIC = "/cmd_vel"
+STOP_REPEATS = 5
 
 
 def resolve_yaml_path(tree_name, package_name, default_filename):
@@ -82,7 +92,12 @@ def run_tree(
     `tick_period_ms` defaults to the constants file's `tick_period_ms`; passing
     one overrides it.
     """
-    rclpy.init(args=args)
+    # rclpy's own SIGINT handler shuts the context down before `spin` returns,
+    # and a dead context cannot publish -- so the tree could not stop the robot
+    # on Ctrl-C, and the last turn command kept the wheels going. Take the
+    # signals ourselves; `stop_robot` runs while the context is still alive.
+    rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
 
     yaml_path = resolve_yaml_path(tree_name, package_name, default_yaml)
     params = build_params(yaml_path, root_keys)
@@ -97,4 +112,35 @@ def run_tree(
     print(f"Starting {tree_name} behaviour tree using YAML: {yaml_path}")
 
     tree_node.tick_tock(period_ms=float(tick_period_ms))
-    rclpy.spin(tree_node.node)
+    try:
+        rclpy.spin(tree_node.node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    finally:
+        stop_robot(tree_node)
+        rclpy.try_shutdown()
+
+
+def stop_robot(tree_node):
+    """
+    Halt whatever the tree set moving, before the process exits.
+
+    Stopping the root terminates every running behaviour, which is where the
+    nav2 goals are cancelled; the zero twists then end an in-place turn, which
+    nothing else would. Best effort throughout: a failure in one behaviour's
+    `terminate` must not keep the stop command from going out.
+    """
+    node = tree_node.node
+    try:
+        if tree_node.timer is not None:
+            tree_node.timer.cancel()
+        tree_node.root.stop(py_trees.common.Status.INVALID)
+    except Exception as error:  # shutting down regardless
+        print(f"[tree_runner] stopping the tree failed ({error}); stopping the wheels anyway")
+    try:
+        publisher = node.create_publisher(Twist, CMD_VEL_TOPIC, 10)
+        for _ in range(STOP_REPEATS):
+            publisher.publish(Twist())
+            rclpy.spin_once(node, timeout_sec=0.05)  # also flushes the nav2 cancels
+    except Exception as error:
+        print(f"[tree_runner] could not send the stop command: {error}")

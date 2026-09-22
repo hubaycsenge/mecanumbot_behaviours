@@ -39,12 +39,15 @@ from mecanumbot_movement_behaviours.ros_interfaces import (
     Nav2RouteNavigator,
     PeopleTracker,
     RobotPoseTracker,
+    STATUS_CANCELING,
     STATUS_SUCCEEDED,
     VelocityCommander,
 )
 
 SEARCH_BACKWARDS = -1  # back down the route, where the human was last following
 SEARCH_FORWARDS = 1
+# Seconds a stalled goal's cancel is waited on before the replacement goes out.
+STALL_CANCEL_WAIT = 3.0
 
 
 class FollowRoute(py_trees.behaviour.Behaviour):
@@ -88,6 +91,12 @@ class FollowRoute(py_trees.behaviour.Behaviour):
     checkpoint -- and the leg carries on checkpoint by checkpoint from there.
     Leading is then no smoother than it used to be, but it never stops dead over
     one awkwardly placed checkpoint.
+
+    nav2 does not always give up, though: a checkpoint pressed against an
+    obstacle the saved map does not have sets its recoveries backing up and
+    retrying indefinitely. So a goal that has not brought the robot
+    `route_stall_progress` closer to its checkpoint within `route_stall_timeout`
+    is handled exactly as if nav2 had dropped it.
     """
 
     KEYS = DEFAULT_KEYS
@@ -150,6 +159,7 @@ class FollowRoute(py_trees.behaviour.Behaviour):
         self._resends = 0
         self._lagging_since = None
         self._start_time = self.node.get_clock().now()
+        self._reset_stall_watch()
 
     def terminate(self, new_status):
         if new_status != py_trees.common.Status.RUNNING:
@@ -208,12 +218,29 @@ class FollowRoute(py_trees.behaviour.Behaviour):
                 return self._leg_done("leg driven one checkpoint at a time")
             return self._send_single()
         if status in GOAL_ACTIVE_STATUSES:
-            self.feedback_message = self._progress()
+            if self._cancel_pending():
+                self.feedback_message = "waiting for nav2 to drop the stalled goal"
+                return py_trees.common.Status.RUNNING
+            if not self._stalled():
+                self.feedback_message = self._progress()
+                return py_trees.common.Status.RUNNING
+            self.node.get_logger().warn(
+                f"{self.name}: no progress towards checkpoint "
+                f"{self._heading_for()} in {self._stall_timeout():.0f} s, "
+                "treating the goal as dropped"
+            )
+            self.nav2.cancel()
+            self._cancelled_at = self.node.get_clock().now()
+            return py_trees.common.Status.RUNNING
+        if status == STATUS_CANCELING and self._cancel_pending():
+            # bt_navigator refuses a goal on one action while the other is
+            # still running, so the replacement waits for the cancel to land.
             return py_trees.common.Status.RUNNING
 
-        # Nav2 gave up on the goal. Sending the same one again only buys the
-        # same answer, so the first drop steps down to the single-goal move that
-        # stops short of the checkpoint; only that one is worth retrying.
+        # Nav2 gave up on the goal, or it stalled. Sending the same one again
+        # only buys the same answer, so the first drop steps down to the
+        # single-goal move that stops short of the checkpoint; only that one is
+        # worth retrying.
         if self.nav2 is self.route:
             self.node.get_logger().warn(
                 f"{self.name}: nav2 could not drive the leg as waypoints -- check "
@@ -270,6 +297,7 @@ class FollowRoute(py_trees.behaviour.Behaviour):
         return self._send(self._leg[self._step :])
 
     def _send(self, indices):
+        self._reset_stall_watch()
         self.nav2 = self.route
         self.route.follow(
             route_poses(
@@ -286,8 +314,9 @@ class FollowRoute(py_trees.behaviour.Behaviour):
 
     def _send_single(self):
         """Fall back to `Approach`'s move: one goal, stopping short of the checkpoint."""
-        index = self._leg[min(self._step, len(self._leg) - 1)]
+        index = self._heading_for()
         checkpoint = self._checkpoints()[index]
+        self._reset_stall_watch()
         self.nav2 = self.single
         self.single.go_to(
             pose_to_goal(
@@ -302,8 +331,45 @@ class FollowRoute(py_trees.behaviour.Behaviour):
         )
         return py_trees.common.Status.RUNNING
 
+    def _heading_for(self):
+        """Index of the checkpoint the leg is currently driving to."""
+        return self._leg[min(self._step, len(self._leg) - 1)]
+
+    def _stall_timeout(self):
+        return float(constant(self.blackboard, "route_stall_timeout"))
+
+    def _cancel_pending(self):
+        """Say whether a stall cancel is recent enough to keep waiting on."""
+        if self._cancelled_at is None:
+            return False
+        waited = (self.node.get_clock().now() - self._cancelled_at).nanoseconds / 1e9
+        return waited < STALL_CANCEL_WAIT
+
+    def _reset_stall_watch(self):
+        self._cancelled_at = None
+        self._closest = None
+        self._closest_time = None
+        self._closest_index = None
+
+    def _stalled(self):
+        """Say whether the robot has stopped getting closer to its checkpoint."""
+        index = self._heading_for()
+        distance = distance_xy(self.pose.position, self._checkpoints()[index])
+        now = self.node.get_clock().now()
+        progress = float(constant(self.blackboard, "route_stall_progress"))
+        if (
+            self._closest is None
+            or index != self._closest_index
+            or distance < self._closest - progress
+        ):
+            self._closest = distance
+            self._closest_time = now
+            self._closest_index = index
+            return False
+        return (now - self._closest_time).nanoseconds / 1e9 > self._stall_timeout()
+
     def _progress(self):
-        index = self._leg[min(self._step, len(self._leg) - 1)]
+        index = self._heading_for()
         if self.nav2 is not self.route:
             return f"leading to checkpoint {index}"
         remaining = self.route.poses_remaining
