@@ -113,6 +113,14 @@ MOVEMENT_DEFAULTS = {
     "route_stall_progress": 0.2,
     # Times a dropped nav2 goal is sent again before the behaviour gives up.
     "nav_goal_retries": 3,
+    # A `mode="stepped"` approach to a person takes steps of `approach_distance`
+    # until it stands within `closeness_threshold` of them, and counts itself
+    # there `approach_arrive_margin` metres early -- nav2 parks within its own
+    # xy goal tolerance (0.30 m), so a step that ends 0.2 m short is arrived,
+    # not a reason for another step. `approach_max_steps` caps the walk, so a
+    # person who keeps backing off does not lead the robot across the room.
+    "approach_arrive_margin": 0.35,
+    "approach_max_steps": 6,
     # --- accessory poses -------------------------------------------------------
     # n_pos is the neck-mounted camera tilt (2.0 .. 8.6, larger looks further
     # up). The seeking pose does double duty: it reads as the robot seeking

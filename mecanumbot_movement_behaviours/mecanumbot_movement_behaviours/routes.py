@@ -560,6 +560,16 @@ class ManageSearchCheckpoint(py_trees.behaviour.Behaviour):
     The first run (and every run after a person was found) snaps to the
     checkpoint nearest the robot, then each run steps one checkpoint in the
     patrol direction, reversing at either end of the route.
+
+    The direction is set on that first run from where the human was last seen:
+    back down the route if they were behind the robot, on up it if they were
+    ahead. Until 2026-09-24 it was only ever written by `WaitForPerson`, when
+    somebody was *found* -- so the patrol after losing the human searched the
+    way the previous find had pointed. In the run of that day the tree opened
+    by finding the human ahead on the route, lost them behind it five minutes
+    later, and patrolled forwards, away from them, checkpoint 1 to 2 to 3.
+    The direction `WaitForPerson` recorded is now only the fallback for a human
+    who was never placed at all.
     """
 
     KEYS = DEFAULT_KEYS
@@ -586,6 +596,9 @@ class ManageSearchCheckpoint(py_trees.behaviour.Behaviour):
     def setup(self, **kwargs):
         self.node = kwargs["node"]
         self.pose = RobotPoseTracker(self.node)
+        # No sight timeout matters here: only the last place is read, never
+        # whether it is fresh -- a lost human is by definition not fresh.
+        self.subject = FollowedSubjectTracker(self.node)
         self.logger.info(f"{self.name}: Setup complete")
 
     def update(self):
@@ -594,15 +607,15 @@ class ManageSearchCheckpoint(py_trees.behaviour.Behaviour):
             return py_trees.common.Status.RUNNING
 
         if not self.blackboard.get(self.keys.patrol_initialized):
+            checkpoints = self.blackboard.get(self.keys.checkpoints)
             index = closest_checkpoint_index(
-                self.blackboard.get(self.keys.checkpoints),
-                self.pose.position.x,
-                self.pose.position.y,
+                checkpoints, self.pose.position.x, self.pose.position.y
             )
             self.blackboard.set(self.keys.patrol_current_checkpoint, index)
             self.blackboard.set(self.keys.patrol_initialized, True)
             self.node.get_logger().info(
-                f"{self.name}: search starts at checkpoint {index}"
+                f"{self.name}: search starts at checkpoint {index}, "
+                f"{self._direction_from_last_sighting(checkpoints)}"
             )
             return py_trees.common.Status.SUCCESS
 
@@ -627,3 +640,19 @@ class ManageSearchCheckpoint(py_trees.behaviour.Behaviour):
         self.blackboard.set(self.keys.patrol_current_checkpoint, index)
         self.node.get_logger().info(f"{self.name}: next search checkpoint is {index}")
         return py_trees.common.Status.SUCCESS
+
+    def _direction_from_last_sighting(self, checkpoints):
+        """Point the patrol at where the human was last seen; say which way."""
+        last_position = self.subject.position
+        if last_position is None or not checkpoints:
+            direction = self.blackboard.get(self.keys.patrol_direction)
+            return (
+                f"searching {'forwards' if direction > 0 else 'backwards'} "
+                "(the human was never placed)"
+            )
+        direction = path_progress_sign(checkpoints, self.pose.position, last_position)
+        self.blackboard.set(self.keys.patrol_direction, direction)
+        return (
+            f"searching {'forwards' if direction > 0 else 'backwards'}: the human "
+            f"was last seen {'ahead of' if direction > 0 else 'behind'} the robot"
+        )

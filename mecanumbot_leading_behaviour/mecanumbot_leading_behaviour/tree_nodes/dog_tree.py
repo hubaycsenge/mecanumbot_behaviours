@@ -32,10 +32,10 @@ look round, and it does not ignore its person for the whole walk either.
   come, walks back, faces them, wiggles and asks for their attention again
   before carrying on. Not found at all: the patrol.
 * **Seeing them again ends the search there and then.** The patrol is cut off
-  mid-scan or mid-drive the moment somebody is detected, and how it ends is
-  decided by where they are: close enough to be led, and the robot simply leads
-  on from where it is standing; further off, and it goes back to them and asks
-  for their attention again first.
+  mid-scan or mid-drive the moment somebody is detected, and the robot always
+  walks up to them and asks for their attention again before leading on --
+  however close they already were. A human the robot had lost has to be told
+  the walk is on again; see `recover_and_resume` below.
 
 Two habits from the older tree carry the gestures:
 
@@ -90,13 +90,20 @@ def get_yaml_path():
 
 
 def create_seek_attention(ID):
-    """Walk up to the human, face them, wiggle and ask for their attention."""
+    """
+    Walk up to the human, face them, wiggle and ask for their attention.
+
+    The walk is `stepped`: steps of `robot_approach_distance`, each re-aimed at
+    where the human is now, until the robot stands within
+    `robot_closeness_threshold` of them. Until 2026-09-24 it was one
+    `fixed_distance` step, so a human 3-4 m away was "reached" 2-3 m short and
+    got the attention gesture from across the room -- and the first check-in
+    then found them too far away to be following.
+    """
     sequence = py_trees.composites.Sequence(name=ID + "SeekAttention", memory=True)
     sequence.add_children(
         [
-            Approach(
-                name=ID + "ApproachSubject", target_type=SUBJECT, mode="fixed_distance"
-            ),
+            Approach(name=ID + "ApproachSubject", target_type=SUBJECT, mode="stepped"),
             TurnToward(name=ID + "TurnTowardSubject", target_type=SUBJECT),
             RelativeTurnPattern(name=ID + "AttentionTurnPattern"),
             DogBehaviourSequence(ID + "CatchAttention", "catch_attention"),
@@ -279,38 +286,29 @@ def create_root(yaml_path=None):
     )
 
     # --- the human dropped out of a lead cycle ------------------------------
-    # Patrol the route until somebody turns up, deal with where they turned up,
-    # then work out where leading has to carry on from. The recovery parallel
-    # succeeds on its first tick when a person is already visible, so this is
-    # only reached once the look back has properly failed to find them -- by
-    # then they really are gone, not merely behind the robot.
+    # Patrol the route until somebody turns up, walk up to them and ask for
+    # their attention, then work out where leading has to carry on from. The
+    # recovery parallel succeeds on its first tick when a person is already
+    # visible, so this is only reached once the look back has properly failed
+    # to find them -- by then they really are gone, not merely behind the robot.
     #
     # The patrol is interrupted the moment somebody is seen -- `WaitForPerson`
     # runs against it in a `SuccessOnOne` parallel, so a scan or a drive to the
     # next search checkpoint is cut off mid-movement rather than played out --
-    # and where that leaves the pair decides what happens next. It is the same
-    # question the check-in asks, so it is asked with the same behaviour:
-    # somebody within `Dog_following_max_threshold` is close enough to lead on
-    # from where the robot stands, and walking back at a human who is already
-    # there reads as fussing. Anybody further off is fetched: walk up to them,
-    # face them, wiggle and ask for their attention again.
-    regain_or_carry_on = py_trees.composites.Selector(
-        name="RegainOrCarryOnSelector", memory=True
-    )
-    regain_or_carry_on.add_children(
-        [
-            DogCheckFollowing(name="PatrolCheckFollowing"),
-            create_seek_attention(ID="Regain"),
-        ]
-    )
-
+    # and the human is then always approached and alerted, the same seek as at
+    # the start of the run. Until 2026-09-24 somebody found within
+    # `Dog_following_max_threshold` was led on from where the robot stood,
+    # without either: a human the robot had lost and found again got no signal
+    # that the walk was on again, and in practice simply was not approached.
+    # The approach is stepped and stops at `robot_closeness_threshold`, so a
+    # human who is already that close is only turned to and alerted.
     recover_and_resume = py_trees.composites.Sequence(
         name="RecoverAndResumeSeq", memory=True
     )
     recover_and_resume.add_children(
         [
             create_recover_lost_sequence(ID="Patrol"),
-            regain_or_carry_on,
+            create_seek_attention(ID="Regain"),
             DogResumeLeading(name="ResumeLeadingCheckpoint"),
         ]
     )

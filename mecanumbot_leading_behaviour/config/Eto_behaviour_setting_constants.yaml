@@ -19,8 +19,8 @@
 
 bottom_up_tree_node:
   ros__parameters:
-    init_delay:                  1.5      # Delay before the tree starts acting [s]
-    robot_closeness_threshold:   0.75     # Minimum approach distance; below this the robot risks hitting the subject [m]
+    init_delay:                  0.5      # Delay before the tree starts acting [s]
+    robot_closeness_threshold:   1.25     # Minimum approach distance; below this the robot risks hitting the subject [m]
     robot_approach_distance:     1.0      # How far the robot advances in one step [m]
     target_reached_threshold:    1.5      # Distance between target and subject that counts as arrived [m]
     visibility_time_threshold:   2.0      # Age of the last subject fix before it is stale [s]
@@ -41,7 +41,7 @@ bottom_up_tree_node:
     setup_timeout: 15.0
 
     # ----- Seeing people -------------------------------------------------------
-    sight_timeout: 1.0
+    sight_timeout: 3.0
 
     # ----- Rotation profile ----------------------------------------------------
     turn_max_speed: 0.6
@@ -107,8 +107,8 @@ bottom_up_tree_node:
     show_turn_delay: 2.0
 
     # ----- Accessory poses -----------------------------------------------------
-    neck_seek_pos: 6.0
-    neck_level_pos: 6.0
+    neck_seek_pos: 6.5
+    neck_level_pos: 6.5
     gripper_left_neutral: 6.83
     gripper_right_neutral: 3.36
 

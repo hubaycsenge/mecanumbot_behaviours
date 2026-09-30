@@ -124,6 +124,31 @@ def path_progress_sign(checkpoints, robot_position, other_position):
     return 1 if other_progress > robot_progress else -1
 
 
+def human_is_ahead_on_route(checkpoints, robot_position, person_position, margin=0.0):
+    """
+    Say whether `person_position` is further along the route than the robot.
+
+    `margin` is how much further, as a fraction of the stretch between two
+    checkpoints, so that two people standing level do not flip the answer back
+    and forth. It is the same quantity `path_progress_sign` answers without a
+    margin, and the tie falls the same way: level, or behind, is not ahead.
+
+    This exists as its own function because the question is easy to ask wrongly.
+    Comparing the person's progress -- a continuous position along the polyline
+    -- against the *index* of the checkpoint nearest the robot compares a
+    fraction with an integer, and reads "ahead" for anybody standing more than
+    `margin` past the last checkpoint the robot happens to be nearest, whether
+    or not the robot itself is further along than they are. That is what
+    `DogResumeLeading` did until 2026-09-23, and it let the robot lead on while
+    the human it had just found was still behind it.
+    """
+    if not checkpoints:
+        return False
+    robot_progress = route_progress(checkpoints, robot_position)
+    person_progress = route_progress(checkpoints, person_position)
+    return person_progress > robot_progress + margin
+
+
 def _projection_fraction(start, end, position):
     """Where `position` projects onto the segment `start` -> `end`, clamped to [0, 1]."""
     segment_x, segment_y = end.x - start.x, end.y - start.y
@@ -164,6 +189,19 @@ def route_poses(checkpoints, indices, look_beyond=None):
         pose.orientation = quaternion_from_yaw(yaw)
         poses.append(pose)
     return poses
+
+
+def approach_arrived(distance, stop_threshold, margin=0.0):
+    """
+    Say whether a robot `distance` metres from a person has walked up to them.
+
+    It has when it stands within `stop_threshold` -- the closest it may come --
+    plus `margin`, which absorbs the goal tolerance nav2 parks within. This is
+    the question a stepped approach asks after every step; before 2026-09-24 the
+    dog tree never asked it, took one step of `approach_distance` and called the
+    person reached from 3 m away.
+    """
+    return distance <= stop_threshold + margin
 
 
 def pose_to_goal(

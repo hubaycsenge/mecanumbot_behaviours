@@ -15,7 +15,11 @@ from mecanumbot_movement_behaviours.defaults import (
     register_param_keys,
     resolve,
 )
-from mecanumbot_movement_behaviours.geometry import distance_xy, pose_to_goal
+from mecanumbot_movement_behaviours.geometry import (
+    approach_arrived,
+    distance_xy,
+    pose_to_goal,
+)
 from mecanumbot_movement_behaviours.keys import DEFAULT_KEYS
 from mecanumbot_movement_behaviours.ros_interfaces import (
     BallTracker,
@@ -40,7 +44,11 @@ class Approach(py_trees.behaviour.Behaviour):
 
     `mode="exact"` aims for the target minus the closeness threshold,
     `mode="fixed_distance"` only steps the approach distance closer per run,
-    which is how the robot walks up to a human in stages.
+    and `mode="stepped"` keeps taking those steps -- re-aiming each one at where
+    the human is now -- until it stands within the closeness threshold of them
+    (`approach_arrive_margin`, at most `approach_max_steps` steps). Stepped is
+    how the robot walks up to a human in stages; a single `fixed_distance` step
+    from 3 m away leaves it 2 m short and calling the human reached.
 
     The goal goes through the `NavigateToPose` action rather than the
     `/goal_pose` topic, so the outcome belongs to this goal rather than being
@@ -110,6 +118,9 @@ class Approach(py_trees.behaviour.Behaviour):
         self.nav2.reset()
         self._target_position = None
         self._resends = 0
+        self._steps = 0
+        self.arrive_margin = float(constant(self.blackboard, "approach_arrive_margin"))
+        self.max_steps = int(constant(self.blackboard, "approach_max_steps"))
         self._start_time = self.node.get_clock().now()
         self.node.get_logger().info(f"{self.name}: approaching the {self.target_type}")
 
@@ -208,11 +219,13 @@ class Approach(py_trees.behaviour.Behaviour):
             if human
             else constant(self.blackboard, "route_stop_distance")
         )
+        # A stepped approach is a run of fixed-distance goals.
+        goal_mode = "fixed_distance" if self.mode == "stepped" else self.mode
         goal = pose_to_goal(
             self._target_position,
             self.pose.pose,
             stop_threshold=stop_threshold,
-            mode=self.mode,
+            mode=goal_mode,
             go_threshold=go_threshold,
         )
         self.nav2.go_to(goal)
@@ -222,6 +235,10 @@ class Approach(py_trees.behaviour.Behaviour):
         )
 
     def _goal_reached(self):
+        if self.mode == "stepped" and is_human(self.target_type):
+            next_step = self._next_step()
+            if next_step is not None:
+                return next_step
         if self.target_type == CHECKPOINT:
             current = self.blackboard.get(self.keys.current_checkpoint)
             last = self.blackboard.get(self.keys.max_checkpoint)
@@ -233,6 +250,38 @@ class Approach(py_trees.behaviour.Behaviour):
         else:
             self.node.get_logger().info(f"{self.name}: reached the {self.target_type}")
         return py_trees.common.Status.SUCCESS
+
+    def _next_step(self):
+        """
+        After a step of a stepped approach: send the next one, or None if done.
+
+        Each step re-reads where the human is, so somebody who moved while the
+        robot walked is walked up to where they are now rather than where they
+        were. The step that ends within reach, and the last one allowed, both
+        finish the approach as reached -- the second because a human who keeps
+        drifting off is still one the robot has gone to, and the gesture that
+        follows is what asks them to come along.
+        """
+        self._steps += 1
+        position = self._look_up_target() or self._target_position
+        distance = distance_xy(self.pose.position, position)
+        stop_threshold = self.blackboard.get(self.keys.closeness_threshold)
+        if approach_arrived(distance, stop_threshold, self.arrive_margin):
+            self.node.get_logger().info(
+                f"{self.name}: {distance:.2f} m from the {self.target_type} "
+                f"after {self._steps} step(s)"
+            )
+            return None
+        if self._steps >= self.max_steps:
+            self.node.get_logger().info(
+                f"{self.name}: still {distance:.2f} m from the {self.target_type} "
+                f"after {self._steps} steps, stopping here"
+            )
+            return None
+        self._target_position = position
+        self._resends = 0
+        self._send_goal()
+        return py_trees.common.Status.RUNNING
 
 
 class CheckSubjectTargetSuccess(py_trees.behaviour.Behaviour):
