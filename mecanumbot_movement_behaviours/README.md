@@ -31,14 +31,14 @@ created inside the behaviour classes, so a tree that uses one gets them.
 
 | Behaviour | Role |
 | --- | --- |
-| `Approach` | Navigates to a target through Nav2; `mode="exact"` drives to the point, `mode="fixed_distance"` steps the approach distance closer. |
-| `FollowRoute` | Leads one leg of the route — several checkpoints in a single `NavigateThroughPoses` goal, cut short when the human stops following. |
+| `Approach` | Navigates to a target through Nav2; `mode="exact"` drives to the point, `mode="fixed_distance"` steps the approach distance closer once, `mode="stepped"` keeps stepping (re-aimed at the human each time) until within `closeness_threshold` + `approach_arrive_margin`, at most `approach_max_steps` steps. |
+| `FollowRoute` | Leads one leg of the route — several checkpoints in a single `NavigateThroughPoses` goal, cut short when the human stops following: out of sight for `sight_timeout`, or further than the following threshold, for `check_in_grace` seconds. A checkpoint nav2 has dropped from the goal counts as passed. |
 | `TurnToward` | Rotates in place to face a `subject` / `target` / `start` / `checkpoint` / `patrol` / `last_checkpoint`, in a chosen direction (see below). |
-| `GlanceBack` | The look over the shoulder: a slow full turn, set off towards the human's last known place and stopped by the first detection made during it. FAILURE is what starts the patrol. |
+| `GlanceBack` | The look over the shoulder: a slow full turn, set off towards the human's last known place and stopped by the first detection made during it. FAILURE is what starts the patrol. Looks down onto a face at the bottom of the frame, holding the turn meanwhile (`HeadLookDown`). |
 | `RelativeTurnPattern` | Attention-getting wiggle: alternating turns that end on the starting heading, beginning in the direction of the last search turn. |
 | `ScanSpin` | Spins in place looking for people, head lifted; `FindPeople` (spin until somebody is seen) and `Spin360` (one full scan) are configured subclasses. |
-| `WaitForPerson` | Interrupt half of the lost-recovery parallel: waits with a lifted head, and records whether the person turned up ahead of or behind the robot. |
-| `ManageSearchCheckpoint` | Walks the patrol index along the route, reversing at either end. |
+| `WaitForPerson` | Interrupt half of the lost-recovery parallel: waits with a lifted head, and records whether the person turned up ahead of or behind the robot. Looks down onto a face at the bottom of the frame (`HeadLookDown`), which also holds a scan running beside it. |
+| `ManageSearchCheckpoint` | Walks the patrol index along the route, reversing at either end; sets off towards where the human was last seen. |
 | `CheckSubjectTargetSuccess` | SUCCESS when the subject is within the reached threshold of the target. |
 | `CheckRobotHasBall` | SUCCESS while `/mecanumbot/has_object` is true. |
 | `CheckRobotAtLastCheckpoint` | SUCCESS when the current checkpoint index has reached the last one. |
@@ -154,6 +154,16 @@ is ticked:
 | --- | --- | --- |
 | `neck_seek_pos` | `7.0` | The robot is looking for or at a human: reads as seeking contact, and gives YOLO26n-pose a full-body view instead of a pair of knees, which it often misses. |
 | `neck_level_pos` | `6.0` | The robot is driving its route or pointing at the target. |
+
+**Looking down onto a low face** (`look_down.py`, `ros_interfaces.HeadLookDown`).
+A lifted head puts somebody sitting low -- on a bean bag -- at the bottom edge of
+the frame with only their face in shot, and the detection gate wants a torso. The
+camera detector publishes `cam_people_detections/low_head` when it sees a face
+there; `WaitForPerson` and `GlanceBack` then drop the neck by `look_down_step`
+(`0.5`, ~15 deg) for `look_down_hold` (`3.0` s) and put it back exactly where it
+was, and ignore the cue for `look_down_cooldown` (`4.0` s) so a face the gate
+never accepts cannot keep the head low. A scan (`ScanSpin`, `GlanceBack`) holds
+its turn while the head is down. Ending the search always raises the head.
 
 `gripper_left_neutral` / `gripper_right_neutral` (`6.83` / `3.36`) are the
 gripper positions any command that does not name its own uses; the gesture

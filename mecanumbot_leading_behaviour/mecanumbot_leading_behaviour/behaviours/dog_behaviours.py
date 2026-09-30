@@ -8,8 +8,9 @@ from mecanumbot_leading_behaviour.behaviours.defaults import (
     resolve,
 )
 from mecanumbot_movement_behaviours.geometry import (
-    closest_checkpoint_index,
     distance_xy,
+    human_is_ahead_on_route,
+    resume_checkpoint_index,
     route_progress,
 )
 from mecanumbot_movement_behaviours.pacing import check_in_due
@@ -307,18 +308,32 @@ class DogResumeLeading(py_trees.behaviour.Behaviour):
     """
     Pick the checkpoint to lead to now that the human has been found again.
 
-    Take the checkpoint nearest the robot and ask whether the human is already
-    past it: if they are, that stretch of the route is walked and leading
-    resumes at the checkpoint after it, otherwise the pair still has to get
-    there. Without this the robot would carry on towards whichever checkpoint it
-    was heading for when it lost the human, which the search may well have left
-    behind.
+    Leading resumes at the first checkpoint ahead of the pair along the route:
+    ahead of the robot, or ahead of the human when they are already further
+    along than it is (`geometry.resume_checkpoint_index`). Without this the
+    robot would carry on towards whichever checkpoint it was heading for when
+    it lost the human, which the search may well have left behind.
+
+    Until 2026-09-30 it took the checkpoint *nearest* the robot unless the
+    human was ahead, which led a pair standing just past a checkpoint back to
+    it. It also runs after the opening seek now, not only after a regain, so a
+    run that finds its human part-way along the first stretch does not walk
+    them back to the start.
     """
 
-    # How far past a checkpoint (as a fraction of the stretch to the next one)
-    # the human has to be before it counts as walked is `resume_passed_margin`,
-    # which keeps somebody standing right on a checkpoint from flipping the
-    # decision back and forth.
+    # How far ahead of the robot (as a fraction of the stretch between two
+    # checkpoints) the human has to be before that stretch counts as walked is
+    # `resume_passed_margin`, which keeps two people standing level from
+    # flipping the decision back and forth.
+    #
+    # The comparison is against the ROBOT's own progress, not against the index
+    # of the checkpoint nearest it. Until 2026-09-23 it was the latter -- the
+    # human's continuous progress was tested against an integer -- so once the
+    # robot was more than `resume_passed_margin` along a stretch, a human
+    # standing anywhere behind it on that same stretch still read as "past the
+    # checkpoint" and the robot led on without them. In the 09:48 run of
+    # 2026-09-23 the robot's own progress was 0.10 and the human's 0.26, so the
+    # answer came out right by luck; at 0.60 against 0.26 it would not have.
 
     def __init__(self, name="DogResumeLeading", sight_timeout=None):
         super().__init__(name)
@@ -354,10 +369,7 @@ class DogResumeLeading(py_trees.behaviour.Behaviour):
             return py_trees.common.Status.RUNNING
 
         checkpoints = self.blackboard.Dog_checkpoints
-        nearest = closest_checkpoint_index(
-            checkpoints, self.pose.position.x, self.pose.position.y
-        )
-        index, reason = self._resume_index(checkpoints, nearest)
+        index, reason = self._resume_index(checkpoints)
         index = max(0, min(index, self.blackboard.Dog_max_checkpoint))
 
         self.blackboard.Dog_current_checkpoint = index
@@ -371,20 +383,26 @@ class DogResumeLeading(py_trees.behaviour.Behaviour):
         )
         return py_trees.common.Status.SUCCESS
 
-    def _resume_index(self, checkpoints, nearest):
+    def _resume_index(self, checkpoints):
         """Checkpoint to head for, and why -- see the class docstring."""
+        robot_progress = route_progress(checkpoints, self.pose.position)
         person_pose = self.people.last_seen_pose
         if person_pose is None or not checkpoints:
-            return nearest, "nobody to place on the route"
-
-        progress = route_progress(checkpoints, person_pose.position)
-        margin = constant(self.blackboard, "resume_passed_margin")
-        if progress > nearest + margin:
             return (
-                nearest + 1,
-                f"human is past checkpoint {nearest} (at {progress:.2f})",
+                resume_checkpoint_index(checkpoints, self.pose.position, None),
+                f"nobody to place on the route (robot at {robot_progress:.2f})",
             )
+
+        margin = constant(self.blackboard, "resume_passed_margin")
+        index = resume_checkpoint_index(
+            checkpoints, self.pose.position, person_pose.position, margin
+        )
+        progress = route_progress(checkpoints, person_pose.position)
+        ahead = human_is_ahead_on_route(
+            checkpoints, self.pose.position, person_pose.position, margin
+        )
         return (
-            nearest,
-            f"human has not reached checkpoint {nearest} yet (at {progress:.2f})",
+            index,
+            f"human is {'' if ahead else 'not '}ahead of the robot on the route "
+            f"(human at {progress:.2f}, robot at {robot_progress:.2f})",
         )

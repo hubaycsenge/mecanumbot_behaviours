@@ -17,6 +17,7 @@ experiment's spelling are both just a spelling -- see `keys.py`.
 import py_trees
 
 from mecanumbot_movement_behaviours.defaults import (
+    LOOK_DOWN_KEYS,
     constant,
     register_param_keys,
     resolve,
@@ -35,6 +36,7 @@ from mecanumbot_movement_behaviours.ros_interfaces import (
     FollowedSubjectTracker,
     GOAL_ACTIVE_STATUSES,
     HEAD_SEEK,
+    HeadLookDown,
     Nav2PoseNavigator,
     Nav2RouteNavigator,
     PeopleTracker,
@@ -74,10 +76,14 @@ class FollowRoute(py_trees.behaviour.Behaviour):
     measurements, and it is the look back that decides whether this is a human
     who fell behind or a human who is gone.
 
-    Checkpoints count as reached by distance (`checkpoint_reached_distance`)
-    rather than by nav2's own arrival, so the current-checkpoint index moves
-    along while the robot drives through and does not depend on which nav2
-    behaviour tree is loaded.
+    Checkpoints count as reached by distance (`checkpoint_reached_distance`),
+    or when nav2 reports it has dropped them from the route, whichever comes
+    first. nav2's `RemovePassedGoals` drops a waypoint once the robot is within
+    its own radius (0.7 m in the stock Humble tree) and heads for the next one;
+    until 2026-09-30 only the distance counted here, so a checkpoint passed at
+    0.5-0.7 m stayed "current" while nav2 drove away from it, the stall watch
+    below read that as no progress towards it, cancelled the leg and sent the
+    robot back to it on its own (the 08:46 run of that day, twice).
 
     A waypoint run asks more of the route than a single goal does.
     `ComputePathThroughPoses` plans robot -> first checkpoint, then *from* that
@@ -156,6 +162,8 @@ class FollowRoute(py_trees.behaviour.Behaviour):
         self.nav2 = self.route
         self._leg = None
         self._step = 0
+        self._sent_step = 0
+        self._sent_count = 0
         self._resends = 0
         self._lagging_since = None
         self._start_time = self.node.get_clock().now()
@@ -299,6 +307,8 @@ class FollowRoute(py_trees.behaviour.Behaviour):
     def _send(self, indices):
         self._reset_stall_watch()
         self.nav2 = self.route
+        self._sent_step = self._step
+        self._sent_count = len(indices)
         self.route.follow(
             route_poses(
                 self._checkpoints(),
@@ -384,8 +394,22 @@ class FollowRoute(py_trees.behaviour.Behaviour):
         while self._step < len(self._leg):
             index = self._leg[self._step]
             if distance_xy(self.pose.position, checkpoints[index]) > reached:
-                return
+                break
             self._advance(count=count)
+
+        # Waypoints nav2 has already dropped from the goal are behind us too.
+        passed_by_nav2 = self._passed_by_nav2()
+        while self._step < min(self._sent_step + passed_by_nav2, len(self._leg)):
+            self._advance(count=count)
+
+    def _passed_by_nav2(self):
+        """Return how many waypoints of the running route goal nav2 has dropped."""
+        if self.nav2 is not self.route or self._leg is None:
+            return 0
+        remaining = self.route.poses_remaining
+        if remaining is None:
+            return 0
+        return max(0, self._sent_count - remaining)
 
     def _advance(self, count=True):
         """Put one checkpoint of the leg behind us."""
@@ -409,6 +433,12 @@ class FollowRoute(py_trees.behaviour.Behaviour):
         age = self.subject.age
         if self.subject.position is None or age is None:
             reason = "the human has not been seen yet"
+        elif age > self.sight_timeout:
+            # Out of sight is a reason to stop and look back, not to drive on
+            # until the distance to where they were last seen runs out: until
+            # 2026-09-30 only that distance counted, and in the 08:46 run the
+            # robot led for 15 s on a human it had last seen 1.3 m away.
+            reason = f"the human has been out of sight for {age:.1f} s"
         else:
             distance = distance_xy(self.pose.position, self.subject.position)
             allowed = self.blackboard.get(self.keys.following_threshold)
@@ -479,7 +509,9 @@ class WaitForPerson(py_trees.behaviour.Behaviour):
     Runs as the interrupt branch of the recovery parallel: the patrol keeps
     searching in the other branch until this one succeeds. The head is lifted
     for the whole wait -- it reads as the robot seeking contact, and it gives the
-    pose detector a full-body view instead of a pair of knees.
+    pose detector a full-body view instead of a pair of knees. A face at the
+    bottom of the frame drops it for a few seconds and then raises it again
+    (`HeadLookDown`), for somebody sitting too low for the lifted camera.
 
     On success it also records which way along the route the person turned up,
     so a later patrol starts searching in that direction.
@@ -493,7 +525,7 @@ class WaitForPerson(py_trees.behaviour.Behaviour):
         self.keys = keys or self.KEYS
 
         self.blackboard = self.attach_blackboard_client(name=name)
-        register_param_keys(self.blackboard, "sight_timeout")
+        register_param_keys(self.blackboard, "sight_timeout", *LOOK_DOWN_KEYS)
         self.keys.register(self.blackboard, py_trees.common.Access.READ, "checkpoints")
         self.keys.register(
             self.blackboard,
@@ -511,14 +543,23 @@ class WaitForPerson(py_trees.behaviour.Behaviour):
         self.people = PeopleTracker(self.node, self.sight_timeout)
         self.velocity = VelocityCommander(self.node)
         self.accessories = AccessoryCommander(self.node)
+        self.look_down = HeadLookDown(
+            self.node,
+            self.accessories,
+            *(constant(self.blackboard, key) for key in LOOK_DOWN_KEYS),
+        )
         self.logger.info(f"{self.name}: Setup complete")
 
     def initialise(self):
         self.accessories.look(HEAD_SEEK)
         self.node.get_logger().info(f"{self.name}: watching for a person, head lifted")
 
+    def terminate(self, new_status):
+        self.look_down.release()
+
     def update(self):
         if not self.people.has_fresh_detection():
+            self.look_down.update()
             self.feedback_message = "nobody visible yet"
             return py_trees.common.Status.RUNNING
 
@@ -560,6 +601,16 @@ class ManageSearchCheckpoint(py_trees.behaviour.Behaviour):
     The first run (and every run after a person was found) snaps to the
     checkpoint nearest the robot, then each run steps one checkpoint in the
     patrol direction, reversing at either end of the route.
+
+    The direction is set on that first run from where the human was last seen:
+    back down the route if they were behind the robot, on up it if they were
+    ahead. Until 2026-09-24 it was only ever written by `WaitForPerson`, when
+    somebody was *found* -- so the patrol after losing the human searched the
+    way the previous find had pointed. In the run of that day the tree opened
+    by finding the human ahead on the route, lost them behind it five minutes
+    later, and patrolled forwards, away from them, checkpoint 1 to 2 to 3.
+    The direction `WaitForPerson` recorded is now only the fallback for a human
+    who was never placed at all.
     """
 
     KEYS = DEFAULT_KEYS
@@ -586,6 +637,9 @@ class ManageSearchCheckpoint(py_trees.behaviour.Behaviour):
     def setup(self, **kwargs):
         self.node = kwargs["node"]
         self.pose = RobotPoseTracker(self.node)
+        # No sight timeout matters here: only the last place is read, never
+        # whether it is fresh -- a lost human is by definition not fresh.
+        self.subject = FollowedSubjectTracker(self.node)
         self.logger.info(f"{self.name}: Setup complete")
 
     def update(self):
@@ -594,15 +648,15 @@ class ManageSearchCheckpoint(py_trees.behaviour.Behaviour):
             return py_trees.common.Status.RUNNING
 
         if not self.blackboard.get(self.keys.patrol_initialized):
+            checkpoints = self.blackboard.get(self.keys.checkpoints)
             index = closest_checkpoint_index(
-                self.blackboard.get(self.keys.checkpoints),
-                self.pose.position.x,
-                self.pose.position.y,
+                checkpoints, self.pose.position.x, self.pose.position.y
             )
             self.blackboard.set(self.keys.patrol_current_checkpoint, index)
             self.blackboard.set(self.keys.patrol_initialized, True)
             self.node.get_logger().info(
-                f"{self.name}: search starts at checkpoint {index}"
+                f"{self.name}: search starts at checkpoint {index}, "
+                f"{self._direction_from_last_sighting(checkpoints)}"
             )
             return py_trees.common.Status.SUCCESS
 
@@ -627,3 +681,19 @@ class ManageSearchCheckpoint(py_trees.behaviour.Behaviour):
         self.blackboard.set(self.keys.patrol_current_checkpoint, index)
         self.node.get_logger().info(f"{self.name}: next search checkpoint is {index}")
         return py_trees.common.Status.SUCCESS
+
+    def _direction_from_last_sighting(self, checkpoints):
+        """Point the patrol at where the human was last seen; say which way."""
+        last_position = self.subject.position
+        if last_position is None or not checkpoints:
+            direction = self.blackboard.get(self.keys.patrol_direction)
+            return (
+                f"searching {'forwards' if direction > 0 else 'backwards'} "
+                "(the human was never placed)"
+            )
+        direction = path_progress_sign(checkpoints, self.pose.position, last_position)
+        self.blackboard.set(self.keys.patrol_direction, direction)
+        return (
+            f"searching {'forwards' if direction > 0 else 'backwards'}: the human "
+            f"was last seen {'ahead of' if direction > 0 else 'behind'} the robot"
+        )

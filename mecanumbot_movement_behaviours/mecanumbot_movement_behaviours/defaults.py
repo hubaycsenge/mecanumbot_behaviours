@@ -113,17 +113,40 @@ MOVEMENT_DEFAULTS = {
     "route_stall_progress": 0.2,
     # Times a dropped nav2 goal is sent again before the behaviour gives up.
     "nav_goal_retries": 3,
+    # A `mode="stepped"` approach to a person takes steps of `approach_distance`
+    # until it stands within `closeness_threshold` of them, and counts itself
+    # there `approach_arrive_margin` metres early -- nav2 parks within its own
+    # xy goal tolerance (0.30 m), so a step that ends 0.2 m short is arrived,
+    # not a reason for another step. `approach_max_steps` caps the walk, so a
+    # person who keeps backing off does not lead the robot across the room.
+    "approach_arrive_margin": 0.35,
+    "approach_max_steps": 6,
     # --- accessory poses -------------------------------------------------------
     # n_pos is the neck-mounted camera tilt (2.0 .. 8.6, larger looks further
     # up). The seeking pose does double duty: it reads as the robot seeking
     # contact, and it gives the pose detector whole bodies rather than knees.
     "neck_seek_pos": 7.0,
     "neck_level_pos": 6.0,
+    # Looking down onto a face at the bottom of the frame while searching
+    # (look_down.py): how far the neck drops (n_pos, 0.5 is ~15 deg), how long
+    # it stays down, how long it then ignores the cue, and how old a cue may be.
+    "look_down_step": 0.5,
+    "look_down_hold": 3.0,
+    "look_down_cooldown": 4.0,
+    "look_down_cue_age": 0.5,
     "gripper_left_neutral": 6.83,
     "gripper_right_neutral": 3.36,
 }
 
 TUNABLES = Tunables(MOVEMENT_DEFAULTS)
+
+# The `HeadLookDown` settings, in its constructor's order.
+LOOK_DOWN_KEYS = (
+    "look_down_step",
+    "look_down_hold",
+    "look_down_cooldown",
+    "look_down_cue_age",
+)
 
 constant = TUNABLES.constant
 resolve = TUNABLES.resolve

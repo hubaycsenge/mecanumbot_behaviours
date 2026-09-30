@@ -97,7 +97,7 @@ What is left in `behaviours/` is this experiment:
 | `DogCheckFollowing` | Verifies the subject is within `Dog_following_max_threshold` — asked both after a check-in glance and after a recovery patrol, to decide whether the robot has to go back to them at all. |
 | `DogCheckInDue` | SUCCESS when a look back is due — the pacing measured against `pacing.check_in_due()`. |
 | `DogWaitForCatchUp` | Stands still, head up, while a trailing human catches up; FAILURE after `check_in_catch_up_timeout` sends the robot back to fetch them. |
-| `DogResumeLeading` | After a search: leads on from the checkpoint nearest the robot, or the one after it when the human has already walked past it. |
+| `DogResumeLeading` | After the opening seek and after every search: leads on to the first checkpoint ahead of the robot, or one further when the human is already ahead of it. |
 | `LEDBehaviourSequence` | Plays one timed LED pattern sequence from the blackboard. |
 
 `LEDBehaviourSequence(name, mode)` and `DogBehaviourSequence(name, mode)` step
@@ -203,6 +203,15 @@ along the route, reversing at either end. As soon as a person is seen the patrol
 cancelled, and `WaitForPerson` sets `patrol_direction` from which side of the route
 the person appeared on.
 
+Which way a patrol *sets off* is decided when it starts: `ManageSearchCheckpoint`
+snaps to the checkpoint nearest the robot and points the search at where the human
+was last seen — back down the route if they were behind the robot, on up it if they
+were ahead. The direction `WaitForPerson` recorded is only the fallback for a human
+who was never placed. Until 2026-09-24 that recorded direction was all there was, so
+the patrol after losing the human searched the way the *previous find* had pointed:
+in that day's run the tree opened by finding the human ahead, lost them behind it,
+and patrolled forwards, away from them.
+
 The cancellation is immediate and mid-movement: `WaitForPerson` succeeding makes the
 parallel succeed, which invalidates the running search branch, so whichever leaf was
 running is stopped on the same tick — a `Spin360` a third of the way round is not
@@ -219,9 +228,13 @@ fetched immediately, and only a real disappearance turns into a patrol.
 Which checkpoint the robot resumes from is a separate decision, made by
 `DogResumeLeading` and based on `geometry.route_progress()` — the human's position
 projected onto the checkpoint polyline as a float index, so `1.4` means "four tenths
-of the way from checkpoint 1 to checkpoint 2". The robot takes the checkpoint nearest
-itself and leads on to the one after it when the human is already past it (by more
-than `resume_passed_margin`, 0.15 of a stretch), otherwise to that checkpoint itself.
+of the way from checkpoint 1 to checkpoint 2". The robot leads on to the first
+checkpoint ahead of its own progress, or one checkpoint further when the human is
+already ahead of it (by more than `resume_passed_margin`, 0.15 of a stretch) --
+`geometry.resume_checkpoint_index()`. It never leads back to a checkpoint the pair has
+passed: until 2026-09-30 it took the checkpoint *nearest* the robot, which walked a
+pair standing just past one back to it, and it did not run after the opening seek at
+all, so a human found part-way along the first stretch was walked back to the start.
 The same helper backs `path_progress_sign()`, which decides the patrol direction.
 
 ### `ctrl_tree.py` logic
@@ -277,13 +290,21 @@ it does not ignore its person for the whole walk either.
          (`direction="shortest"`, head levelled, and only if the route really bends by
          more than `route_turn_min`), then `FollowRoute`;
      - if the check-in found nobody, the human is gone: recover and resume — patrol the
-       route until somebody is seen, then `RegainOrCarryOnSelector` decides what that
-       sighting was worth. `DogCheckFollowing` first: somebody within
-       `Dog_following_max_threshold` of where the patrol stopped is close enough to be
-       led on from there, and the robot skips straight to `DogResumeLeading`. Otherwise
-       `create_seek_attention()` walks up to them and asks for their attention again
-       before resuming. Wrapped in `Retry(num_failures=3)`, because the human is most
-       likely to slip out of view again during that walk up to them.
+       route until somebody is seen, then `create_seek_attention()` always walks up to
+       them and asks for their attention again, and `DogResumeLeading` picks the
+       checkpoint to lead on from. Until 2026-09-24 somebody found within
+       `Dog_following_max_threshold` was led on without being approached or alerted
+       (a `RegainOrCarryOnSelector` with `DogCheckFollowing` first); a human the robot
+       had lost got no signal that the walk was on again. Wrapped in
+       `Retry(num_failures=3)`, because the human is most likely to slip out of view
+       again during that walk up to them.
+
+   Every `create_seek_attention()` approach is `mode="stepped"`: steps of
+   `robot_approach_distance`, each re-aimed at the human's current position, until the
+   robot is within `robot_closeness_threshold` (+ `approach_arrive_margin`) of them,
+   at most `approach_max_steps` steps. Until 2026-09-24 it was a single
+   `fixed_distance` step, so a human 3–4 m away was called reached from 2–3 m. The LED
+   tree's recovery approach and the ball-thank approach are still single steps.
 4. The root only fails when even the patrol turns up nobody; it is then ticked again
    from the top, which runs `SeekOrFind` before leading resumes.
 
@@ -430,7 +451,7 @@ settles before the first tick.
 | Scanning          | `scan_spin_speed`, `scan_timeout`; `full_scan_spin_speed`, `full_scan_timeout`, `full_scan_revolutions`           | `FindPeople`; `Spin360`                          |
 | Looking back      | `glance_spin_speed`, `glance_timeout`, `glance_revolutions`                                                      | `GlanceBack`                                     |
 | Check-in pacing   | `check_in_every_checkpoints`, `check_in_interval`, `check_in_grace`, `check_in_catch_up_timeout`                 | `DogCheckInDue`, `FollowRoute`, `DogWaitForCatchUp` |
-| Approaching       | `approach_target_timeout`, `approach_goal_timeout`, `route_step_distance`, `route_stop_distance`, `nav_goal_retries` | `Approach`                                  |
+| Approaching       | `approach_target_timeout`, `approach_goal_timeout`, `route_step_distance`, `route_stop_distance`, `nav_goal_retries`, `approach_arrive_margin`, `approach_max_steps` | `Approach`                                  |
 | Leading a leg     | `route_lookahead`, `checkpoint_reached_distance`, `route_turn_min_deg`                                           | `FollowRoute`, the dog tree's checkpoint turn    |
 | Getting them back | `resume_passed_margin`, `recover_retries`                                                                         | `DogResumeLeading`, the dog tree's `Retry`       |
 | Pacing            | `thank_delay`, `show_turn_delay`                                                                                  | the dog tree's `ConfiguredTimer`s                |

@@ -161,6 +161,13 @@ bottom_up_tree_node:
     neck_level_pos: 6.0
     gripper_left_neutral: 6.83
     gripper_right_neutral: 3.36
+    # A face at the bottom of the camera frame while searching tilts the head
+    # down by look_down_step (n_pos; 0.5 is ~15 deg) for look_down_hold s, then
+    # back up; the cue is then ignored for look_down_cooldown s.
+    look_down_step: 0.5
+    look_down_hold: 3.0
+    look_down_cooldown: 4.0
+    look_down_cue_age: 0.5
 
     # Route. [0] is the start position, [-1] is the target.
     Dog_checkpoints:

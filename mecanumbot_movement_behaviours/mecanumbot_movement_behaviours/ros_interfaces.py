@@ -15,11 +15,12 @@ from nav2_msgs.action import NavigateThroughPoses, NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float32
 
 from mecanumbot_msgs.msg import AccessMotorCmd
 
 from mecanumbot_movement_behaviours.geometry import yaw_from_quaternion
+from mecanumbot_movement_behaviours.look_down import LookDown
 
 # --- topics -----------------------------------------------------------------
 AMCL_TOPIC = "/amcl_pose"
@@ -29,6 +30,8 @@ HAS_OBJECT_TOPIC = "/mecanumbot/has_object"
 GOAL_POSE_TOPIC = "/goal_pose"
 CMD_VEL_TOPIC = "/cmd_vel"
 ACCESSORY_TOPIC = "/cmd_accessory_pos"
+# Bearing of a face at the bottom of the camera frame; see look_down.py.
+LOW_HEAD_TOPIC = "/mecanumbot/cam_people_detections/low_head"
 NAV2_STATUS_TOPIC = "/navigate_to_pose/_action/status"
 NAV2_ROUTE_STATUS_TOPIC = "/navigate_through_poses/_action/status"
 
@@ -570,6 +573,61 @@ class AccessoryCommander:
             return
         self.send(n_pos)
         self.node.get_logger().info(f"Head -> {where} (n_pos={n_pos})")
+
+
+class HeadLookDown:
+    """
+    Tilt the head down onto a face at the bottom of the frame while searching.
+
+    The ROS end of `look_down.LookDown`: it listens for the camera detector's
+    cue, and whichever search behaviour owns one calls `update()` every tick and
+    `release()` when it ends, so the head is never left low. The state is class
+    state, like `AccessoryCommander`'s last neck position, because there is one
+    head: a scan running beside the search asks `active()` to pause its turn
+    while the head is down, so the person is still in shot when it gets there.
+    """
+
+    _state = None
+
+    def __init__(self, node, accessories, step, hold, cooldown, cue_age):
+        self.node = node
+        self.accessories = accessories
+        if HeadLookDown._state is None:
+            HeadLookDown._state = LookDown(step, hold, cooldown, cue_age)
+        self._cue_time = None
+        self._subscription = node.create_subscription(
+            Float32, LOW_HEAD_TOPIC, self._callback, 10
+        )
+
+    @classmethod
+    def active(cls):
+        """Say whether the head is down on a cue right now."""
+        return cls._state is not None and cls._state.lowered
+
+    def update(self):
+        """Lower or raise the head as the cue and the hold say."""
+        pos = self._state.update(
+            now_seconds(self.node), self._cue_time, AccessoryCommander._last_neck_pos
+        )
+        if pos is None:
+            return
+        self.accessories.send(pos)
+        if self._state.lowered:
+            self.node.get_logger().info(
+                f"Head -> down onto a face at the bottom of the frame (n_pos={pos})"
+            )
+        else:
+            self.node.get_logger().info(f"Head -> back up (n_pos={pos})")
+
+    def release(self):
+        """Raise the head if a cue lowered it; call when the search ends."""
+        pos = self._state.release(now_seconds(self.node))
+        if pos is not None:
+            self.accessories.send(pos)
+            self.node.get_logger().info(f"Head -> back up (n_pos={pos})")
+
+    def _callback(self, msg):
+        self._cue_time = now_seconds(self.node)
 
 
 def duration(seconds):

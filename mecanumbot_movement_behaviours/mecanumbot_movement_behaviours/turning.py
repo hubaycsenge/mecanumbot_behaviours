@@ -20,6 +20,7 @@ import math
 import py_trees
 
 from mecanumbot_movement_behaviours.defaults import (
+    LOOK_DOWN_KEYS,
     constant,
     register_param_keys,
     resolve,
@@ -35,6 +36,7 @@ from mecanumbot_movement_behaviours.pacing import sweep_pattern
 from mecanumbot_movement_behaviours.ros_interfaces import (
     AccessoryCommander,
     HEAD_SEEK,
+    HeadLookDown,
     Nav2GoalMonitor,
     PeopleTracker,
     RobotPoseTracker,
@@ -615,6 +617,13 @@ class ScanSpin(InPlaceTurn):
         if not self._spinning:
             return self._start_spin()
 
+        if HeadLookDown.active():
+            # The search beside this scan has tilted the head down onto a face;
+            # hold still so the person is still in shot when the head gets there.
+            self.turner.brake()
+            self.feedback_message = "holding while the head looks down"
+            return py_trees.common.Status.RUNNING
+
         if self.turner.step():
             return self.finish(py_trees.common.Status.SUCCESS, "scan completed")
         self.feedback_message = (
@@ -721,6 +730,10 @@ class GlanceBack(InPlaceTurn):
        LiDAR detector reports people well off to the side of where the camera is
        pointing, and a check-in that ends looking past its human is not one.
 
+    A face at the bottom of the frame -- somebody sitting too low for the lifted
+    head -- tilts the head down for a few seconds and holds the spin while it is
+    down, then raises it and carries on (`HeadLookDown`).
+
     Only detections that arrive *after* the spin starts count. Somebody already
     visible when the check-in falls due -- the human walking behind the robot,
     held by the LiDAR for the whole leg -- would otherwise end the glance on its
@@ -776,6 +789,11 @@ class GlanceBack(InPlaceTurn):
             resolve(self.sight_timeout, self.blackboard, "sight_timeout")
         )
         self.people = PeopleTracker(self.node, self.sight_timeout)
+        self.look_down = HeadLookDown(
+            self.node,
+            self.accessories,
+            *(constant(self.blackboard, key) for key in LOOK_DOWN_KEYS),
+        )
 
     def initialise(self):
         super().initialise()
@@ -787,6 +805,7 @@ class GlanceBack(InPlaceTurn):
 
     def terminate(self, new_status):
         super().terminate(new_status)
+        self.look_down.release()
         if new_status in (
             py_trees.common.Status.SUCCESS,
             py_trees.common.Status.FAILURE,
@@ -833,7 +852,14 @@ class GlanceBack(InPlaceTurn):
             return self._start_spin()
 
         seen = self._seen_since_spin_started()
+        if seen is None:
+            self.look_down.update()
+            if HeadLookDown.active():
+                self.turner.brake()
+                self.feedback_message = "holding while the head looks down"
+                return py_trees.common.Status.RUNNING
         if seen is not None:
+            self.look_down.release()
             self._seen_position = seen.position
             self._phase = "brake"
             self.node.get_logger().info(
