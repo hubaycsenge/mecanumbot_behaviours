@@ -20,6 +20,7 @@ import pytest
 
 from mecanumbot_movement_behaviours.geometry import (
     human_is_ahead_on_route,
+    resume_checkpoint_index,
     route_progress,
 )
 
@@ -125,3 +126,43 @@ class TestHumanIsAheadOnRoute:
         length = math.hypot(leg_x, leg_y)
         beside = Point(robot.x - leg_y / length, robot.y + leg_x / length)
         assert not human_is_ahead_on_route(ROUTE, robot, beside, MARGIN)
+
+
+# --- where leading resumes -------------------------------------------------
+
+
+def test_pair_just_past_a_checkpoint_leads_on_not_back():
+    """08:46 run of 2026-09-30: human at 0.26, robot at 0.19, led back to 0."""
+    assert resume_checkpoint_index(ROUTE, on_route(0.19), on_route(0.26), MARGIN) == 1
+
+
+def test_pair_past_checkpoint_two_leads_on_to_three():
+    """Same run: human at 2.25, robot at 2.17, led back to 2."""
+    assert resume_checkpoint_index(ROUTE, on_route(2.17), on_route(2.25), MARGIN) == 3
+
+
+def test_human_well_ahead_moves_the_resume_point_with_them():
+    assert resume_checkpoint_index(ROUTE, on_route(0.4), on_route(1.3), MARGIN) == 2
+
+
+def test_human_behind_the_robot_does_not_send_it_back():
+    assert resume_checkpoint_index(ROUTE, on_route(1.6), on_route(0.8), MARGIN) == 2
+
+
+def test_before_the_start_the_start_is_next():
+    before = Point(ROUTE[0].x + 1.0, ROUTE[0].y - 0.3)
+    assert route_progress(ROUTE, before) == 0.0
+    assert resume_checkpoint_index(ROUTE, before, None) == 0
+
+
+def test_the_end_of_the_route_is_as_far_as_it_goes():
+    assert resume_checkpoint_index(ROUTE, on_route(2.9), on_route(3.0), MARGIN) == 3
+
+
+def test_nobody_to_place_uses_the_robot():
+    assert resume_checkpoint_index(ROUTE, on_route(1.4), None) == 2
+
+
+def test_human_far_down_the_route_moves_it_on_by_one_only():
+    """A human in mid-room projects onto the far stretch of the folded route."""
+    assert resume_checkpoint_index(ROUTE, on_route(0.19), on_route(2.70), MARGIN) == 2

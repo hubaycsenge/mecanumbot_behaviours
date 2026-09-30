@@ -351,6 +351,10 @@ def create_root(yaml_path=None):
                 scripts=GESTURE_SCRIPTS,
             ),
             seek_or_find,
+            # Where the opening seek left the pair decides where leading starts:
+            # a human found part-way along the first stretch is led on from
+            # there, not walked back to the start (the 08:46 run of 2026-09-30).
+            DogResumeLeading(name="ResumeAfterFirstSeek"),
             py_trees.decorators.Repeat("ShowOrLeadLoop", show_or_lead, num_success=-1),
         ]
     )

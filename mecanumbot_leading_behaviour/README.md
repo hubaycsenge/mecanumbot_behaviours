@@ -97,7 +97,7 @@ What is left in `behaviours/` is this experiment:
 | `DogCheckFollowing` | Verifies the subject is within `Dog_following_max_threshold` — asked both after a check-in glance and after a recovery patrol, to decide whether the robot has to go back to them at all. |
 | `DogCheckInDue` | SUCCESS when a look back is due — the pacing measured against `pacing.check_in_due()`. |
 | `DogWaitForCatchUp` | Stands still, head up, while a trailing human catches up; FAILURE after `check_in_catch_up_timeout` sends the robot back to fetch them. |
-| `DogResumeLeading` | After a search: leads on from the checkpoint nearest the robot, or the one after it when the human has already walked past it. |
+| `DogResumeLeading` | After the opening seek and after every search: leads on to the first checkpoint ahead of the robot, or one further when the human is already ahead of it. |
 | `LEDBehaviourSequence` | Plays one timed LED pattern sequence from the blackboard. |
 
 `LEDBehaviourSequence(name, mode)` and `DogBehaviourSequence(name, mode)` step
@@ -228,9 +228,13 @@ fetched immediately, and only a real disappearance turns into a patrol.
 Which checkpoint the robot resumes from is a separate decision, made by
 `DogResumeLeading` and based on `geometry.route_progress()` — the human's position
 projected onto the checkpoint polyline as a float index, so `1.4` means "four tenths
-of the way from checkpoint 1 to checkpoint 2". The robot takes the checkpoint nearest
-itself and leads on to the one after it when the human is already past it (by more
-than `resume_passed_margin`, 0.15 of a stretch), otherwise to that checkpoint itself.
+of the way from checkpoint 1 to checkpoint 2". The robot leads on to the first
+checkpoint ahead of its own progress, or one checkpoint further when the human is
+already ahead of it (by more than `resume_passed_margin`, 0.15 of a stretch) --
+`geometry.resume_checkpoint_index()`. It never leads back to a checkpoint the pair has
+passed: until 2026-09-30 it took the checkpoint *nearest* the robot, which walked a
+pair standing just past one back to it, and it did not run after the opening seek at
+all, so a human found part-way along the first stretch was walked back to the start.
 The same helper backs `path_progress_sign()`, which decides the patrol direction.
 
 ### `ctrl_tree.py` logic

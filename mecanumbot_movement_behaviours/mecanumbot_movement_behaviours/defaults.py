@@ -127,11 +127,26 @@ MOVEMENT_DEFAULTS = {
     # contact, and it gives the pose detector whole bodies rather than knees.
     "neck_seek_pos": 7.0,
     "neck_level_pos": 6.0,
+    # Looking down onto a face at the bottom of the frame while searching
+    # (look_down.py): how far the neck drops (n_pos, 0.5 is ~15 deg), how long
+    # it stays down, how long it then ignores the cue, and how old a cue may be.
+    "look_down_step": 0.5,
+    "look_down_hold": 3.0,
+    "look_down_cooldown": 4.0,
+    "look_down_cue_age": 0.5,
     "gripper_left_neutral": 6.83,
     "gripper_right_neutral": 3.36,
 }
 
 TUNABLES = Tunables(MOVEMENT_DEFAULTS)
+
+# The `HeadLookDown` settings, in its constructor's order.
+LOOK_DOWN_KEYS = (
+    "look_down_step",
+    "look_down_hold",
+    "look_down_cooldown",
+    "look_down_cue_age",
+)
 
 constant = TUNABLES.constant
 resolve = TUNABLES.resolve

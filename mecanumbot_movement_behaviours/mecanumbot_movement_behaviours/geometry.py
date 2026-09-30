@@ -149,6 +149,47 @@ def human_is_ahead_on_route(checkpoints, robot_position, person_position, margin
     return person_progress > robot_progress + margin
 
 
+def resume_checkpoint_index(checkpoints, robot_position, person_position, margin=0.0):
+    """
+    Return the checkpoint to lead on to once the robot has its human back.
+
+    The first checkpoint ahead of the pair along the route: ahead of the robot,
+    or ahead of the human when they are further along than the robot by more
+    than `margin` (the `human_is_ahead_on_route` question). A pair standing
+    between two checkpoints carries on to the later one -- the earlier one has
+    been walked past already, and leading back to it is leading backwards.
+
+    Until 2026-09-30 `DogResumeLeading` resumed at the checkpoint *nearest* the
+    robot unless the human was ahead, so a pair standing a fifth of the way past
+    a checkpoint was led back to it: in the 08:46 run of that day the robot
+    found its human at progress 0.26 and 2.25, and turned round to walk them to
+    checkpoints 0 and 2. `person_position` may be None, when the robot is all
+    there is to go by.
+    """
+    if not checkpoints:
+        return 0
+    index = _next_checkpoint(checkpoints, route_progress(checkpoints, robot_position))
+    if person_position is not None and human_is_ahead_on_route(
+        checkpoints, robot_position, person_position, margin
+    ):
+        # At most one checkpoint further on. The route folds back on itself, so
+        # somebody standing in the middle of the room can project onto a stretch
+        # far down it -- 2.70 against the robot's 0.19 in that same run -- and
+        # following the projection all the way would skip most of the walk.
+        person = _next_checkpoint(checkpoints, route_progress(checkpoints, person_position))
+        index = min(max(index, person), index + 1, len(checkpoints) - 1)
+    return index
+
+
+def _next_checkpoint(checkpoints, progress):
+    """Return the first checkpoint beyond a route progress value."""
+    # Before the start of the route (the projection clamps to 0.0) the start
+    # itself is still ahead; anywhere along it, the next checkpoint is.
+    if progress <= 0.0:
+        return 0
+    return min(int(math.floor(progress)) + 1, len(checkpoints) - 1)
+
+
 def _projection_fraction(start, end, position):
     """Where `position` projects onto the segment `start` -> `end`, clamped to [0, 1]."""
     segment_x, segment_y = end.x - start.x, end.y - start.y
