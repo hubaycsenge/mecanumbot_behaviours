@@ -120,6 +120,12 @@ MOVEMENT_DEFAULTS = {
     # not a reason for another step. `approach_max_steps` caps the walk, so a
     # person who keeps backing off does not lead the robot across the room.
     "approach_arrive_margin": 0.35,
+    # The same allowance for the end of the route: the robot is at the last
+    # checkpoint when it stands within the larger of
+    # `checkpoint_reached_distance` and `route_stop_distance` of it, plus this.
+    # It has to stay above nav2's xy goal tolerance, or a drive nav2 has
+    # finished would not count as arrived and the robot would never show.
+    "route_end_margin": 0.35,
     "approach_max_steps": 6,
     # --- accessory poses -------------------------------------------------------
     # n_pos is the neck-mounted camera tilt (2.0 .. 8.6, larger looks further
@@ -136,6 +142,36 @@ MOVEMENT_DEFAULTS = {
     "look_down_cue_age": 0.5,
     "gripper_left_neutral": 6.83,
     "gripper_right_neutral": 3.36,
+    # --- the head following the body the LiDAR expects (body_gaze.py) ---------
+    # Only a tree that installs `start_body_gaze` as a load hook has a gaze at
+    # all; in such a tree this switches it off without touching the code.
+    "body_gaze_enabled": True,
+    # Seconds between two looks at what is in view.
+    "body_gaze_period": 0.2,
+    # Metres within which a body is worth tilting the head for.
+    "body_gaze_max_range": 4.5,
+    # How far beyond the edge of the picture a target is still attended to, and
+    # how much of the frame is kept clear above and below a body.
+    "body_gaze_view_margin": math.radians(12.0),
+    "body_gaze_frame_margin": math.radians(3.0),
+    # The neck positions the gaze may command, the smallest change worth a
+    # command (0.1 is ~3 deg), the shortest time between two, and how long the
+    # head waits with nothing in view before going back to `neck_seek_pos`.
+    "body_gaze_min_pos": 5.5,
+    "body_gaze_max_pos": 8.2,
+    "body_gaze_deadband": 0.1,
+    "body_gaze_min_interval": 0.4,
+    "body_gaze_release_delay": 1.0,
+    # How old the LiDAR's candidate list may be.
+    "body_gaze_candidate_timeout": 0.5,
+    # The band of heights [m] the detector needs of each kind of body, hips to
+    # the top of the head, as `{'body': kind, 'low': .., 'high': ..}`. Kinds a
+    # file leaves out keep `body_gaze.BODY_PROFILES`.
+    "body_profiles": [],
+    # Known places in the map where a body is lower than a standing one, as
+    # `{'seat': kind, 'x': .., 'y': .., 'radius': ..}`. They belong to a room,
+    # so the default is none: a constants file for a map lists that map's.
+    "seats": [],
 }
 
 TUNABLES = Tunables(MOVEMENT_DEFAULTS)
@@ -154,6 +190,70 @@ file_constant = TUNABLES.file_constant
 register_param_keys = TUNABLES.register_param_keys
 
 PARAM_KEYS = TUNABLES.keys
+
+
+BODY_GAZE_SETTINGS = {
+    "max_range": "body_gaze_max_range",
+    "view_margin": "body_gaze_view_margin",
+    "frame_margin": "body_gaze_frame_margin",
+    "min_pos": "body_gaze_min_pos",
+    "max_pos": "body_gaze_max_pos",
+    "deadband": "body_gaze_deadband",
+    "min_interval": "body_gaze_min_interval",
+    "release_delay": "body_gaze_release_delay",
+}
+
+
+def build_body_gaze(values):
+    """
+    Build the gaze controller a set of loaded constants describes.
+
+    Split from `start_body_gaze` so that what a constants file means can be
+    checked without a node: a seat or a profile that cannot be read raises
+    here, with the entry in the message.
+    """
+    from mecanumbot_movement_behaviours import body_gaze
+
+    settings = body_gaze.GazeSettings(
+        **{field: float(values[key]) for field, key in BODY_GAZE_SETTINGS.items()}
+    )
+    return body_gaze.BodyGazeController(
+        seats=[body_gaze.seat_from_literal(entry) for entry in values["seats"]],
+        profiles=body_gaze.profiles_from_literals(values["body_profiles"]),
+        settings=settings,
+    )
+
+
+def start_body_gaze(node, blackboard, values):
+    """
+    Start the head following the body the LiDAR expects, if the file wants it.
+
+    A `ParamsToBlackboard` load hook, and an opt-in one: a tree gets a gaze by
+    listing this beside `configure_accessories`. The leading conditions differ
+    in exactly this -- the dog-inspired tree moves its head and the LED and
+    control trees deliberately do not -- so it is the tree's choice, not the
+    constants file's, and `body_gaze_enabled` in the file can only turn it off.
+    """
+    from mecanumbot_movement_behaviours.ros_interfaces import BodyGaze
+
+    if not values["body_gaze_enabled"]:
+        node.get_logger().info("Body gaze: switched off in the constants file")
+        return
+    controller = build_body_gaze(values)
+    BodyGaze.start(
+        node,
+        controller,
+        period=values["body_gaze_period"],
+        sight_timeout=values["sight_timeout"],
+        candidate_timeout=values["body_gaze_candidate_timeout"],
+    )
+    seats = ", ".join(
+        f"{seat.kind} at ({seat.x:.2f}, {seat.y:.2f})" for seat in controller.seats
+    )
+    node.get_logger().info(
+        "Body gaze: the seeking head follows the LiDAR's candidates within "
+        f"{controller.settings.max_range:.1f} m; seats: {seats or 'none'}"
+    )
 
 
 def configure_accessories(node, blackboard, values):

@@ -126,6 +126,11 @@ class ConstantParamsToBlackboard(ParamsToBlackboard):
     `defaults` and `required` extend the two declarations rather than replacing
     them, for a package that builds on these trees with constants of its own --
     `mecanumbot_demo_behaviours` does.
+
+    `on_loaded` adds load hooks after the two every leading tree runs. It is
+    how a condition takes something the others must not have: the dog-inspired
+    tree starts the body gaze this way, and the LED and control trees, whose
+    robot does not move its head, do not.
     """
 
     def __init__(
@@ -135,6 +140,7 @@ class ConstantParamsToBlackboard(ParamsToBlackboard):
         scripts=LED_SCRIPTS + GESTURE_SCRIPTS,
         defaults=(),
         required=(),
+        on_loaded=(),
     ):
         self.scripts = tuple(scripts)
         super().__init__(
@@ -148,7 +154,7 @@ class ConstantParamsToBlackboard(ParamsToBlackboard):
                 + tuple(required)
             ),
             state=RUN_STATE,
-            on_loaded=(configure_accessories, split_route),
+            on_loaded=(configure_accessories, split_route) + tuple(on_loaded),
             extra_keys=ROUTE_KEYS,
         )
 

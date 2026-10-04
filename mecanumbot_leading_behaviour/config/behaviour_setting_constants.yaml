@@ -169,6 +169,39 @@ bottom_up_tree_node:
     look_down_cooldown: 4.0
     look_down_cue_age: 0.5
 
+    # ----- The head following the body the LiDAR expects (dog condition) ------
+    # While the head is lifted to look for or at the human it is not held at
+    # neck_seek_pos but tilted to whichever height shows the body the LiDAR
+    # says should be there: nearer means further up, and a body on one of the
+    # seats below is looked for at sitting height. neck_seek_pos is where it
+    # rests with nothing in view. Only the dog-inspired tree does this; the LED
+    # and control trees keep the head parked. false here switches it off there
+    # too, and the head goes back to one fixed seeking pose.
+    body_gaze_enabled: true
+    body_gaze_period: 0.2            # seconds between two looks at what is in view
+    body_gaze_max_range: 4.5         # bodies further off than this are not tilted for [m]
+    body_gaze_view_margin_deg: 12.0  # attended to this far beyond the edge of the picture
+    body_gaze_frame_margin_deg: 3.0  # kept clear above and below a body in the frame
+    body_gaze_min_pos: 5.5           # the neck positions the gaze may command
+    body_gaze_max_pos: 8.2
+    body_gaze_deadband: 0.1          # smallest change worth a command (0.1 is ~3 deg)
+    body_gaze_min_interval: 0.4      # shortest time between two commands [s]
+    body_gaze_release_delay: 1.0     # nothing in view this long -> back to neck_seek_pos [s]
+    body_gaze_candidate_timeout: 0.5 # how old the LiDAR's candidate list may be [s]
+    # The band of heights the pose detector needs of each kind of body, from
+    # the hips to the top of the head [m]. A kind left out keeps the packaged
+    # band; `standing` is anybody not on a seat.
+    body_profiles:
+      - "{'body':'standing', 'low':0.85, 'high':1.80}"
+      - "{'body':'chair',    'low':0.40, 'high':1.30}"
+      - "{'body':'bean_bag', 'low':0.10, 'high':0.75}"
+    # Known places in THIS map where a body is lower than a standing one, as
+    #   - "{'seat':'bean_bag', 'x':-0.80, 'y':2.20, 'radius':0.70}"
+    # with x, y in map coordinates (lower case: 'X'/'Y' would be read as a route
+    # checkpoint), radius how far from the point still counts as on the seat,
+    # and the kind one of the body_profiles above. None are known for this map.
+    seats: []
+
     # Route. [0] is the start position, [-1] is the target.
     Dog_checkpoints:
       - "{'X':0.452756, 'Y':-0.71344, 'Z':0.0}"  # start
@@ -183,17 +216,37 @@ bottom_up_tree_node:
     LED_start_setting:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
 
+    # What the lights show while the robot drives to the target. They never go
+    # dark on the way: the light flows, and the panels fill with
+    # LED_lead_progress_color, one LED per eighth of the way driven (the fill
+    # needs the Nano firmware that draws it; older firmware shows the flow only).
+    #
+    # The four strips cut the corners of the top plate, so a wave can run from
+    # the rear tip round both sides to the front tip. "straight" is that:
+    # wave right on fl and br, wave left on fr and bl. "left" and "right" send
+    # all four the same way, towards the side the destination lies on.
+    LED_lead_straight:
+      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':2, 'color':1},'bl':{'mode':2, 'color':1},'br':{'mode':1, 'color':1}}"  # white, flowing ahead
+    LED_lead_left:
+      - "{'fl':{'mode':2, 'color':1},'fr':{'mode':2, 'color':1},'bl':{'mode':2, 'color':1},'br':{'mode':2, 'color':1}}"  # white wave left
+    LED_lead_right:
+      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':1, 'color':1},'bl':{'mode':1, 'color':1},'br':{'mode':1, 'color':1}}"  # white wave right
+    LED_lead_progress_color:     2        # Colour the panels fill with as the drive progresses (green)
+    LED_lead_direction:          target   # target: flow towards the destination's side when it is off the heading | none: always ahead
+    LED_lead_straight_band_deg:  30.0     # Destination within this of the heading counts as ahead [deg]
+    LED_address_person:          true     # Attention and thanks light only the half of the robot facing the person
+
     LED_indicate_target_seq:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
-      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}"  # white slow blink
+      - "{'fl':{'mode':3, 'color':2},'fr':{'mode':3, 'color':2},'bl':{'mode':3, 'color':2},'br':{'mode':3, 'color':2}}"  # green pulse
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
-      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}"  # white slow blink
+      - "{'fl':{'mode':3, 'color':2},'fr':{'mode':3, 'color':2},'bl':{'mode':3, 'color':2},'br':{'mode':3, 'color':2}}"  # green pulse
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
     LED_indicate_target_times:
       - 1.0  # black solid
-      - 3.0  # white slow blink
+      - 3.0  # green pulse
       - 1.0  # black solid
-      - 3.0  # white slow blink
+      - 3.0  # green pulse
       - 1.0  # black solid
 
     LED_indicate_close_target_seq:
@@ -214,14 +267,14 @@ bottom_up_tree_node:
       - 1.0  # black solid
 
     LED_catch_attention_seq:
-      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}"  # white slow blink
+      - "{'fl':{'mode':5, 'color':7},'fr':{'mode':5, 'color':7},'bl':{'mode':5, 'color':7},'br':{'mode':5, 'color':7}}"  # yellow fast blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
-      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}"  # white slow blink
+      - "{'fl':{'mode':5, 'color':7},'fr':{'mode':5, 'color':7},'bl':{'mode':5, 'color':7},'br':{'mode':5, 'color':7}}"  # yellow fast blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
     LED_catch_attention_times:
-      - 1.5  # white slow blink
+      - 1.5  # yellow fast blink
       - 0.5  # black solid
-      - 1.5  # white slow blink
+      - 1.5  # yellow fast blink
       - 0.5  # black solid
 
     LED_thank_seq:

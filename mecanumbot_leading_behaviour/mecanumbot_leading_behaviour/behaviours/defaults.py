@@ -1,10 +1,10 @@
 """
 The tunables the leading conditions add to the movement library's own.
 
-Four numbers are about *this* experiment rather than about moving: the pauses
-that pace the signalling, how many recovery attempts a lost human is worth, and
-how far past a checkpoint somebody has to be standing before that stretch counts
-as walked. Everything else a leading tree tunes belongs to the behaviours it
+Eight values are about *this* experiment rather than about moving: the pauses
+that pace the signalling, how many recovery attempts a lost human is worth, how
+far past a checkpoint somebody has to be standing before that stretch counts
+as walked, and the four settings of the LED condition's lead signal. Everything else a leading tree tunes belongs to the behaviours it
 borrows, and its default lives with them in
 `mecanumbot_movement_behaviours.defaults`.
 
@@ -12,6 +12,8 @@ borrows, and its default lives with them in
 is what no constants file may leave out: the distances and the route are the
 experiment, and inventing one silently would be worse than failing.
 """
+
+import math
 
 from mecanumbot_bt_config.blackboard import Tunables
 from mecanumbot_bt_config.tree_runner import RUNTIME_DEFAULTS
@@ -28,6 +30,19 @@ LEADING_DEFAULTS = {
     # --- pacing of the signalling ---------------------------------------------
     "thank_delay": 1.0,
     "show_turn_delay": 2.0,
+    # --- the LED condition's signal while it leads -----------------------------
+    # What the flow of the light follows: "target" sends it towards the side
+    # the destination lies on once that is off the robot's heading, "none"
+    # keeps it flowing ahead throughout.
+    "LED_lead_direction": "target",
+    # How far off the heading the destination has to be before the light stops
+    # flowing ahead and flows towards its side.
+    "LED_lead_straight_band": math.radians(30.0),
+    # Colour the panels fill with as the drive progresses (2 is green).
+    "LED_lead_progress_color": 2,
+    # Whether the signals meant for the person light only the half of the robot
+    # that faces them.
+    "LED_address_person": True,
 }
 
 # The order matters: a key declared in more than one of these takes the value

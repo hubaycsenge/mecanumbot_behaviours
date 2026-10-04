@@ -99,6 +99,7 @@ What is left in `behaviours/` is this experiment:
 | `DogWaitForCatchUp` | Stands still, head up, while a trailing human catches up; FAILURE after `check_in_catch_up_timeout` sends the robot back to fetch them. |
 | `DogResumeLeading` | After the opening seek and after every search: leads on to the first checkpoint ahead of the robot, or one further when the human is already ahead of it. |
 | `LEDBehaviourSequence` | Plays one timed LED pattern sequence from the blackboard. |
+| `LEDLeadSignal` | Keeps the lights flowing and filling for as long as a drive lasts; never finishes by itself. |
 
 `LEDBehaviourSequence(name, mode)` and `DogBehaviourSequence(name, mode)` step
 through a sequence taken from the blackboard. Supported modes:
@@ -274,9 +275,9 @@ it does not ignore its person for the whole walk either.
            `check_in_catch_up_timeout` seconds, and only when that runs out does the
            robot walk back (`create_seek_attention()`) and `DogResumeLeading` pick up
            the route again from wherever the pair now are;
-       - `ShowOrLeadStepSelector`: once the pair has arrived — the robot is at the
-         last route checkpoint (`CheckRobotAtLastCheckpoint`) or the human already
-         stands at the target (`CheckSubjectTargetSuccess`) — and the human is with
+       - `ShowOrLeadStepSelector`: once the robot stands at the last route
+         checkpoint (`CheckRobotAtLastCheckpoint`, a test of where it is, not of
+         which checkpoint it is heading for) and the human is with
          the robot (`DogCheckFollowing`), run the show sequence: face the human,
          `catch_attention`, `show_turn_delay`, face the target, `indicate_target`
          (the gripper gesture). The loop replays it every cycle, which is the
@@ -285,7 +286,10 @@ it does not ignore its person for the whole walk either.
          it). Until 2026-09-21 the only trigger was the human within
          `target_reached_threshold` of the target, which a human following behind a
          robot parked short of the target practically never met, so the gesture
-         never played. Otherwise lead a
+         never played. Until 2026-10-04 the human at the target still triggered
+         it too, and the checkpoint test passed on the index alone, so the robot
+         asked for the ball from the stretch before the last checkpoint; now
+         nothing but the robot standing there does. Otherwise lead a
          leg — turn to face the next checkpoint by the smaller angle
          (`direction="shortest"`, head levelled, and only if the route really bends by
          more than `route_turn_min`), then `FollowRoute`;
@@ -373,18 +377,76 @@ Only its FAILURE starts the recovery patrol. The robot does not go hunting
 through the building for somebody it has not properly looked for yet, and a
 human who is merely two metres behind is fetched rather than searched for.
 
+#### Where the head looks while it is lifted
+
+In this tree, and in this tree only, a lifted head is not held at `neck_seek_pos`
+but pointed at the body the LiDAR says should be there
+(`mecanumbot_movement_behaviours/body_gaze.py`; its README has the mechanism).
+The camera sees 30° top to bottom from 0.23 m up, so one tilt cannot show it
+both a standing person at arm's length and somebody on a bean bag: in the runs of
+2026-09-30 the robot looked at a pair of jeans from 0.7 m and turned past a
+person on the bean bag for a minute and a half. Now the nearest thing the LiDAR
+sees in front of the camera that might be a person decides the tilt — closer
+means further up — unless it is on one of the room's `seats`, where a body is a
+sitting one and the head comes down for it. It applies to every behaviour that
+lifts the head: the scan, the wait, the look back, the turn onto the human and
+the walk up to them. The gesture scripts still move the neck themselves, and the
+head is levelled for driving as before.
+
+The `seats` in `Eto_behaviour_setting_constants.yaml` — a bean bag at
+(−0.80, 2.20) and a chair at (1.15, 3.35), map coordinates — were **read off the
+bags of 2026-09-30**, from where a seated person was seen and how high their
+shoulders came out (0.4 m and 0.95 m). They are a starting point: check them
+against the room, and move them when the furniture moves. The other map's file
+lists none.
+
+**This is a head movement the human can see**, and the LED and control trees do
+not have it: they park the head (`head=None`) so that the comparison conditions
+carry no head gestures, and they do not install the gaze. The cost is that those
+two conditions still look for people with one fixed tilt. `body_gaze_enabled:
+false` in the constants file switches it off here too.
+
 ### `LED_tree.py` logic
 
 1. Load constants.
 2. `SeekOrFind` selector — approach the subject, or run lost recovery then approach.
 3. Turn toward the subject and catch attention with the LEDs.
-4. Approach the target and indicate it.
+4. Approach the target **with the lights running** (`LeadWithLights`, a parallel of the
+   drive and `LEDLeadSignal` that ends when the drive does), then indicate it.
 5. Endless `BallOrShowLoop`, asking about the ball first on every cycle (as the dog
    tree does): while the robot holds the ball, find the person and play the thank
    pattern; otherwise play the near-target indication while the subject is at the
    target. Neither applying restarts the root (steps 2–4). Until 2026-09-21 the ball
    reaction came *after* the show loop, which fails whenever the subject is not at the
    target and so restarted the root every time — the robot never thanked for the ball.
+
+#### What the lights show, and why
+
+Until 2026-10-04 this condition blinked white, drove to the target with the LEDs dark,
+and blinked white again — every panel always the same. Against a dog-inspired condition
+that signals all the way, that was a comparison the lights could only lose. The
+condition now carries the elements the light-signalling literature supports, none of
+them borrowed from the dog condition (the robot still never looks back, alternates or
+checks whether it is followed):
+
+| Element | What the robot does | Where it is set |
+| --- | --- | --- |
+| Continuous signal | The lights run for the whole drive. | `LEDLeadSignal` |
+| Direction | The light flows ahead — from the rear tip round both sides to the front, which the diagonal strips allow — and towards the destination's side once that is more than `LED_lead_straight_band_deg` off the heading. | `LED_lead_straight` / `_left` / `_right`, `LED_lead_direction` |
+| Progress | Each panel fills with `LED_lead_progress_color`, one LED per eighth of the straight-line distance to where the robot parks. The fill never goes back. | `led_signals.progress_fill`, drawn by the Nano firmware |
+| Conventional colour | Green for progress and arrival, yellow for attention. | the `*_seq` scripts |
+| Addressee | Attention and thanks light only the half of the robot facing the person. | `LEDBehaviourSequence(addressed=True)`, `LED_address_person` |
+
+`LED_lead_direction: none` keeps the light flowing ahead throughout. The direction is
+the bearing of the drive's destination, not of the path nav2 plans, so round an
+obstacle the two can differ.
+
+**None of this has been tested on a leading task**: the literature it rests on is
+hallway passing, state display and automotive crossing, and the same literature says a
+novel light code is read at chance until it has been seen once. Whether participants
+read the fill as progress is a pilot question. The three decisions are pure functions
+in `behaviours/led_signals.py`, tested in `test/test_led_signals.py`
+(`PYTHONPATH=.:$PYTHONPATH python3 -m pytest test/test_led_signals.py`, no ROS).
 
 ### `bottom_up_tree.py` logic
 
@@ -416,6 +478,7 @@ There are two kinds of key, and they behave differently when one is missing.
 | Distance thresholds | `robot_closeness_threshold`, `target_reached_threshold`, `robot_approach_distance`                                                                              |
 | Dog condition       | `Dog_following_max_threshold`, `Dog_max_wander_allowed`, `Dog_checkpoints`                                                                                      |
 | LED scripts         | `LED_start_setting`, `LED_catch_attention_seq`/`_times`, `LED_indicate_target_seq`/`_times`, `LED_indicate_close_target_seq`/`_times`, `LED_thank_seq`/`_times` |
+| LED lead signal (LED tree only) | `LED_lead_straight`, `LED_lead_left`, `LED_lead_right` — one `{fl,fr,bl,br}` setting each |
 | Gesture scripts     | `Dog_catch_attention_seq`/`_times`, `Dog_indicate_target_seq`/`_times`, `Dog_thank_seq`/`_times`                                                                |
 
 Each `*_seq` list pairs with a `*_times` list of equal length giving the duration of
@@ -438,7 +501,7 @@ described by one file.
 
 The defaults live with the behaviours that read them —
 `mecanumbot_movement_behaviours.defaults.MOVEMENT_DEFAULTS` for the movement
-ones, `behaviours/defaults.py` for the four that are about this experiment, and
+ones, `behaviours/defaults.py` for the eight that are about this experiment, and
 `mecanumbot_bt_config.tree_runner.RUNTIME_DEFAULTS` for the two the tree runner
 settles before the first tick.
 
@@ -456,6 +519,8 @@ settles before the first tick.
 | Getting them back | `resume_passed_margin`, `recover_retries`                                                                         | `DogResumeLeading`, the dog tree's `Retry`       |
 | Pacing            | `thank_delay`, `show_turn_delay`                                                                                  | the dog tree's `ConfiguredTimer`s                |
 | Accessory poses   | `neck_seek_pos`, `neck_level_pos`, `gripper_left_neutral`, `gripper_right_neutral`                                | `AccessoryCommander`                             |
+| Looking down      | `look_down_step`, `look_down_hold`, `look_down_cooldown`, `look_down_cue_age`                                    | `HeadLookDown` in `WaitForPerson`, `GlanceBack`  |
+| Body gaze (dog)   | `body_gaze_enabled`, `body_gaze_*`, `body_profiles`, `seats`                                                     | `BodyGaze`, started by the dog tree's loader     |
 
 Angles are declared in **degrees** with a `_deg` suffix and reach the blackboard
 in **radians** under the name without it — the convention

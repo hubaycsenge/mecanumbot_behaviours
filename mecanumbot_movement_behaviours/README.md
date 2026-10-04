@@ -18,6 +18,8 @@ created inside the behaviour classes, so a tree that uses one gets them.
 | Module | Contents |
 | --- | --- |
 | `geometry.py` | Pure geometry: angles, bearings, `signed_rotation`, `pose_to_goal`, `route_poses`, checkpoint lookups, `route_progress`. |
+| `body_gaze.py` | Which way the head has to tilt to show the body the LiDAR expects: the neck model, the body profiles, the seats, and the choice among what is in view. Pure Python. |
+| `look_down.py` | The look-down state: head lowered onto a face at the bottom of the frame, and always raised again. Pure Python. |
 | `pacing.py` | When a look back falls due, how far a leg may be, and the `+1, -2, +2, -1` step pattern of the attention wiggle. Imports nothing — the decision logic on its own. |
 | `ros_interfaces.py` | Topic names, QoS, pose/people/ball trackers, the Nav2 action navigators, velocity and neck commanders. |
 | `keys.py` | `KeyMap`: what an experiment calls the things these behaviours read off the blackboard. |
@@ -41,7 +43,7 @@ created inside the behaviour classes, so a tree that uses one gets them.
 | `ManageSearchCheckpoint` | Walks the patrol index along the route, reversing at either end; sets off towards where the human was last seen. |
 | `CheckSubjectTargetSuccess` | SUCCESS when the subject is within the reached threshold of the target. |
 | `CheckRobotHasBall` | SUCCESS while `/mecanumbot/has_object` is true. |
-| `CheckRobotAtLastCheckpoint` | SUCCESS when the current checkpoint index has reached the last one. |
+| `CheckRobotAtLastCheckpoint` | SUCCESS when the robot stands at the last checkpoint: within the larger of `checkpoint_reached_distance` and `route_stop_distance` of it, plus `route_end_margin`. The route index must also read "last" unless `by_index=False`; on its own the index only says where the robot is heading. |
 
 **How close a goal gets.** `Approach` never aims at its target itself, it aims
 short of it — at the closeness threshold for a human and `route_stop_distance`
@@ -165,6 +167,62 @@ was, and ignore the cue for `look_down_cooldown` (`4.0` s) so a face the gate
 never accepts cannot keep the head low. A scan (`ScanSpin`, `GlanceBack`) holds
 its turn while the head is down. Ending the search always raises the head.
 
+**Following the body the LiDAR expects** (`body_gaze.py`, `ros_interfaces.BodyGaze`).
+No single tilt shows this camera a person. It sits 0.23 m off the floor behind a
+lens that sees 30° top to bottom, so at `6.5` it sees the jeans of somebody
+standing 0.7 m away and only the face of somebody on a bean bag, and at `6.0` it
+loses every standing head inside four metres. What decides the right tilt is how
+far away the body is and how tall it should be, and the robot knows both before
+the camera has seen anything:
+
+- **the LiDAR says how far.** The fusion node publishes `lidar_candidates` —
+  anything the scan sees that is the size of a person and not part of the mapped
+  room — and `people_fusion` is a better answer still once somebody is tracked.
+  Nearer means further up: `7.9` for a standing person at 0.7 m, `6.8` at 2 m,
+  `6.45` at 3.5 m.
+- **a seat says how tall.** A body is expected to be a standing one unless it
+  is on one of the `seats` the constants file lists for the room, where it is
+  looked for at the height of its `body_profiles` entry instead: `6.4` for the
+  bean bag at 1.1 m, where a standing body would have had `7.4`. A seat is looked
+  at even with no LiDAR return on it, because that is the case the LiDAR is bad
+  at — a person in a chair against the wall is one return with the wall.
+
+Each thing in view asks for a band of heights to be in frame, hips to the top of
+the head. The head takes the tilt that centres the first one's band — a tracked
+person before a candidate, nearer before further — moved as little as it must be
+to keep the others in frame too. A body taller than the frame at its range keeps
+its top. `body_gaze_deadband`, `_min_interval` and `_release_delay` keep it from
+following range noise or nodding when a scan drops out.
+
+It is **opt-in per tree**, by listing `defaults.start_body_gaze` among the
+constants loader's hooks; only the dog-inspired leading tree does. It runs from
+a timer on the tree's node rather than from any one behaviour, and it moves the
+head **only while the head is in `HEAD_SEEK`** — which is what `look("seek")`
+now means there: not one pose but "the gaze has the head", with `neck_seek_pos`
+where it rests when nothing is in view. Three things take the head away from it,
+and none of them needs to know it exists: `look("level")`; any direct
+`send()`, which is how the gesture scripts move the neck; and the look-down
+while it is down. The next `look("seek")` hands it back.
+
+| YAML key | Default | |
+| --- | --- | --- |
+| `body_gaze_enabled` | `true` | Only read by a tree that installs the hook; `false` goes back to one fixed seeking pose. |
+| `body_gaze_period` | `0.2` | Seconds between two looks at what is in view. |
+| `body_gaze_max_range` | `4.5` | Metres beyond which a body is not tilted for. |
+| `body_gaze_view_margin_deg` | `12` | How far beyond the edge of the picture a target is still attended to, so the head is ready as a turn brings it into shot. |
+| `body_gaze_frame_margin_deg` | `3` | Kept clear above and below a body in the frame. |
+| `body_gaze_min_pos` / `_max_pos` | `5.5` / `8.2` | The neck positions the gaze may command. |
+| `body_gaze_deadband` / `_min_interval` | `0.1` / `0.4` | Smallest change worth a command (`0.1` is ~3°) and the shortest time between two [s]. |
+| `body_gaze_release_delay` | `1.0` | Seconds with nothing in view before the head returns to `neck_seek_pos`. |
+| `body_gaze_candidate_timeout` | `0.5` | How old the `lidar_candidates` list may be [s]. |
+| `body_profiles` | standing `0.85–1.80`, chair `0.40–1.30`, bean_bag `0.10–0.75` | `{'body': kind, 'low': .., 'high': ..}` — the heights the detector needs of each kind of body. |
+| `seats` | none | `{'seat': kind, 'x': .., 'y': .., 'radius': ..}` in map coordinates, optionally `'low'` / `'high'`. Lower-case `x`/`y`: `X`/`Y` is a route checkpoint. They belong to a room, so a constants file lists its own. |
+
+The neck model itself (`body_gaze.NeckModel`: 4.7° up at `6.0`, 29° per unit of
+`n_pos`, the 51° × 30° lens) is not in the YAML. It is the calibration
+`mecanumbot_sensorprocess_smart` places a ball with and `mecanumbot_deep3r`
+reconstructs with — the same servo, so change all three or none.
+
 `gripper_left_neutral` / `gripper_right_neutral` (`6.83` / `3.36`) are the
 gripper positions any command that does not name its own uses; the gesture
 sequences move between the same values.
@@ -216,6 +274,8 @@ behaviours.
 | `/mecanumbot/people_fusion` | `geometry_msgs/msg/PoseArray` | Fused people detections — finding, selecting and approaching the subject. |
 | `/mecanumbot/subject_pose` | `geometry_msgs/msg/PoseStamped` | Tracked subject pose. Read together with the fused detections by `FollowedSubjectTracker`, whichever is fresher. |
 | `/mecanumbot/has_object` | `std_msgs/msg/Bool` | Ball-handover trigger read by `CheckRobotHasBall`. |
+| `/mecanumbot/lidar_candidates` | `geometry_msgs/msg/PoseArray` | Where the LiDAR sees something person-sized the map does not explain. Read by `BodyGaze`, in a tree that starts one. |
+| `/mecanumbot/cam_people_detections/low_head` | `std_msgs/msg/Float32` | A face at the bottom of the frame; the look-down's cue. |
 | `/navigate_to_pose/_action/status` | `action_msgs/msg/GoalStatusArray` | `Nav2GoalMonitor`: `busy()` — what a turn waits for before it takes `/cmd_vel` — and the outcome of a published `/goal_pose` for the ostensive package. |
 | `/navigate_through_poses/_action/status` | `action_msgs/msg/GoalStatusArray` | The same question for a waypoint run. |
 
@@ -226,6 +286,17 @@ back falls due, how long a leg may be, the waypoint poses a leg is sent as, and
 the wiggle's sweep pattern. `pacing.py`
 imports nothing, so most of it runs against a bare interpreter; the three
 `route_poses` tests need `geometry_msgs` and skip without it.
+
+`test/test_body_gaze.py` — 40 tests over the gaze: nearer means further up, a
+seat means lower, a seat is looked at with no LiDAR return on it, a tracked
+person comes before a nearer candidate, and the head does not follow range noise.
+The scenes are the ones in the bags of 2026-09-30. Pure Python; the two cases
+that read the shipped leading constants skip without `mecanumbot_bt_config`.
+
+`test/test_head_modes.py` — 13 tests over who has the neck: the gaze only
+steers a seeking head, a gesture script or a route turn takes it away, the next
+seeking behaviour gets it back, and the look-down holds the gaze off. The node
+is a fake; needs `rclpy` for the message types only.
 
 ```bash
 cd src/mecanumbot_behaviours/mecanumbot_movement_behaviours

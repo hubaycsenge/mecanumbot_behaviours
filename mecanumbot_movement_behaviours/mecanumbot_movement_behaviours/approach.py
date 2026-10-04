@@ -22,8 +22,11 @@ from mecanumbot_movement_behaviours.geometry import (
 )
 from mecanumbot_movement_behaviours.keys import DEFAULT_KEYS
 from mecanumbot_movement_behaviours.ros_interfaces import (
+    AccessoryCommander,
     BallTracker,
+    BodyGaze,
     GOAL_ACTIVE_STATUSES,
+    HEAD_SEEK,
     Nav2PoseNavigator,
     PeopleTracker,
     RobotPoseTracker,
@@ -112,6 +115,7 @@ class Approach(py_trees.behaviour.Behaviour):
             if is_human(self.target_type)
             else None
         )
+        self.accessories = AccessoryCommander(self.node)
         self.logger.info(f"{self.name}: Setup complete")
 
     def initialise(self):
@@ -122,6 +126,12 @@ class Approach(py_trees.behaviour.Behaviour):
         self.arrive_margin = float(constant(self.blackboard, "approach_arrive_margin"))
         self.max_steps = int(constant(self.blackboard, "approach_max_steps"))
         self._start_time = self.node.get_clock().now()
+        # Walking up to a person is where the tilt matters most: every step
+        # brings them closer and takes more of them out of the top of the
+        # frame. Where a gaze is running, hand it the head for the walk. Without
+        # one the approach leaves the head alone, as it always has.
+        if self.people is not None and BodyGaze.running():
+            self.accessories.look(HEAD_SEEK)
         self.node.get_logger().info(f"{self.name}: approaching the {self.target_type}")
 
     def terminate(self, new_status):
