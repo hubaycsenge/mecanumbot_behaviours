@@ -19,9 +19,9 @@
 
 bottom_up_tree_node:
   ros__parameters:
-    init_delay:                  0.5      # Delay before the tree starts acting [s]
+    init_delay:                  0.0      # Delay before the tree starts acting [s]
     robot_closeness_threshold:   1.25     # Minimum approach distance; below this the robot risks hitting the subject [m]
-    robot_approach_distance:     1.0      # How far the robot advances in one step [m]
+    robot_approach_distance:     2.0      # How far the robot advances in one step [m]
     target_reached_threshold:    1.5      # Distance between target and subject that counts as arrived [m]
     visibility_time_threshold:   2.0      # Age of the last subject fix before it is stale [s]
     Dog_following_max_threshold: 2.0      # Largest distance difference that still counts as following [m]
@@ -41,7 +41,7 @@ bottom_up_tree_node:
     setup_timeout: 15.0
 
     # ----- Seeing people -------------------------------------------------------
-    sight_timeout: 3.0
+    sight_timeout: 20.0
 
     # ----- Rotation profile ----------------------------------------------------
     turn_max_speed: 0.6
@@ -59,9 +59,9 @@ bottom_up_tree_node:
     attention_turn_step_deg: 15.0
 
     # ----- Scanning for people -------------------------------------------------
-    scan_spin_speed: 0.5
+    scan_spin_speed: 0.7
     scan_timeout: 10.0
-    full_scan_spin_speed: 0.3
+    full_scan_spin_speed: 0.5
     full_scan_timeout: 45.0
     full_scan_revolutions: 1.0
 
@@ -112,56 +112,41 @@ bottom_up_tree_node:
     gripper_left_neutral: 6.83
     gripper_right_neutral: 3.36
     # A face at the bottom of the camera frame while searching tilts the head
-    # down by look_down_step (n_pos; 0.5 is ~15 deg) for look_down_hold s, then
-    # back up; the cue is then ignored for look_down_cooldown s.
+    # down by look_down_step (n_pos; 0.5 is ~15 deg) for look_down_hold s,
+    # then back up; the cue is then ignored for look_down_cooldown s.
     look_down_step: 0.5
     look_down_hold: 3.0
     look_down_cooldown: 4.0
     look_down_cue_age: 0.5
 
-    # ----- The head following the body the LiDAR expects (dog condition) ------
-    # While the head is lifted to look for or at the human it is not held at
-    # neck_seek_pos but tilted to whichever height shows the body the LiDAR
-    # says should be there: nearer means further up, and a body on one of the
-    # seats below is looked for at sitting height. neck_seek_pos is where it
-    # rests with nothing in view. Only the dog-inspired tree does this; the LED
-    # and control trees keep the head parked. false here switches it off there
-    # too, and the head goes back to one fixed seeking pose.
-    body_gaze_enabled: true
-    body_gaze_period: 0.2            # seconds between two looks at what is in view
-    body_gaze_max_range: 4.5         # bodies further off than this are not tilted for [m]
+    # ----- The head following the body the LiDAR expects (dog condition) -------
+    body_gaze_period: 0.2  # seconds between two looks at what is in view
+    body_gaze_max_range: 4.5  # bodies further off than this are not tilted for [m]
     body_gaze_view_margin_deg: 12.0  # attended to this far beyond the edge of the picture
     body_gaze_frame_margin_deg: 3.0  # kept clear above and below a body in the frame
-    body_gaze_min_pos: 5.5           # the neck positions the gaze may command
+    body_gaze_min_pos: 5.5  # the neck positions the gaze may command
     body_gaze_max_pos: 8.2
-    body_gaze_deadband: 0.1          # smallest change worth a command (0.1 is ~3 deg)
-    body_gaze_min_interval: 0.4      # shortest time between two commands [s]
-    body_gaze_release_delay: 1.0     # nothing in view this long -> back to neck_seek_pos [s]
-    body_gaze_candidate_timeout: 0.5 # how old the LiDAR's candidate list may be [s]
-    # The band of heights the pose detector needs of each kind of body, from
-    # the hips to the top of the head [m]. A kind left out keeps the packaged
-    # band; `standing` is anybody not on a seat.
-    body_profiles:
-      - "{'body':'standing', 'low':0.85, 'high':1.80}"
-      - "{'body':'chair',    'low':0.40, 'high':1.30}"
-      - "{'body':'bean_bag', 'low':0.10, 'high':0.75}"
-    # Known places in THIS map where a body is lower than a standing one. Both
-    # were read off the bags of 2026-09-30 in mecanumbot_directories/bag_debug
-    # and should be checked against the room before a trial:
-    #   bean bag -- the person the robot turned past for a minute and a half in
-    #     the 08:46 run sat here; the LiDAR had them at (-0.60, 2.33) and their
-    #     shoulders came out at ~0.4 m. The map has a bean-bag-sized ring half
-    #     a metre away at (-1.0, 2.0), so it has moved since it was mapped and
-    #     the radius is wide enough to cover both places.
-    #   chair -- the person sitting against the east wall in the 09:02 run
-    #     (shoulders ~0.95 m), whose legs the LiDAR saw at about (1.15, 3.35),
-    #     0.3 m in front of the wall.
-    # x, y are map coordinates in lower case: 'X'/'Y' would be read as a route
-    # checkpoint. radius is how far from the point still counts as on the seat.
-    # 'low' and 'high' on an entry override its body profile.
-    seats:
-      - "{'seat':'bean_bag', 'x':-0.80, 'y':2.20, 'radius':0.70}"
-      - "{'seat':'chair',    'x':1.15,  'y':3.35, 'radius':0.60}"
+    body_gaze_deadband: 0.1  # smallest change worth a command (0.1 is ~3 deg)
+    body_gaze_min_interval: 0.4  # shortest time between two commands [s]
+    body_gaze_release_delay: 1.0  # nothing in view this long -> back to neck_seek_pos [s]
+    body_gaze_candidate_timeout: 0.5  # how old the LiDAR's candidate list may be [s]
+    LED_lead_progress_color: 2  # Colour the panels fill with as the drive progresses (green)
+    LED_lead_direction: target  # target: flow towards the destination's side when it is off the heading | none: always ahead
+    LED_lead_straight_band_deg: 30.0  # Destination within this of the heading counts as ahead [deg]
+
+    # Kept as found: this editor does not render these.
+    body_gaze_enabled: true
+    body_profiles: ['{''body'':''standing'', ''low'':0.85, ''high'':1.80}', '{''body'':''chair'',    ''low'':0.40,
+    ''high'':1.30}', '{''body'':''bean_bag'', ''low'':0.10, ''high'':0.75}']
+    seats: ['{''seat'':''bean_bag'', ''x'':-0.80, ''y'':2.20, ''radius'':0.70}', '{''seat'':''chair'',    ''x'':1.15,  ''y'':3.35,
+    ''radius'':0.60}']
+    LED_lead_straight: ['{''fl'':{''mode'':1, ''color'':1},''fr'':{''mode'':2, ''color'':1},''bl'':{''mode'':2,
+    ''color'':1},''br'':{''mode'':1, ''color'':1}}']
+    LED_lead_left: ['{''fl'':{''mode'':2, ''color'':1},''fr'':{''mode'':2, ''color'':1},''bl'':{''mode'':2,
+    ''color'':1},''br'':{''mode'':2, ''color'':1}}']
+    LED_lead_right: ['{''fl'':{''mode'':1, ''color'':1},''fr'':{''mode'':1, ''color'':1},''bl'':{''mode'':1,
+    ''color'':1},''br'':{''mode'':1, ''color'':1}}']
+    LED_address_person: true
 
     # Route. [0] is the start position, [-1] is the target.
     Dog_checkpoints:
@@ -173,26 +158,6 @@ bottom_up_tree_node:
 
     LED_start_setting:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
-
-    # What the lights show while the robot drives to the target. They never go
-    # dark on the way: the light flows, and the panels fill with
-    # LED_lead_progress_color, one LED per eighth of the way driven (the fill
-    # needs the Nano firmware that draws it; older firmware shows the flow only).
-    #
-    # The four strips cut the corners of the top plate, so a wave can run from
-    # the rear tip round both sides to the front tip. "straight" is that:
-    # wave right on fl and br, wave left on fr and bl. "left" and "right" send
-    # all four the same way, towards the side the destination lies on.
-    LED_lead_straight:
-      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':2, 'color':1},'bl':{'mode':2, 'color':1},'br':{'mode':1, 'color':1}}"  # white, flowing ahead
-    LED_lead_left:
-      - "{'fl':{'mode':2, 'color':1},'fr':{'mode':2, 'color':1},'bl':{'mode':2, 'color':1},'br':{'mode':2, 'color':1}}"  # white wave left
-    LED_lead_right:
-      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':1, 'color':1},'bl':{'mode':1, 'color':1},'br':{'mode':1, 'color':1}}"  # white wave right
-    LED_lead_progress_color:     2        # Colour the panels fill with as the drive progresses (green)
-    LED_lead_direction:          target   # target: flow towards the destination's side when it is off the heading | none: always ahead
-    LED_lead_straight_band_deg:  30.0     # Destination within this of the heading counts as ahead [deg]
-    LED_address_person:          true     # Attention and thanks light only the half of the robot facing the person
 
     LED_indicate_target_seq:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
