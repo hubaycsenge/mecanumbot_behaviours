@@ -407,7 +407,9 @@ it is **looking for the person** — the opening approach, the recovery search, 
 onto them and the scans at the target. It installs the gaze and its `FindPeople` scans
 ask for the seeking head; before the drive to the target `LevelHead` parks the head at
 `neck_level_pos`, and the turn onto the target levels it too, so the robot leads and
-signals with a still head. The LED condition still has no head *gesture* — no look
+signals with a still head. Its recovery search also leaves out the look down onto a
+low face (`look_down=False` on `WaitForPerson`), so the head does not nod: the tilt
+compensation is the only thing that moves the neck. The LED condition still has no head *gesture* — no look
 back, no alternation, no script — but its head is no longer motionless, which is a
 difference from the runs before that date. `body_gaze_enabled: false` in the constants
 file switches the gaze off in both trees.

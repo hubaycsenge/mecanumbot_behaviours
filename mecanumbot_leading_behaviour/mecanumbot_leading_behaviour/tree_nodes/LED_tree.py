@@ -7,7 +7,10 @@ thing the head does is perceptual. While the robot is **looking for the
 person** -- the opening approach, the recovery search, the turn onto them, the
 scans at the target -- it is tilted to the height of the body the LiDAR expects
 (the body gaze, started below as a load hook), because one fixed tilt shows the
-camera a standing person's knees up close and misses somebody sitting low. For
+camera a standing person's knees up close and misses somebody sitting low. It
+does not nod: the look down onto a low face that the dog-inspired tree's search
+makes is switched off here (`look_down=False`), so the tilt compensation is the
+only thing that moves the neck. For
 the drive to the target and the signalling there the head is parked level
 (`LevelHead`, and the turn onto the target levels it too).
 `body_gaze_enabled: false` in the constants file gives the fixed head back.
@@ -68,7 +71,7 @@ def create_root(yaml_path=None):
     )
     recover_then_approach.add_children(
         [
-            create_recover_lost_sequence(ID="Init"),
+            create_recover_lost_sequence(ID="Init", look_down=False),
             Approach(
                 name="ApproachSubjectRecov", target_type=SUBJECT, mode="fixed_distance"
             ),

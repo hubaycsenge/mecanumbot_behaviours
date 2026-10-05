@@ -37,13 +37,16 @@ def build_params(yaml_path):
     return tree_runner.build_params(yaml_path)
 
 
-def create_recover_lost_sequence(ID=""):
+def create_recover_lost_sequence(ID="", look_down=True):
     """
     Search the route for a human who stopped following.
 
     Scan a full circle, step to the next search checkpoint, drive there,
     repeat.
     The parallel ends the moment somebody is spotted.
+
+    `look_down=False` is for a condition whose head must not nod: the wait then
+    never drops the head onto a face at the bottom of the frame.
     """
     patrol = py_trees.composites.Sequence(name=ID + "SearchSequence", memory=True)
     patrol.add_children(
@@ -60,7 +63,7 @@ def create_recover_lost_sequence(ID=""):
     )
     recovery.add_children(
         [
-            WaitForPerson(name=ID + "InterruptOnPersonFound"),
+            WaitForPerson(name=ID + "InterruptOnPersonFound", look_down=look_down),
             py_trees.decorators.Repeat(
                 name=ID + "SearchLoop", child=patrol, num_success=-1
             ),

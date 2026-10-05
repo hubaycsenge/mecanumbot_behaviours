@@ -547,6 +547,8 @@ class WaitForPerson(py_trees.behaviour.Behaviour):
     pose detector a full-body view instead of a pair of knees. A face at the
     bottom of the frame drops it for a few seconds and then raises it again
     (`HeadLookDown`), for somebody sitting too low for the lifted camera.
+    `look_down=False` leaves that out, for a tree whose head must not nod: the
+    head then only moves if a body gaze is steering it.
 
     On success it also records which way along the route the person turned up,
     so a later patrol starts searching in that direction.
@@ -554,9 +556,12 @@ class WaitForPerson(py_trees.behaviour.Behaviour):
 
     KEYS = DEFAULT_KEYS
 
-    def __init__(self, name="WaitForPerson", sight_timeout=None, keys=None):
+    def __init__(
+        self, name="WaitForPerson", sight_timeout=None, keys=None, look_down=True
+    ):
         super().__init__(name)
         self.sight_timeout = sight_timeout
+        self.use_look_down = bool(look_down)
         self.keys = keys or self.KEYS
 
         self.blackboard = self.attach_blackboard_client(name=name)
@@ -578,11 +583,13 @@ class WaitForPerson(py_trees.behaviour.Behaviour):
         self.people = PeopleTracker(self.node, self.sight_timeout)
         self.velocity = VelocityCommander(self.node)
         self.accessories = AccessoryCommander(self.node)
-        self.look_down = HeadLookDown(
-            self.node,
-            self.accessories,
-            *(constant(self.blackboard, key) for key in LOOK_DOWN_KEYS),
-        )
+        self.look_down = None
+        if self.use_look_down:
+            self.look_down = HeadLookDown(
+                self.node,
+                self.accessories,
+                *(constant(self.blackboard, key) for key in LOOK_DOWN_KEYS),
+            )
         self.logger.info(f"{self.name}: Setup complete")
 
     def initialise(self):
@@ -590,11 +597,13 @@ class WaitForPerson(py_trees.behaviour.Behaviour):
         self.node.get_logger().info(f"{self.name}: watching for a person, head lifted")
 
     def terminate(self, new_status):
-        self.look_down.release()
+        if self.look_down is not None:
+            self.look_down.release()
 
     def update(self):
         if not self.people.has_fresh_detection():
-            self.look_down.update()
+            if self.look_down is not None:
+                self.look_down.update()
             self.feedback_message = "nobody visible yet"
             return py_trees.common.Status.RUNNING
 

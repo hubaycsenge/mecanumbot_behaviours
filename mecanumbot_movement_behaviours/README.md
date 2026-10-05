@@ -39,7 +39,7 @@ created inside the behaviour classes, so a tree that uses one gets them.
 | `GlanceBack` | The look over the shoulder: a slow full turn, set off towards the human's last known place and stopped by the first detection made during it. FAILURE is what starts the patrol. Looks down onto a face at the bottom of the frame, holding the turn meanwhile (`HeadLookDown`). |
 | `RelativeTurnPattern` | Attention-getting wiggle: alternating turns that end on the starting heading, beginning in the direction of the last search turn. |
 | `ScanSpin` | Spins in place looking for people, head lifted; `FindPeople` (spin until somebody is seen) and `Spin360` (one full scan) are configured subclasses. |
-| `WaitForPerson` | Interrupt half of the lost-recovery parallel: waits with a lifted head, and records whether the person turned up ahead of or behind the robot. Looks down onto a face at the bottom of the frame (`HeadLookDown`), which also holds a scan running beside it. |
+| `WaitForPerson` | Interrupt half of the lost-recovery parallel: waits with a lifted head, and records whether the person turned up ahead of or behind the robot. Looks down onto a face at the bottom of the frame (`HeadLookDown`), which also holds a scan running beside it; `look_down=False` leaves that out (the LED leading tree). |
 | `ManageSearchCheckpoint` | Walks the patrol index along the route, reversing at either end; sets off towards where the human was last seen. |
 | `CheckSubjectTargetSuccess` | SUCCESS when the subject is within the reached threshold of the target. |
 | `CheckRobotHasBall` | SUCCESS while `/mecanumbot/has_object` is true. |
