@@ -229,8 +229,10 @@ sequences move between the same values.
 
 Behaviours pick the pose from their target type (`head="seek"` / `"level"`), so
 the head stays lifted for the whole seeking phase rather than flicking up for a
-moment. `head=None` leaves the neck untouched — the LED and control trees pass
-that so their comparison conditions carry no head gestures at all.
+moment. `head=None` leaves the neck untouched — the control tree passes that so its
+comparison condition carries no head movement at all. The LED tree carries no head
+gestures either, but since 2026-10-05 it runs the body gaze while it looks for the
+person.
 
 ## Tunables
 

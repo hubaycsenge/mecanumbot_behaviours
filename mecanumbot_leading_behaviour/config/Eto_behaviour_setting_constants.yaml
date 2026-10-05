@@ -118,10 +118,19 @@ bottom_up_tree_node:
     look_down_hold: 3.0
     look_down_cooldown: 4.0
     look_down_cue_age: 0.5
-
-    # ----- The head following the body the LiDAR expects (dog condition) -------
-    body_gaze_period: 0.2  # seconds between two looks at what is in view
-    body_gaze_max_range: 4.5  # bodies further off than this are not tilted for [m]
+    # ----- The head following the body the LiDAR expects (dog + LED conditions) -
+    # While the head is lifted to look for or at the human it is not held at
+    # neck_seek_pos but tilted to whichever height shows the body the LiDAR
+    # says should be there: nearer means further up, and a body on one of the
+    # seats below is looked for at sitting height. neck_seek_pos is where it
+    # rests with nothing in view. The dog-inspired tree does this whenever its
+    # head is lifted, the LED tree only while it looks for the person (it parks
+    # the head at neck_level_pos to lead and to signal), and the control tree
+    # never. false here switches it off in both, and the head goes back to one
+    # fixed seeking pose.
+    body_gaze_enabled: true
+    body_gaze_period: 0.2            # seconds between two looks at what is in view
+    body_gaze_max_range: 4.5         # bodies further off than this are not tilted for [m]
     body_gaze_view_margin_deg: 12.0  # attended to this far beyond the edge of the picture
     body_gaze_frame_margin_deg: 3.0  # kept clear above and below a body in the frame
     body_gaze_min_pos: 5.5  # the neck positions the gaze may command

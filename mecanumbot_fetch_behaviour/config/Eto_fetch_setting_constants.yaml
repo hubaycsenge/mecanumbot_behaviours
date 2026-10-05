@@ -241,6 +241,24 @@ fetch_bt_node:
     fetch_grasp_attempts: 3
 
     # ==========================================================================
+    # The lights while closing in on the ball
+    # ==========================================================================
+    # From the sighting to the grab all four LED panels blink fetch_led_color,
+    # and the panels on the ball's side blink fetch_led_direction_color.
+    # LED  mode:  1 wave right, 2 wave left, 3 pulse, 4 solid,
+    #             5 fast blink, 6 slow blink
+    # LED  color: 0 black, 1 white, 2 green, 3 red,
+    #             4 blue,  5 cyan,  6 pink,  7 yellow
+    fetch_led_enabled: true
+    fetch_led_mode: 5                      # fast blink
+    fetch_led_color: 1                     # white
+    fetch_led_direction_color: 2           # green
+    # A panel points at the ball when the ball is within this of the diagonal
+    # the panel faces [deg]. 67.5 gives eight directions: two panels for ahead,
+    # behind and either side, one for each corner.
+    fetch_led_direction_spread_deg: 67.5
+
+    # ==========================================================================
     # Bringing it to somebody
     # ==========================================================================
     # How long the robot looks for a person to give the ball to [s].
@@ -295,6 +313,21 @@ fetch_bt_node:
     neck_level_pos: 6.0
     gripper_left_neutral: 6.83
     gripper_right_neutral: 3.36
+
+    # While the robot looks for somebody to give the ball to, walks up to them
+    # and faces them, the head is not held at neck_seek_pos but tilted to the
+    # height of the body the LiDAR expects: nearer means further up, and a body
+    # on one of the seats below is looked for at sitting height. neck_seek_pos
+    # is where it rests with nothing in view. false goes back to the one fixed
+    # pose. The body_gaze_* tunables and body_profiles keep their packaged
+    # values unless listed here; the leading constants files spell them all out.
+    body_gaze_enabled: true
+    # Known places in this map where a body is lower than a standing one, as
+    # {'seat': kind, 'x': .., 'y': .., 'radius': ..} in map coordinates.
+    # ROOM: the same two the leading tree's LED_exp file lists.
+    seats:
+      - "{'seat':'bean_bag', 'x':-0.80, 'y':2.20, 'radius':0.70}"
+      - "{'seat':'chair',    'x':1.15,  'y':3.35, 'radius':0.60}"
 
     # ==========================================================================
     # Runtime

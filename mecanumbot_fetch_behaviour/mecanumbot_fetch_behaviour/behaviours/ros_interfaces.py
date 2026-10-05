@@ -292,6 +292,10 @@ class GripperCommander:
         cmd.gr_pos = float(right)
         self._publisher.publish(cmd)
         AccessoryCommander._last_neck_pos = cmd.n_pos
+        # A tilt placed from here is not the library's seeking pose, whatever
+        # the head was doing before, so the body gaze leaves it alone until a
+        # behaviour asks for the seeking head again.
+        AccessoryCommander._head_mode = None
 
     @staticmethod
     def keep_grippers(left, right):

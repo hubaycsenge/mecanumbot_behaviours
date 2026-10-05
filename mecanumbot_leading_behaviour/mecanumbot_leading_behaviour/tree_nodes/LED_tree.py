@@ -1,9 +1,16 @@
 """
 LED leading behaviour: same route, signalled with light patterns.
 
-This is the non-animal comparison condition, so the neck is left alone
-(`head=None` on every turn): the camera keeps the lifted tilt the parameter
-loader sets at startup, but the robot never gestures with its head.
+This is the non-animal comparison condition, so the robot never gestures with
+its head: there is no look back, no alternation, no gesture script. The one
+thing the head does is perceptual. While the robot is **looking for the
+person** -- the opening approach, the recovery search, the turn onto them, the
+scans at the target -- it is tilted to the height of the body the LiDAR expects
+(the body gaze, started below as a load hook), because one fixed tilt shows the
+camera a standing person's knees up close and misses somebody sitting low. For
+the drive to the target and the signalling there the head is parked level
+(`LevelHead`, and the turn onto the target levels it too).
+`body_gaze_enabled: false` in the constants file gives the fixed head back.
 
 The lights are on for the whole drive, not only before and after it: they flow
 the way the robot is going and fill with a second colour as it gets there
@@ -17,6 +24,7 @@ from mecanumbot_leading_behaviour.behaviours.LED_behaviours import (
     LEAD_KEYS,
     LEDBehaviourSequence,
     LEDLeadSignal,
+    LevelHead,
 )
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import (
     LED_SCRIPTS,
@@ -30,6 +38,7 @@ from mecanumbot_leading_behaviour.behaviours.route_behaviours import (
     FindPeople,
     TurnToward,
 )
+from mecanumbot_movement_behaviours.defaults import start_body_gaze
 from mecanumbot_movement_behaviours.targets import (
     LAST_CHECKPOINT,
     SUBJECT,
@@ -80,7 +89,7 @@ def create_root(yaml_path=None):
     )
     show_while_close.add_children(
         [
-            FindPeople(name="FindPersonClose", head=None),
+            FindPeople(name="FindPersonClose"),
             CheckSubjectTargetSuccess(name="CheckSubjectNearTarget"),
             LEDBehaviourSequence("LCatch", "catch_attention", addressed=True),
             TurnToward(name="TurnTowardTarget", target_type=TARGET, head=None),
@@ -93,7 +102,7 @@ def create_root(yaml_path=None):
     ball_reaction.add_children(
         [
             CheckRobotHasBall(name="CheckIfHasBall"),
-            FindPeople(name="FindPersonBallReaction", head=None),
+            FindPeople(name="FindPersonBallReaction"),
             LEDBehaviourSequence("LThank", "thank", addressed=True),
         ]
     )
@@ -135,10 +144,14 @@ def create_root(yaml_path=None):
                 yaml_path=yaml_path,
                 scripts=LED_SCRIPTS,
                 required=tuple(LEAD_KEYS.values()),
+                on_loaded=(start_body_gaze,),
             ),
             seek_or_find,
             TurnToward(name="TurnTowardSubject", target_type=SUBJECT, head=None),
             LEDBehaviourSequence("LCatchO", "catch_attention", addressed=True),
+            # The person is found and has been addressed: from here to the next
+            # time the robot looks for them the head is parked.
+            LevelHead(name="ParkHeadToLead"),
             # Drive to the last checkpoint of the route, then face the target itself
             # to signal it -- the robot stops short of where the human should end up.
             lead,

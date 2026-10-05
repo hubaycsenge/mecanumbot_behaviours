@@ -188,6 +188,20 @@ FETCH_DEFAULTS = {
     # from 30 cm is a couple of seconds.
     "fetch_grasp_attempts": 3,
 
+    # ===== The lights while closing in on the ball ============================
+    # From the sighting to the grab all four LED panels blink `fetch_led_color`
+    # and the ones on the ball's side blink `fetch_led_direction_color`
+    # (ball_lights.py). Mode and colours are the LED controller's numbers:
+    # mode 5 is the fast blink, colour 1 white, 2 green.
+    "fetch_led_enabled": True,
+    "fetch_led_mode": 5,
+    "fetch_led_color": 1,
+    "fetch_led_direction_color": 2,
+    # A panel points at the ball when the ball's bearing is within this of the
+    # diagonal the panel faces. 67.5 degrees gives eight directions: two panels
+    # for ahead, behind and either side, one for each corner.
+    "fetch_led_direction_spread": math.radians(67.5),
+
     # ===== Bringing it to somebody ============================================
     # How long the robot looks for a person to give the ball to [s].
     "fetch_find_person_timeout": 45.0,

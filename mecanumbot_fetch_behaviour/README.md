@@ -323,6 +323,31 @@ carry no `_deg` suffix. The centring angles (`fetch_camera_hfov_deg`,
 `fetch_head_track_deadband_deg`, `fetch_face_tolerance_deg`) are angles in the image,
 and do. `fetch_head_approach` is gone: the grab keeps the head where the tracker left it.
 
+## The lights point at the ball
+
+From the sighting to the grab `ShowBallDirection` runs beside the approach: all four
+LED panels blink white (`fetch_led_mode`, `fetch_led_color`), and the panels on the
+ball's side blink green (`fetch_led_direction_color`). The strips cut the corners of the
+top plate, so each panel faces a diagonal, and a panel is a direction panel when the
+ball's bearing is within `fetch_led_direction_spread_deg` (67.5) of it. That gives eight
+directions: both front panels for a ball ahead, one panel for a ball off a corner, both
+left panels for a ball square to the left. The bearing is that of `fetch_ball_position`
+in the robot's frame, so the lights keep pointing at where the ball was placed in the map
+while the robot turns. They go dark for the grab, and `fetch_led_enabled: false` switches
+the whole signal off. It calls `/mecanumbot/set_led_status`
+(`mecanumbot_msgs/srv/SetLedStatus`), and only when the direction changes.
+
+## The head follows the person it is taking the ball to
+
+The loader installs the movement library's `start_body_gaze`, so while the robot looks
+for somebody, walks up to them and faces them, the head is tilted to the body the LiDAR
+expects rather than held at `neck_seek_pos`: further up the nearer they stand, and at
+sitting height for somebody on one of the constants file's `seats`. The gaze only steers
+a head that was asked for the seeking pose, and every tilt this package places itself
+(`GripperCommander.send`) takes the head out of it, so the ball search and the ball
+tracking are untouched. `body_gaze_enabled: false` goes back to the one fixed pose. See
+`mecanumbot_movement_behaviours/README.md` for the model and the `body_gaze_*` tunables.
+
 ## Topics
 
 | Topic | Direction | Type | Use |
@@ -358,16 +383,19 @@ phase name is a label.
 | `behaviours/approach.py` | `ApproachBall`, `CreepToBall`, `CheckBallReachable`, `GraspBall`. |
 | `behaviours/delivery.py` | `SomeoneToGiveTo`, `ReleaseBall`, `BackAway`. |
 | `behaviours/signalling.py` | `AnnouncePhase`. |
+| `ball_lights.py` | Which LED panels point at the ball. Pure geometry, no ROS. |
+| `behaviours/lights.py` | `ShowBallDirection`. |
 | `behaviours/blackboard_managers.py` | Constants loading, required keys, per-episode state. |
 | `behaviours/ros_interfaces.py` | `BallDetectionTracker`, `BallBoxTracker`, `GripperCommander`, `FetchStatePublisher`. |
 | `test/test_search_patterns.py` | 21 tests over the circles and the sweep; no ROS needed. |
-| `test/test_gaze.py` | 19 tests over the search tilt's floor band and the centring steps; no ROS needed. |
+| `test/test_gaze.py` | 25 tests over the search tilt's floor band and the centring steps; no ROS needed. |
+| `test/test_ball_lights.py` | 15 tests over which panels point at the ball; no ROS needed. |
 
 ## Tests
 
 ```bash
 cd src/mecanumbot_behaviours/mecanumbot_fetch_behaviour
-PYTHONPATH=.:$PYTHONPATH python3 -m pytest test/test_search_patterns.py test/test_gaze.py -q -p no:launch_testing
+PYTHONPATH=.:$PYTHONPATH python3 -m pytest test/test_search_patterns.py test/test_gaze.py test/test_ball_lights.py -q -p no:launch_testing
 ```
 
 `colcon test` is broken workspace-wide on this machine (the installed `launch_testing`

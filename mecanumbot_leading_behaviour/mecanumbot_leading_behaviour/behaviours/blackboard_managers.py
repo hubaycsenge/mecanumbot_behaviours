@@ -129,8 +129,8 @@ class ConstantParamsToBlackboard(ParamsToBlackboard):
 
     `on_loaded` adds load hooks after the two every leading tree runs. It is
     how a condition takes something the others must not have: the dog-inspired
-    tree starts the body gaze this way, and the LED and control trees, whose
-    robot does not move its head, do not.
+    and LED trees start the body gaze this way, and the control tree, whose
+    robot does not move its head, does not.
     """
 
     def __init__(
