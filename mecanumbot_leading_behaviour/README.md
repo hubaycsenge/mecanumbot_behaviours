@@ -421,7 +421,11 @@ file switches the gaze off in both trees.
 3. Turn toward the subject and catch attention with the LEDs, then park the head
    (`LevelHead`): up to here the body gaze has been tilting it to the person.
 4. Approach the target **with the lights running** (`LeadWithLights`, a parallel of the
-   drive and `LEDLeadSignal` that ends when the drive does), then indicate it.
+   drive and `LEDLeadSignal` that ends when the drive does). There, turn to the target
+   and play the green `indicate_target` signal; then find the person, turn to them, and
+   blink the panels that point at the target in yellow for `LED_direction_hold` seconds
+   (`LEDTargetDirection`, `LED_direction_*`; the other panels stay dark). With nobody to
+   turn to, the pointing is skipped rather than failing the root.
 5. Endless `BallOrShowLoop`, asking about the ball first on every cycle (as the dog
    tree does): while the robot holds the ball, find the person and play the thank
    pattern; otherwise play the near-target indication while the subject is at the

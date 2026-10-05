@@ -5,13 +5,15 @@ No ROS and no py_trees: what the lights show while the robot leads is decided
 here from numbers, so it can be tested without a robot. `LED_behaviours.py`
 turns the answers into `SetLedStatus` calls.
 
-Three decisions:
+Four decisions:
 
 * how much of the way is driven, as a number of lit LEDs (`progress_fill`);
 * which way the light should flow -- ahead, or towards the side the
   destination lies on (`lead_side`);
 * which half of the robot faces a person, for the signals that are addressed to
-  somebody rather than shown to the room (`facing_corners`).
+  somebody rather than shown to the room (`facing_corners`);
+* which panels point at a place the robot is not facing, for showing somebody
+  where the target is while the robot looks at them (`direction_corners`).
 """
 
 import math
@@ -36,6 +38,19 @@ SIDE_HYSTERESIS = 0.6
 FRONT_CORNERS = ("fl", "fr")
 BACK_CORNERS = ("bl", "br")
 CORNERS = FRONT_CORNERS + BACK_CORNERS
+
+# The four strips cut the corners of the top plate, so each panel faces a
+# diagonal [rad in the robot's frame, left positive].
+CORNER_BEARINGS = {
+    "fl": math.pi / 4.0,
+    "fr": -math.pi / 4.0,
+    "bl": 3.0 * math.pi / 4.0,
+    "br": -3.0 * math.pi / 4.0,
+}
+
+# A panel that is pointing keeps doing so until the place is this far beyond
+# the spread, so one on the edge between two directions does not flicker.
+DIRECTION_HYSTERESIS = math.radians(8.0)
 
 
 def progress_fill(start_distance, distance, stop_distance=0.0, steps=PANEL_LEDS):
@@ -78,3 +93,24 @@ def facing_corners(relative_bearing):
     if abs(relative_bearing) <= math.pi / 2.0:
         return FRONT_CORNERS
     return BACK_CORNERS
+
+
+def direction_corners(relative_bearing, spread, previous=()):
+    """
+    Return the panels that point at a place at this bearing, in `CORNERS` order.
+
+    A panel points at the place when its bearing [rad, left positive] is within
+    `spread` of the diagonal the panel faces. At 67.5 degrees that is eight
+    directions from four panels: both front ones for a place ahead, one for a
+    place off a corner, both left ones for a place square to the left.
+    `previous` is what was returned last time; those panels are held a little
+    beyond the spread.
+    """
+    pointing = []
+    for corner in CORNERS:
+        offset = relative_bearing - CORNER_BEARINGS[corner]
+        offset = abs(math.atan2(math.sin(offset), math.cos(offset)))
+        limit = spread + (DIRECTION_HYSTERESIS if corner in previous else 0.0)
+        if offset <= limit:
+            pointing.append(corner)
+    return tuple(pointing)

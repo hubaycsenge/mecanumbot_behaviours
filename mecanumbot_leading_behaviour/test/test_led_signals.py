@@ -9,6 +9,7 @@ from mecanumbot_leading_behaviour.behaviours.led_signals import (
     FRONT_CORNERS,
     LEFT,
     PANEL_LEDS,
+    direction_corners,
     RIGHT,
     STRAIGHT,
     facing_corners,
@@ -98,3 +99,40 @@ def test_a_person_in_front_is_shown_the_front_panels():
 def test_a_person_behind_is_shown_the_back_panels():
     assert facing_corners(math.pi) == BACK_CORNERS
     assert facing_corners(math.radians(-100.0)) == BACK_CORNERS
+
+
+# --- pointing at the target ----------------------------------------------------
+
+SPREAD = math.radians(67.5)
+
+
+@pytest.mark.parametrize(
+    "bearing_deg, expected",
+    [
+        (0.0, ("fl", "fr")),
+        (45.0, ("fl",)),
+        (90.0, ("fl", "bl")),
+        (135.0, ("bl",)),
+        (180.0, ("bl", "br")),
+        (-135.0, ("br",)),
+        (-90.0, ("fr", "br")),
+        (-45.0, ("fr",)),
+    ],
+)
+def test_the_panels_on_the_targets_side_point_at_it(bearing_deg, expected):
+    assert direction_corners(math.radians(bearing_deg), SPREAD) == expected
+
+
+def test_a_target_behind_a_robot_facing_the_person_lights_the_back():
+    assert direction_corners(math.radians(170.0), SPREAD) == BACK_CORNERS
+
+
+def test_some_panel_always_points_at_the_target():
+    for degrees in range(-180, 181):
+        assert direction_corners(math.radians(degrees), SPREAD)
+
+
+def test_a_target_on_the_edge_between_two_directions_does_not_flicker():
+    just_past = math.radians(26.0)
+    assert direction_corners(just_past, SPREAD) == ("fl",)
+    assert direction_corners(just_past, SPREAD, previous=FRONT_CORNERS) == FRONT_CORNERS

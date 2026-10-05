@@ -43,6 +43,17 @@ LEADING_DEFAULTS = {
     # Whether the signals meant for the person light only the half of the robot
     # that faces them.
     "LED_address_person": True,
+    # --- pointing at the target with the lights, at the end of the route ------
+    # The panels on the target's side blink `LED_direction_color` (7 is yellow)
+    # in `LED_direction_mode` (5 is the fast blink) for `LED_direction_hold`
+    # seconds, and the others show `LED_direction_base_color` (0 is black). A
+    # panel points at the target when the target is within
+    # `LED_direction_spread` of the diagonal the panel faces.
+    "LED_direction_mode": 5,
+    "LED_direction_color": 7,
+    "LED_direction_base_color": 0,
+    "LED_direction_spread": math.radians(67.5),
+    "LED_direction_hold": 6.0,
 }
 
 # The order matters: a key declared in more than one of these takes the value

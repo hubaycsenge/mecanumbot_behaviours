@@ -18,6 +18,7 @@ from mecanumbot_movement_behaviours.ros_interfaces import (
 )
 from mecanumbot_movement_behaviours.targets import (
     LAST_CHECKPOINT,
+    TARGET,
     register_target_keys,
     resolve_target_position,
 )
@@ -34,6 +35,7 @@ from mecanumbot_leading_behaviour.behaviours.led_signals import (
     LEFT,
     RIGHT,
     STRAIGHT,
+    direction_corners,
     facing_corners,
     lead_side,
     progress_fill,
@@ -294,3 +296,93 @@ class LEDLeadSignal(py_trees.behaviour.Behaviour):
         request.progress = self.fill
         request.progress_color = self.progress_color
         return request
+
+
+class LEDTargetDirection(py_trees.behaviour.Behaviour):
+    """
+    Blink the panels that point at a place, for `LED_direction_hold` seconds.
+
+    For telling somebody where the target is while the robot faces *them*: the
+    panels on the target's side blink `LED_direction_color`, and the others
+    show `LED_direction_base_color` (black, so only the pointing ones are lit).
+    Which panels point is `led_signals.direction_corners`.
+
+    SUCCESS when the time is up, with the lights dark again. The service is
+    called when the pointing panels change, which for a robot standing still is
+    once.
+    """
+
+    def __init__(self, name="LEDTargetDirection", target_type=TARGET):
+        super().__init__(name)
+        self.target_type = target_type
+        self.blackboard = self.attach_blackboard_client(name=name)
+        register_target_keys(self.blackboard, LEADING_KEYS)
+        register_param_keys(self.blackboard)
+        self.shown = None
+
+    def setup(self, **kwargs):
+        self.node = kwargs["node"]
+        self.led_client = self.node.create_client(SetLedStatus, LED_SERVICE)
+        self.pose = RobotPoseTracker(self.node)
+        self.logger.info(f"{self.name}: Setup complete")
+
+    def initialise(self):
+        self.mode = int(constant(self.blackboard, "LED_direction_mode"))
+        self.color = int(constant(self.blackboard, "LED_direction_color"))
+        self.base_color = int(constant(self.blackboard, "LED_direction_base_color"))
+        self.spread = float(constant(self.blackboard, "LED_direction_spread"))
+        self.hold = duration(constant(self.blackboard, "LED_direction_hold"))
+        self.start_time = self.node.get_clock().now()
+        self.pointing = ()
+        self.shown = None
+        self.pending_call = None
+
+    def update(self):
+        if self.node.get_clock().now() - self.start_time >= self.hold:
+            self._go_dark()
+            self.node.get_logger().info(f"{self.name}: direction signal completed")
+            return py_trees.common.Status.SUCCESS
+
+        destination = resolve_target_position(
+            self.blackboard, self.target_type, keys=LEADING_KEYS
+        )
+        if self.pose.pose is None or destination is None:
+            self.feedback_message = "waiting for a pose and a target"
+            return py_trees.common.Status.RUNNING
+
+        self.pointing = direction_corners(
+            relative_bearing(self.pose, destination), self.spread, self.pointing
+        )
+        self.feedback_message = f"target towards {'+'.join(self.pointing)}"
+        if self.pending_call is not None:
+            if not self.pending_call.done():
+                return py_trees.common.Status.RUNNING
+            self.pending_call = None
+        if self.pointing != self.shown:
+            self.pending_call = self.led_client.call_async(self._setting())
+            self.shown = self.pointing
+        return py_trees.common.Status.RUNNING
+
+    def terminate(self, new_status):
+        if new_status == py_trees.common.Status.INVALID:
+            self._go_dark()
+
+    def _setting(self):
+        request = SetLedStatus.Request()
+        for corner in CORNERS:
+            pointing = corner in self.pointing
+            setattr(request, f"{corner}_mode", self.mode)
+            setattr(
+                request, f"{corner}_color", self.color if pointing else self.base_color
+            )
+        return request
+
+    def _go_dark(self):
+        if self.shown is None:
+            return
+        self.shown = None
+        request = SetLedStatus.Request()
+        for corner in CORNERS:
+            setattr(request, f"{corner}_mode", OFF_MODE)
+            setattr(request, f"{corner}_color", OFF_COLOR)
+        self.led_client.call_async(request)

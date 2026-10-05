@@ -162,6 +162,12 @@ MOVEMENT_DEFAULTS = {
     "body_gaze_deadband": 0.1,
     "body_gaze_min_interval": 0.4,
     "body_gaze_release_delay": 1.0,
+    # A body this much further off [m] than the one the head is on is only
+    # followed once it has been the nearest for this long [s], so a person who
+    # drops out of the detections for a moment does not make the head nod to
+    # whatever stands behind them.
+    "body_gaze_switch_jump": 0.8,
+    "body_gaze_switch_delay": 2.0,
     # How old the LiDAR's candidate list may be.
     "body_gaze_candidate_timeout": 0.5,
     # The band of heights [m] the detector needs of each kind of body, hips to
@@ -201,6 +207,8 @@ BODY_GAZE_SETTINGS = {
     "deadband": "body_gaze_deadband",
     "min_interval": "body_gaze_min_interval",
     "release_delay": "body_gaze_release_delay",
+    "switch_jump": "body_gaze_switch_jump",
+    "switch_delay": "body_gaze_switch_delay",
 }
 
 

@@ -230,6 +230,40 @@ class TestController:
         assert gaze.update(2.0, ROBOT, [], [], REST, pos) == REST
         assert "seeking pose" in gaze.reason
 
+    def test_a_person_dropping_out_does_not_send_the_head_to_whoever_is_behind(self):
+        # The LED-condition run of 2026-10-05: a person at 0.8 m, something at
+        # 3.1 m behind them, and the near one missing for a second at a time.
+        gaze = BodyGazeController()
+        near, far = [(0.8, 0.0)], [(3.1, 0.0)]
+        pos = gaze.update(0.0, ROBOT, near, far, REST, REST)
+        assert pos > REST + 0.5
+        assert gaze.update(1.0, ROBOT, [], far, REST, pos) is None
+        assert gaze.update(1.8, ROBOT, [], far, REST, pos) is None
+        assert gaze.update(2.2, ROBOT, near, far, REST, pos) is None
+
+    def test_a_further_body_is_followed_once_the_near_one_has_really_gone(self):
+        gaze = BodyGazeController()
+        near, far = [(0.8, 0.0)], [(3.1, 0.0)]
+        pos = gaze.update(0.0, ROBOT, near, far, REST, REST)
+        assert gaze.update(1.0, ROBOT, [], far, REST, pos) is None
+        lowered = gaze.update(1.0 + SETTINGS.switch_delay, ROBOT, [], far, REST, pos)
+        assert lowered < pos - 0.5
+
+    def test_a_nearer_body_is_followed_at_once(self):
+        gaze = BodyGazeController()
+        pos = gaze.update(0.0, ROBOT, [], [(3.1, 0.0)], REST, REST - 1.0)
+        assert gaze.update(1.0, ROBOT, [(0.8, 0.0)], [(3.1, 0.0)], REST, pos) > pos + 0.5
+
+    def test_a_person_walking_away_is_followed_all_the_way(self):
+        gaze = BodyGazeController()
+        pos = gaze.update(0.0, ROBOT, [(0.8, 0.0)], [], REST, REST)
+        now, distance = 0.0, 0.8
+        while distance < 3.0:
+            now, distance = now + 0.5, distance + 0.5
+            moved = gaze.update(now, ROBOT, [(distance, 0.0)], [], REST, pos)
+            pos = pos if moved is None else moved
+        assert pos < REST + 0.2
+
     def test_a_head_never_moved_is_taken_to_the_seeking_pose(self):
         assert BodyGazeController().update(0.0, ROBOT, [], [], REST, None) == REST
 

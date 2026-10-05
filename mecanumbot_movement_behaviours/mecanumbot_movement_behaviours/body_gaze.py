@@ -218,6 +218,16 @@ class GazeSettings:
     # Seconds with nothing in view before the head goes back to the seeking
     # pose, so a target that drops out for one scan does not make it nod.
     release_delay: float = 1.0
+    # A target more than `switch_jump` metres further off than the one the
+    # head is on is another body, and it is only followed once it has been the
+    # nearest for `switch_delay` seconds. A person at arm's length drops out of
+    # the detections for a second at a time, and without this the head went
+    # down to whatever stood behind them and straight back up, every few
+    # seconds (the LED-condition run of 2026-10-05: 7.7 -> 6.5 -> 7.7 between a
+    # person at 0.8 m and a candidate at 3.1 m). A nearer body is followed at
+    # once: that is the one about to leave the top of the frame.
+    switch_jump: float = 0.8
+    switch_delay: float = 2.0
 
 
 def tilt_interval(neck, target, frame_margin):
@@ -355,9 +365,18 @@ class BodyGazeController:
         self.reason = ""
         self._last_command = None
         self._last_target = None
+        # How far off the body the head is on stands, and since when a further
+        # one has been the nearest instead.
+        self._followed_distance = None
+        self._further_since = None
 
     def desired(self, robot, people, candidates):
         """Return `(neck position, why)` for what is in view, or `(None, "")`."""
+        pos, why, _ = self._desired(robot, people, candidates)
+        return pos, why
+
+    def _desired(self, robot, people, candidates):
+        """Return `(neck position, why, distance of the first target)`."""
         targets = gaze_targets(
             robot,
             people,
@@ -368,11 +387,21 @@ class BodyGazeController:
             self.settings,
         )
         if not targets:
-            return None, ""
+            return None, "", None
         tilt = choose_tilt(self.neck, targets, self.settings.frame_margin)
         pos = self.neck.pos(tilt)
         pos = max(self.settings.min_pos, min(self.settings.max_pos, pos))
-        return round(pos, 2), targets[0].label
+        return round(pos, 2), targets[0].label, targets[0].distance
+
+    def _is_passing_switch(self, now, distance):
+        """Say whether a further body has not yet been the nearest for long enough."""
+        followed = self._followed_distance
+        if followed is None or distance - followed <= self.settings.switch_jump:
+            self._further_since = None
+            return False
+        if self._further_since is None:
+            self._further_since = now
+        return now - self._further_since < self.settings.switch_delay
 
     def update(self, now, robot, people, candidates, rest_pos, current_pos):
         """
@@ -384,7 +413,7 @@ class BodyGazeController:
         """
         if robot is None:
             return None
-        wanted, why = self.desired(robot, people, candidates)
+        wanted, why, distance = self._desired(robot, people, candidates)
         if wanted is None:
             held = self._last_target is not None and (
                 now - self._last_target < self.settings.release_delay
@@ -392,8 +421,14 @@ class BodyGazeController:
             if held:
                 return None
             wanted, why = float(rest_pos), "nothing in view, seeking pose"
+            self._followed_distance = None
+            self._further_since = None
         else:
             self._last_target = now
+            if self._is_passing_switch(now, distance):
+                return None
+            self._followed_distance = distance
+            self._further_since = None
 
         if current_pos is not None and (
             abs(wanted - float(current_pos)) < self.settings.deadband

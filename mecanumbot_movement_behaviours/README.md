@@ -214,6 +214,7 @@ while it is down. The next `look("seek")` hands it back.
 | `body_gaze_min_pos` / `_max_pos` | `5.5` / `8.2` | The neck positions the gaze may command. |
 | `body_gaze_deadband` / `_min_interval` | `0.1` / `0.4` | Smallest change worth a command (`0.1` is ~3°) and the shortest time between two [s]. |
 | `body_gaze_release_delay` | `1.0` | Seconds with nothing in view before the head returns to `neck_seek_pos`. |
+| `body_gaze_switch_jump`, `body_gaze_switch_delay` | `0.8`, `2.0` | A body more than this many metres further off than the one the head is on is only followed once it has been the nearest for this many seconds, so a near person dropping out of the detections for a moment does not make the head nod to whatever stands behind them. A nearer body is followed at once. |
 | `body_gaze_candidate_timeout` | `0.5` | How old the `lidar_candidates` list may be [s]. |
 | `body_profiles` | standing `0.85–1.80`, chair `0.40–1.30`, bean_bag `0.10–0.75` | `{'body': kind, 'low': .., 'high': ..}` — the heights the detector needs of each kind of body. |
 | `seats` | none | `{'seat': kind, 'x': .., 'y': .., 'radius': ..}` in map coordinates, optionally `'low'` / `'high'`. Lower-case `x`/`y`: `X`/`Y` is a route checkpoint. They belong to a room, so a constants file lists its own. |

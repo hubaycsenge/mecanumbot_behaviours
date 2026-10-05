@@ -19,6 +19,11 @@ The lights are on for the whole drive, not only before and after it: they flow
 the way the robot is going and fill with a second colour as it gets there
 (`LEDLeadSignal`). The signals meant for the person -- asking for attention,
 thanking -- are shown on the half of the robot that faces them.
+
+At the end of the route the robot turns to the target and plays the green
+`indicate_target` signal, then turns to the person and blinks the panels that
+point at the target in yellow (`LEDTargetDirection`): arrived, and it is over
+there.
 """
 
 import py_trees
@@ -27,6 +32,7 @@ from mecanumbot_leading_behaviour.behaviours.LED_behaviours import (
     LEAD_KEYS,
     LEDBehaviourSequence,
     LEDLeadSignal,
+    LEDTargetDirection,
     LevelHead,
 )
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import (
@@ -139,6 +145,18 @@ def create_root(yaml_path=None):
         [LEDLeadSignal(name="LLead", target_type=LAST_CHECKPOINT), drive]
     )
 
+    # --- arrived: turn back to the person and point at the target ------------
+    # Nobody to turn to is not a reason to fail the root and lead the whole
+    # route again; the loop below looks for the person anyway.
+    point_out = py_trees.composites.Sequence(name="PointOutTarget", memory=True)
+    point_out.add_children(
+        [
+            FindPeople(name="FindPersonAtEnd"),
+            TurnToward(name="TurnTowardSubjectAtEnd", target_type=SUBJECT, head=None),
+            LEDTargetDirection(name="LDirection", target_type=TARGET),
+        ]
+    )
+
     root = py_trees.composites.Sequence("ROOT", memory=True)
     root.add_children(
         [
@@ -164,7 +182,11 @@ def create_root(yaml_path=None):
             # root, which finds the human and leads again. The route index is
             # left out because this tree never walks it.
             CheckRobotAtLastCheckpoint(name="CheckRobotAtRouteEnd", by_index=False),
+            TurnToward(name="TurnTowardTargetAtEnd", target_type=TARGET, head=None),
             LEDBehaviourSequence("LShow", "indicate_target"),
+            py_trees.decorators.FailureIsSuccess(
+                name="PointOutIfSomebodyIsThere", child=point_out
+            ),
             py_trees.decorators.Repeat(
                 name="BallOrShowLoop", child=ball_or_show, num_success=-1
             ),

@@ -189,6 +189,8 @@ bottom_up_tree_node:
     body_gaze_deadband: 0.1          # smallest change worth a command (0.1 is ~3 deg)
     body_gaze_min_interval: 0.4      # shortest time between two commands [s]
     body_gaze_release_delay: 1.0     # nothing in view this long -> back to neck_seek_pos [s]
+    body_gaze_switch_jump: 0.8       # a body this much further off than the one in view is another body [m]
+    body_gaze_switch_delay: 2.0      # ...and is only followed after being the nearest this long [s]
     body_gaze_candidate_timeout: 0.5 # how old the LiDAR's candidate list may be [s]
     # The band of heights the pose detector needs of each kind of body, from
     # the hips to the top of the head [m]. A kind left out keeps the packaged
@@ -237,6 +239,14 @@ bottom_up_tree_node:
     LED_lead_direction:          target   # target: flow towards the destination's side when it is off the heading | none: always ahead
     LED_lead_straight_band_deg:  30.0     # Destination within this of the heading counts as ahead [deg]
     LED_address_person:          true     # Attention and thanks light only the half of the robot facing the person
+
+    # At the end of the route, after the green indicate_target signal, the
+    # robot turns to the person and blinks the panels that point at the target.
+    LED_direction_mode: 5              # fast blink
+    LED_direction_color: 7             # yellow, on the panels pointing at the target
+    LED_direction_base_color: 0        # black, on the other panels
+    LED_direction_spread_deg: 67.5     # a panel points when the target is within this of the diagonal it faces
+    LED_direction_hold: 6.0            # how long the signal is shown [s]
 
     LED_indicate_target_seq:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
