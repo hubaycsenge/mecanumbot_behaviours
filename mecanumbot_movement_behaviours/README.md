@@ -43,7 +43,7 @@ created inside the behaviour classes, so a tree that uses one gets them.
 | `ManageSearchCheckpoint` | Walks the patrol index along the route, reversing at either end; sets off towards where the human was last seen. |
 | `CheckSubjectTargetSuccess` | SUCCESS when the subject is within the reached threshold of the target. |
 | `CheckRobotHasBall` | SUCCESS while `/mecanumbot/has_object` is true. |
-| `CheckRobotAtLastCheckpoint` | SUCCESS when the current checkpoint index has reached the last one. |
+| `CheckRobotAtLastCheckpoint` | SUCCESS when the robot stands at the last checkpoint: within the larger of `checkpoint_reached_distance` and `route_stop_distance` of it, plus `route_end_margin`. The route index must also read "last" unless `by_index=False`; on its own the index only says where the robot is heading. |
 
 **How close a goal gets.** `Approach` never aims at its target itself, it aims
 short of it — at the closeness threshold for a human and `route_stop_distance`

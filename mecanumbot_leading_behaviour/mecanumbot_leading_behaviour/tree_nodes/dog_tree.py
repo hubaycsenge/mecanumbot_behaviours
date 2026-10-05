@@ -78,7 +78,6 @@ from mecanumbot_leading_behaviour.behaviours.route_behaviours import (
     Approach,
     CheckRobotAtLastCheckpoint,
     CheckRobotHasBall,
-    CheckSubjectTargetSuccess,
     FollowRoute,
     GlanceBack,
     RelativeTurnPattern,
@@ -234,28 +233,23 @@ def create_root(yaml_path=None):
     # (Lakatos et al. 2025 after Koay et al. 2013: on reaching the ball, orient
     # to the Experimenter, to the ball, to the Experimenter again, until they
     # take it), not once the person already stands at it. The route ends at the
-    # last checkpoint, short of the target, so that is "reached"; the human
-    # having got to the target on their own still counts as well. Showing needs
-    # the human with the robot -- "indicating the target when the subject is
-    # close" -- and a human who is not is dealt with by the check-in.
+    # last checkpoint, short of the target, so that is "reached" -- and it is
+    # the only thing that is: the robot has to be standing there. Until
+    # 2026-10-04 the human being near the target counted as well, and so did
+    # the robot merely heading for the last checkpoint, so it asked for the
+    # ball from the stretch before it. Showing needs the human with the robot
+    # -- "indicating the target when the subject is close" -- and a human who
+    # is not is dealt with by the check-in.
     #
     # Each pass faces the human, asks for attention, then faces the target and
     # makes the gripper gesture; the loop plays it again every cycle, which is
     # the human-target gaze alternation.
-    arrived = py_trees.composites.Selector(name="ArrivedSelector", memory=True)
-    arrived.add_children(
-        [
-            CheckRobotAtLastCheckpoint(name="CheckRobotAtRouteEnd"),
-            CheckSubjectTargetSuccess(name="CheckSubjectNearTarget"),
-        ]
-    )
-
     show_target = py_trees.composites.Sequence(
         name="ShowWhileSubjectCloseSeq", memory=True
     )
     show_target.add_children(
         [
-            arrived,
+            CheckRobotAtLastCheckpoint(name="CheckRobotAtRouteEnd"),
             DogCheckFollowing(name="ShowCheckSubjectWithRobot"),
             TurnToward(name="TurnTowardSubjectShow", target_type=SUBJECT),
             DogBehaviourSequence("DogCatchAttentionShow", "catch_attention"),

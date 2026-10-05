@@ -120,6 +120,12 @@ MOVEMENT_DEFAULTS = {
     # not a reason for another step. `approach_max_steps` caps the walk, so a
     # person who keeps backing off does not lead the robot across the room.
     "approach_arrive_margin": 0.35,
+    # The same allowance for the end of the route: the robot is at the last
+    # checkpoint when it stands within the larger of
+    # `checkpoint_reached_distance` and `route_stop_distance` of it, plus this.
+    # It has to stay above nav2's xy goal tolerance, or a drive nav2 has
+    # finished would not count as arrived and the robot would never show.
+    "route_end_margin": 0.35,
     "approach_max_steps": 6,
     # --- accessory poses -------------------------------------------------------
     # n_pos is the neck-mounted camera tilt (2.0 .. 8.6, larger looks further

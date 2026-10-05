@@ -19,6 +19,7 @@ import math
 import pytest
 
 from mecanumbot_movement_behaviours.geometry import (
+    at_route_end,
     human_is_ahead_on_route,
     resume_checkpoint_index,
     route_progress,
@@ -166,3 +167,35 @@ def test_nobody_to_place_uses_the_robot():
 def test_human_far_down_the_route_moves_it_on_by_one_only():
     """A human in mid-room projects onto the far stretch of the folded route."""
     assert resume_checkpoint_index(ROUTE, on_route(0.19), on_route(2.70), MARGIN) == 2
+
+
+# --- standing at the end of the route ----------------------------------------
+# What the trees ask before the robot may show the target and ask for the ball.
+# The numbers are the Eto constants: checkpoints count as driven past at 0.5 m,
+# a single goal parks 0.5 m short, and nav2 stops within 0.30 m of its goal.
+
+REACHED = 0.5  # checkpoint_reached_distance
+STOP = 0.5  # route_stop_distance
+END_MARGIN = 0.35  # route_end_margin default
+
+
+def test_heading_for_the_last_checkpoint_is_not_standing_at_it():
+    """The route index reads "last" for this whole stretch; the robot is not there."""
+    for distance in (3.0, 1.5, 0.9):
+        assert not at_route_end(distance, REACHED, STOP, END_MARGIN)
+
+
+def test_on_the_last_checkpoint_is_the_end_of_the_route():
+    assert at_route_end(0.0, REACHED, STOP, END_MARGIN)
+    assert at_route_end(REACHED, REACHED, STOP, END_MARGIN)
+
+
+def test_parked_short_by_a_single_goal_is_the_end_of_the_route():
+    """A drive nav2 calls finished must count, or the robot never shows."""
+    assert at_route_end(STOP + 0.30, REACHED, STOP, END_MARGIN)
+
+
+def test_the_larger_of_the_two_distances_is_the_one_that_counts():
+    assert at_route_end(0.7, 0.7, 0.45)
+    assert at_route_end(0.7, 0.45, 0.7)
+    assert not at_route_end(0.71, 0.45, 0.7)

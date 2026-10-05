@@ -23,6 +23,7 @@ from mecanumbot_movement_behaviours.defaults import (
     resolve,
 )
 from mecanumbot_movement_behaviours.geometry import (
+    at_route_end,
     closest_checkpoint_index,
     distance_xy,
     path_progress_sign,
@@ -471,33 +472,67 @@ class FollowRoute(py_trees.behaviour.Behaviour):
 
 
 class CheckRobotAtLastCheckpoint(py_trees.behaviour.Behaviour):
-    """SUCCESS when the robot reached the last checkpoint of the route."""
+    """
+    SUCCESS when the robot stands at the last checkpoint of the route.
+
+    Standing there is a matter of where the robot is (`at_route_end()`), not
+    only of the route index. The index is the checkpoint the robot is heading
+    *for*, so it already reads "last" for the whole of the final stretch -- and
+    from wherever `DogResumeLeading` picks the last checkpoint to lead on to.
+    Until 2026-10-04 the index alone was the test, and the dog tree showed the
+    target, gripper gesture and all, from the checkpoint before the last one.
+
+    `by_index=False` leaves the index out, for a tree that drives to the end of
+    the route in one `Approach` and never walks it.
+    """
 
     KEYS = DEFAULT_KEYS
 
-    def __init__(self, name="CheckRobotAtLastCheckpoint", keys=None):
+    def __init__(self, name="CheckRobotAtLastCheckpoint", by_index=True, keys=None):
         super().__init__(name)
+        self.by_index = by_index
         self.keys = keys or self.KEYS
 
         self.blackboard = self.attach_blackboard_client(name=name)
+        register_param_keys(self.blackboard)
         self.keys.register(
             self.blackboard,
             py_trees.common.Access.READ,
+            "checkpoints",
             "current_checkpoint",
             "max_checkpoint",
         )
 
     def setup(self, **kwargs):
         self.node = kwargs["node"]
+        self.pose = RobotPoseTracker(self.node)
         self.logger.info(f"{self.name}: Setup complete")
         return True
 
     def update(self):
-        current = self.blackboard.get(self.keys.current_checkpoint)
-        last = self.blackboard.get(self.keys.max_checkpoint)
-        self.feedback_message = f"checkpoint {current}/{last}"
-        if current >= last:
-            self.node.get_logger().info(f"{self.name}: robot is at the last checkpoint")
+        if self.by_index:
+            current = self.blackboard.get(self.keys.current_checkpoint)
+            last = self.blackboard.get(self.keys.max_checkpoint)
+            if current < last:
+                self.feedback_message = f"checkpoint {current}/{last}"
+                return py_trees.common.Status.FAILURE
+
+        checkpoints = self.blackboard.get(self.keys.checkpoints)
+        if self.pose.position is None or not checkpoints:
+            self.feedback_message = "no pose or no route to place the robot on"
+            return py_trees.common.Status.FAILURE
+
+        distance = distance_xy(self.pose.position, checkpoints[-1])
+        self.feedback_message = f"{distance:.2f} m from the last checkpoint"
+        if at_route_end(
+            distance,
+            constant(self.blackboard, "checkpoint_reached_distance"),
+            constant(self.blackboard, "route_stop_distance"),
+            constant(self.blackboard, "route_end_margin"),
+        ):
+            self.node.get_logger().info(
+                f"{self.name}: robot is at the last checkpoint ({distance:.2f} m)"
+            )
             return py_trees.common.Status.SUCCESS
         return py_trees.common.Status.FAILURE
 

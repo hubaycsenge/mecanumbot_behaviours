@@ -245,6 +245,19 @@ def approach_arrived(distance, stop_threshold, margin=0.0):
     return distance <= stop_threshold + margin
 
 
+def at_route_end(distance, reached_distance, stop_distance, margin=0.0):
+    """
+    Say whether a robot `distance` metres from the last checkpoint stands at it.
+
+    A drive to the end of the route finishes in one of two places: on the
+    checkpoint, within `reached_distance` of it, or parked `stop_distance` short
+    of it by a single goal. Either is the end of the route; `margin` absorbs the
+    goal tolerance nav2 parks within, so a drive nav2 calls finished is never
+    asked for again. Anything further out is a robot still on its way.
+    """
+    return distance <= max(reached_distance, stop_distance) + margin
+
+
 def pose_to_goal(
     object_position, robot_pose, stop_threshold=0.3, mode="exact", go_threshold=1.0
 ):

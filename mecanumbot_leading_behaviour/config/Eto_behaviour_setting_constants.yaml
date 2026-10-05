@@ -19,8 +19,8 @@
 
 bottom_up_tree_node:
   ros__parameters:
-    init_delay:                  1.5      # Delay before the tree starts acting [s]
-    robot_closeness_threshold:   0.75     # Minimum approach distance; below this the robot risks hitting the subject [m]
+    init_delay:                  0.5      # Delay before the tree starts acting [s]
+    robot_closeness_threshold:   1.25     # Minimum approach distance; below this the robot risks hitting the subject [m]
     robot_approach_distance:     1.0      # How far the robot advances in one step [m]
     target_reached_threshold:    1.5      # Distance between target and subject that counts as arrived [m]
     visibility_time_threshold:   2.0      # Age of the last subject fix before it is stale [s]
@@ -41,7 +41,7 @@ bottom_up_tree_node:
     setup_timeout: 15.0
 
     # ----- Seeing people -------------------------------------------------------
-    sight_timeout: 1.0
+    sight_timeout: 3.0
 
     # ----- Rotation profile ----------------------------------------------------
     turn_max_speed: 0.6
@@ -107,8 +107,8 @@ bottom_up_tree_node:
     show_turn_delay: 2.0
 
     # ----- Accessory poses -----------------------------------------------------
-    neck_seek_pos: 6.0
-    neck_level_pos: 6.0
+    neck_seek_pos: 6.5
+    neck_level_pos: 6.5
     gripper_left_neutral: 6.83
     gripper_right_neutral: 3.36
     # A face at the bottom of the camera frame while searching tilts the head
@@ -174,17 +174,37 @@ bottom_up_tree_node:
     LED_start_setting:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
 
+    # What the lights show while the robot drives to the target. They never go
+    # dark on the way: the light flows, and the panels fill with
+    # LED_lead_progress_color, one LED per eighth of the way driven (the fill
+    # needs the Nano firmware that draws it; older firmware shows the flow only).
+    #
+    # The four strips cut the corners of the top plate, so a wave can run from
+    # the rear tip round both sides to the front tip. "straight" is that:
+    # wave right on fl and br, wave left on fr and bl. "left" and "right" send
+    # all four the same way, towards the side the destination lies on.
+    LED_lead_straight:
+      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':2, 'color':1},'bl':{'mode':2, 'color':1},'br':{'mode':1, 'color':1}}"  # white, flowing ahead
+    LED_lead_left:
+      - "{'fl':{'mode':2, 'color':1},'fr':{'mode':2, 'color':1},'bl':{'mode':2, 'color':1},'br':{'mode':2, 'color':1}}"  # white wave left
+    LED_lead_right:
+      - "{'fl':{'mode':1, 'color':1},'fr':{'mode':1, 'color':1},'bl':{'mode':1, 'color':1},'br':{'mode':1, 'color':1}}"  # white wave right
+    LED_lead_progress_color:     2        # Colour the panels fill with as the drive progresses (green)
+    LED_lead_direction:          target   # target: flow towards the destination's side when it is off the heading | none: always ahead
+    LED_lead_straight_band_deg:  30.0     # Destination within this of the heading counts as ahead [deg]
+    LED_address_person:          true     # Attention and thanks light only the half of the robot facing the person
+
     LED_indicate_target_seq:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
-      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}"  # white slow blink
+      - "{'fl':{'mode':3, 'color':2},'fr':{'mode':3, 'color':2},'bl':{'mode':3, 'color':2},'br':{'mode':3, 'color':2}}"  # green pulse
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
-      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}"  # white slow blink
+      - "{'fl':{'mode':3, 'color':2},'fr':{'mode':3, 'color':2},'bl':{'mode':3, 'color':2},'br':{'mode':3, 'color':2}}"  # green pulse
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
     LED_indicate_target_times:
       - 0.5  # black solid
-      - 1.5  # white slow blink
+      - 1.5  # green pulse
       - 0.5  # black solid
-      - 1.5  # white slow blink
+      - 1.5  # green pulse
       - 0.5  # black solid
 
     LED_indicate_close_target_seq:
@@ -203,14 +223,14 @@ bottom_up_tree_node:
       - 0.5  # (surplus, never read)
 
     LED_catch_attention_seq:
-      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}"  # white slow blink
+      - "{'fl':{'mode':5, 'color':7},'fr':{'mode':5, 'color':7},'bl':{'mode':5, 'color':7},'br':{'mode':5, 'color':7}}"  # yellow fast blink
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
-      - "{'fl':{'mode':6, 'color':1},'fr':{'mode':6, 'color':1},'bl':{'mode':6, 'color':1},'br':{'mode':6, 'color':1}}"  # white slow blink
+      - "{'fl':{'mode':5, 'color':7},'fr':{'mode':5, 'color':7},'bl':{'mode':5, 'color':7},'br':{'mode':5, 'color':7}}"  # yellow fast blink
       - "{'fl':{'mode':1, 'color':0},'fr':{'mode':1, 'color':0},'bl':{'mode':1, 'color':0},'br':{'mode':1, 'color':0}}"  # black wave right
     LED_catch_attention_times:
-      - 1.5  # white slow blink
+      - 1.5  # yellow fast blink
       - 0.5  # black solid
-      - 1.5  # white slow blink
+      - 1.5  # yellow fast blink
       - 0.5  # black wave right
 
     LED_thank_seq:
