@@ -373,6 +373,35 @@ Only its FAILURE starts the recovery patrol. The robot does not go hunting
 through the building for somebody it has not properly looked for yet, and a
 human who is merely two metres behind is fetched rather than searched for.
 
+#### Where the head looks while it is lifted
+
+In this tree, and in this tree only, a lifted head is not held at `neck_seek_pos`
+but pointed at the body the LiDAR says should be there
+(`mecanumbot_movement_behaviours/body_gaze.py`; its README has the mechanism).
+The camera sees 30° top to bottom from 0.23 m up, so one tilt cannot show it
+both a standing person at arm's length and somebody on a bean bag: in the runs of
+2026-09-30 the robot looked at a pair of jeans from 0.7 m and turned past a
+person on the bean bag for a minute and a half. Now the nearest thing the LiDAR
+sees in front of the camera that might be a person decides the tilt — closer
+means further up — unless it is on one of the room's `seats`, where a body is a
+sitting one and the head comes down for it. It applies to every behaviour that
+lifts the head: the scan, the wait, the look back, the turn onto the human and
+the walk up to them. The gesture scripts still move the neck themselves, and the
+head is levelled for driving as before.
+
+The `seats` in `Eto_behaviour_setting_constants.yaml` — a bean bag at
+(−0.80, 2.20) and a chair at (1.15, 3.35), map coordinates — were **read off the
+bags of 2026-09-30**, from where a seated person was seen and how high their
+shoulders came out (0.4 m and 0.95 m). They are a starting point: check them
+against the room, and move them when the furniture moves. The other map's file
+lists none.
+
+**This is a head movement the human can see**, and the LED and control trees do
+not have it: they park the head (`head=None`) so that the comparison conditions
+carry no head gestures, and they do not install the gaze. The cost is that those
+two conditions still look for people with one fixed tilt. `body_gaze_enabled:
+false` in the constants file switches it off here too.
+
 ### `LED_tree.py` logic
 
 1. Load constants.
@@ -456,6 +485,8 @@ settles before the first tick.
 | Getting them back | `resume_passed_margin`, `recover_retries`                                                                         | `DogResumeLeading`, the dog tree's `Retry`       |
 | Pacing            | `thank_delay`, `show_turn_delay`                                                                                  | the dog tree's `ConfiguredTimer`s                |
 | Accessory poses   | `neck_seek_pos`, `neck_level_pos`, `gripper_left_neutral`, `gripper_right_neutral`                                | `AccessoryCommander`                             |
+| Looking down      | `look_down_step`, `look_down_hold`, `look_down_cooldown`, `look_down_cue_age`                                    | `HeadLookDown` in `WaitForPerson`, `GlanceBack`  |
+| Body gaze (dog)   | `body_gaze_enabled`, `body_gaze_*`, `body_profiles`, `seats`                                                     | `BodyGaze`, started by the dog tree's loader     |
 
 Angles are declared in **degrees** with a `_deg` suffix and reach the blackboard
 in **radians** under the name without it — the convention

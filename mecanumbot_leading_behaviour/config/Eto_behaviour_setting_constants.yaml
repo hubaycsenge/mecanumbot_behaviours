@@ -119,6 +119,50 @@ bottom_up_tree_node:
     look_down_cooldown: 4.0
     look_down_cue_age: 0.5
 
+    # ----- The head following the body the LiDAR expects (dog condition) ------
+    # While the head is lifted to look for or at the human it is not held at
+    # neck_seek_pos but tilted to whichever height shows the body the LiDAR
+    # says should be there: nearer means further up, and a body on one of the
+    # seats below is looked for at sitting height. neck_seek_pos is where it
+    # rests with nothing in view. Only the dog-inspired tree does this; the LED
+    # and control trees keep the head parked. false here switches it off there
+    # too, and the head goes back to one fixed seeking pose.
+    body_gaze_enabled: true
+    body_gaze_period: 0.2            # seconds between two looks at what is in view
+    body_gaze_max_range: 4.5         # bodies further off than this are not tilted for [m]
+    body_gaze_view_margin_deg: 12.0  # attended to this far beyond the edge of the picture
+    body_gaze_frame_margin_deg: 3.0  # kept clear above and below a body in the frame
+    body_gaze_min_pos: 5.5           # the neck positions the gaze may command
+    body_gaze_max_pos: 8.2
+    body_gaze_deadband: 0.1          # smallest change worth a command (0.1 is ~3 deg)
+    body_gaze_min_interval: 0.4      # shortest time between two commands [s]
+    body_gaze_release_delay: 1.0     # nothing in view this long -> back to neck_seek_pos [s]
+    body_gaze_candidate_timeout: 0.5 # how old the LiDAR's candidate list may be [s]
+    # The band of heights the pose detector needs of each kind of body, from
+    # the hips to the top of the head [m]. A kind left out keeps the packaged
+    # band; `standing` is anybody not on a seat.
+    body_profiles:
+      - "{'body':'standing', 'low':0.85, 'high':1.80}"
+      - "{'body':'chair',    'low':0.40, 'high':1.30}"
+      - "{'body':'bean_bag', 'low':0.10, 'high':0.75}"
+    # Known places in THIS map where a body is lower than a standing one. Both
+    # were read off the bags of 2026-09-30 in mecanumbot_directories/bag_debug
+    # and should be checked against the room before a trial:
+    #   bean bag -- the person the robot turned past for a minute and a half in
+    #     the 08:46 run sat here; the LiDAR had them at (-0.60, 2.33) and their
+    #     shoulders came out at ~0.4 m. The map has a bean-bag-sized ring half
+    #     a metre away at (-1.0, 2.0), so it has moved since it was mapped and
+    #     the radius is wide enough to cover both places.
+    #   chair -- the person sitting against the east wall in the 09:02 run
+    #     (shoulders ~0.95 m), whose legs the LiDAR saw at about (1.15, 3.35),
+    #     0.3 m in front of the wall.
+    # x, y are map coordinates in lower case: 'X'/'Y' would be read as a route
+    # checkpoint. radius is how far from the point still counts as on the seat.
+    # 'low' and 'high' on an entry override its body profile.
+    seats:
+      - "{'seat':'bean_bag', 'x':-0.80, 'y':2.20, 'radius':0.70}"
+      - "{'seat':'chair',    'x':1.15,  'y':3.35, 'radius':0.60}"
+
     # Route. [0] is the start position, [-1] is the target.
     Dog_checkpoints:
       - "{'X':1.35244, 'Y':4.01954, 'Z':0.0}"  # start

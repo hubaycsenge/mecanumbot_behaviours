@@ -32,6 +32,8 @@ CMD_VEL_TOPIC = "/cmd_vel"
 ACCESSORY_TOPIC = "/cmd_accessory_pos"
 # Bearing of a face at the bottom of the camera frame; see look_down.py.
 LOW_HEAD_TOPIC = "/mecanumbot/cam_people_detections/low_head"
+# What the LiDAR sees that might be a person, in the map; see body_gaze.py.
+CANDIDATES_TOPIC = "/mecanumbot/lidar_candidates"
 NAV2_STATUS_TOPIC = "/navigate_to_pose/_action/status"
 NAV2_ROUTE_STATUS_TOPIC = "/navigate_through_poses/_action/status"
 
@@ -529,6 +531,12 @@ class AccessoryCommander:
     """
 
     _last_neck_pos = None
+    # What the head was last *asked for*: `HEAD_SEEK` or `HEAD_LEVEL` after a
+    # `look()`, None once anything else has placed it -- a gesture script, a
+    # behaviour holding it at a tilt of its own. `BodyGaze` steers the head
+    # only while this is `HEAD_SEEK`, which is what keeps it from fighting a
+    # gesture for the neck.
+    _head_mode = None
 
     seek_pos = NECK_SEEK_POS
     level_pos = NECK_LEVEL_POS
@@ -551,13 +559,23 @@ class AccessoryCommander:
         self.node = node
         self._publisher = node.create_publisher(AccessMotorCmd, ACCESSORY_TOPIC, 10)
 
-    def send(self, n_pos, gl_pos=None, gr_pos=None):
+    def send(self, n_pos, gl_pos=None, gr_pos=None, keep_mode=False):
+        """
+        Command the neck and the grippers.
+
+        A caller that places the neck itself takes the head out of whichever
+        named pose it was in; `keep_mode` is for the ones that move it *within*
+        a named pose -- the gaze and the look-down both adjust a seeking head
+        without it ceasing to be one.
+        """
         cmd = AccessMotorCmd()
         cmd.n_pos = float(n_pos)
         cmd.gl_pos = float(self.gripper_left if gl_pos is None else gl_pos)
         cmd.gr_pos = float(self.gripper_right if gr_pos is None else gr_pos)
         self._publisher.publish(cmd)
         AccessoryCommander._last_neck_pos = cmd.n_pos
+        if not keep_mode:
+            AccessoryCommander._head_mode = None
 
     def look(self, where):
         """
@@ -565,13 +583,23 @@ class AccessoryCommander:
 
         `HEAD_SEEK` lifts the head (contact seeking + better people detection),
         `HEAD_LEVEL` returns it to the neutral driving gaze.
+
+        Where `BodyGaze` is running, seeking is not one pose but whichever tilt
+        shows the body the LiDAR expects, so `HEAD_SEEK` only hands the head
+        over to it: a head already somewhere stays there until the gaze moves
+        it, rather than dropping to `seek_pos` and being raised again a moment
+        later.
         """
         if where is None:
+            return
+        AccessoryCommander._head_mode = where
+        gaze_has_it = BodyGaze.running() and self._last_neck_pos is not None
+        if where == HEAD_SEEK and gaze_has_it:
             return
         n_pos = self.seek_pos if where == HEAD_SEEK else self.level_pos
         if self._last_neck_pos is not None and abs(self._last_neck_pos - n_pos) < 1e-3:
             return
-        self.send(n_pos)
+        self.send(n_pos, keep_mode=True)
         self.node.get_logger().info(f"Head -> {where} (n_pos={n_pos})")
 
 
@@ -611,7 +639,7 @@ class HeadLookDown:
         )
         if pos is None:
             return
-        self.accessories.send(pos)
+        self.accessories.send(pos, keep_mode=True)
         if self._state.lowered:
             self.node.get_logger().info(
                 f"Head -> down onto a face at the bottom of the frame (n_pos={pos})"
@@ -623,11 +651,112 @@ class HeadLookDown:
         """Raise the head if a cue lowered it; call when the search ends."""
         pos = self._state.release(now_seconds(self.node))
         if pos is not None:
-            self.accessories.send(pos)
+            self.accessories.send(pos, keep_mode=True)
             self.node.get_logger().info(f"Head -> back up (n_pos={pos})")
 
     def _callback(self, msg):
         self._cue_time = now_seconds(self.node)
+
+
+class CandidateTracker:
+    """
+    Latest `lidar_candidates`: where the LiDAR sees something person-sized.
+
+    The fusion node publishes one message per scan, empty when it sees nothing,
+    so the age of the last message says whether perception is running -- a
+    stale list is no list.
+    """
+
+    def __init__(self, node, timeout=0.5):
+        self.node = node
+        self.timeout = float(timeout)
+        self._points = []
+        self._received = None
+        self._subscription = node.create_subscription(
+            PoseArray, CANDIDATES_TOPIC, self._callback, 10
+        )
+
+    def points(self):
+        """Return the fresh candidates as `(x, y)` map points."""
+        if self._received is None:
+            return []
+        if now_seconds(self.node) - self._received > self.timeout:
+            return []
+        return list(self._points)
+
+    def _callback(self, msg):
+        self._points = [(pose.position.x, pose.position.y) for pose in msg.poses]
+        self._received = now_seconds(self.node)
+
+
+class BodyGaze:
+    """
+    Keep a seeking head at the height of the body the LiDAR expects.
+
+    The ROS end of `body_gaze.BodyGazeController`. One per robot, started once
+    by the constants loader of a tree that wants it (`defaults.start_body_gaze`)
+    and then run from a timer on the tree's node rather than from any one
+    behaviour: looking for somebody is spread over a dozen of them -- the scan,
+    the wait, the glance back, the turn towards the human, the walk up to them
+    -- and all of those say `look(HEAD_SEEK)` and nothing more.
+
+    It only ever moves a head that is in `HEAD_SEEK`. A gesture script takes
+    the neck by commanding it directly, a route turn by asking for
+    `HEAD_LEVEL`, and the look-down by being down; in all three the timer does
+    nothing until some behaviour asks for the seeking head again.
+    """
+
+    _instance = None
+
+    def __init__(
+        self, node, controller, period=0.2, sight_timeout=1.0, candidate_timeout=0.5
+    ):
+        self.node = node
+        self.controller = controller
+        self.accessories = AccessoryCommander(node)
+        self.pose = RobotPoseTracker(node)
+        self.people = PeopleTracker(node, sight_timeout)
+        self.candidates = CandidateTracker(node, candidate_timeout)
+        self._timer = node.create_timer(float(period), self._tick)
+
+    @classmethod
+    def start(cls, node, controller, **kwargs):
+        """Start the gaze on `node`, or hand back the one already running."""
+        if cls._instance is None:
+            cls._instance = cls(node, controller, **kwargs)
+        return cls._instance
+
+    @classmethod
+    def running(cls):
+        """Say whether a seeking head is being steered."""
+        return cls._instance is not None
+
+    def _robot(self):
+        position, yaw = self.pose.position, self.pose.yaw
+        if position is None:
+            return None
+        return position.x, position.y, yaw
+
+    def _tick(self):
+        if AccessoryCommander._head_mode != HEAD_SEEK or HeadLookDown.active():
+            return
+        people = []
+        if self.people.has_fresh_detection():
+            people = [(pose.position.x, pose.position.y) for pose in self.people.poses]
+        pos = self.controller.update(
+            now_seconds(self.node),
+            self._robot(),
+            people,
+            self.candidates.points(),
+            AccessoryCommander.seek_pos,
+            AccessoryCommander._last_neck_pos,
+        )
+        if pos is None:
+            return
+        self.accessories.send(pos, keep_mode=True)
+        self.node.get_logger().info(
+            f"Head -> n_pos={pos:.2f} for {self.controller.reason}"
+        )
 
 
 def duration(seconds):
