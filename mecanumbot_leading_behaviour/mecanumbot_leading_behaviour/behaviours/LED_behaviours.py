@@ -12,6 +12,7 @@ from mecanumbot_movement_behaviours.geometry import (
 from mecanumbot_movement_behaviours.ros_interfaces import (
     HEAD_LEVEL,
     AccessoryCommander,
+    PeopleTracker,
     RobotPoseTracker,
     SubjectPoseTracker,
     duration,
@@ -207,6 +208,53 @@ class LevelHead(py_trees.behaviour.Behaviour):
     def update(self):
         self.accessories.look(HEAD_LEVEL)
         return py_trees.common.Status.SUCCESS
+
+
+class CheckSubjectNearRobot(py_trees.behaviour.Behaviour):
+    """
+    SUCCESS when a person in view stands within the following threshold of the robot.
+
+    The threshold is `Dog_following_max_threshold`, the same number the
+    dog-inspired tree asks "is the human with the robot" with before it shows
+    the target, so the two conditions agree on what near means and the web
+    GUI's behaviour page sets it for both. What decides which signal the person gets at the end of the route. Somebody
+    this close can read which panels are lit, so they are shown where the
+    target is; somebody further off, or nobody in view, is a person the robot
+    goes to and asks for attention first. FAILURE in both of those cases, and
+    never RUNNING: it is a question, not a wait.
+    """
+
+    def __init__(self, name="CheckSubjectNearRobot"):
+        super().__init__(name)
+        self.blackboard = self.attach_blackboard_client(name=name)
+        register_param_keys(self.blackboard)
+        self.blackboard.register_key(
+            "Dog_following_max_threshold", access=py_trees.common.Access.READ
+        )
+
+    def setup(self, **kwargs):
+        self.node = kwargs["node"]
+        self.pose = RobotPoseTracker(self.node)
+        self.people = PeopleTracker(
+            self.node, float(constant(self.blackboard, "sight_timeout"))
+        )
+        self.logger.info(f"{self.name}: Setup complete")
+
+    def update(self):
+        near = float(self.blackboard.Dog_following_max_threshold)
+        if self.pose.pose is None or not self.people.has_fresh_detection():
+            self.node.get_logger().info(f"{self.name}: nobody in view")
+            return py_trees.common.Status.FAILURE
+        distance = distance_xy(self.pose.position, self.people.last_seen_pose.position)
+        if distance <= near:
+            self.node.get_logger().info(
+                f"{self.name}: person is near ({distance:.2f} m <= {near:.2f} m)"
+            )
+            return py_trees.common.Status.SUCCESS
+        self.node.get_logger().info(
+            f"{self.name}: person is {distance:.2f} m away (near is {near:.2f} m)"
+        )
+        return py_trees.common.Status.FAILURE
 
 
 class LEDLeadSignal(py_trees.behaviour.Behaviour):

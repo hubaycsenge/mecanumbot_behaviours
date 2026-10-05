@@ -418,18 +418,23 @@ file switches the gaze off in both trees.
 
 1. Load constants.
 2. `SeekOrFind` selector — approach the subject, or run lost recovery then approach.
-3. Turn toward the subject and catch attention with the LEDs, then park the head
-   (`LevelHead`): up to here the body gaze has been tilting it to the person.
+3. Turn toward the subject, park the head (`LevelHead`: up to here the body gaze has
+   been tilting it to the person) and catch attention with the LEDs.
 4. Approach the target **with the lights running** (`LeadWithLights`, a parallel of the
    drive and `LEDLeadSignal` that ends when the drive does). There, turn to the target
-   and play the green `indicate_target` signal; then find the person, turn to them, and
-   blink the panels that point at the target in yellow for `LED_direction_hold` seconds
-   (`LEDTargetDirection`, `LED_direction_*`; the other panels stay dark). With nobody to
-   turn to, the pointing is skipped rather than failing the root.
+   (the short way round) and play the green `indicate_target` signal. Then address
+   the person, by how far away they are. Within `Dog_following_max_threshold` of the
+   robot (the same threshold the dog tree shows the target on, settable on the web
+   GUI's behaviour page): turn to them, park the head and blink the panels that point at the target in
+   yellow for `LED_direction_hold` seconds (`LEDTargetDirection`, `LED_direction_*`; the
+   other panels stay dark). Further off or out of view: go to them — searching the
+   route first if nobody is in view — face them and play `catch_attention` on all four
+   panels. Either way, turn back to the target and play the green signal again.
 5. Endless `BallOrShowLoop`, asking about the ball first on every cycle (as the dog
    tree does): while the robot holds the ball, find the person and play the thank
-   pattern; otherwise play the near-target indication while the subject is at the
-   target. Neither applying restarts the root (steps 2–4). Until 2026-09-21 the ball
+   pattern; otherwise, while the subject is at the target, point at it with the lights
+   (the direction signal, where this used to ask for attention), turn to it and play
+   the near-target indication. Neither applying restarts the root (steps 2–4). Until 2026-09-21 the ball
    reaction came *after* the show loop, which fails whenever the subject is not at the
    target and so restarted the root every time — the robot never thanked for the ball.
 
@@ -448,7 +453,7 @@ checks whether it is followed):
 | Direction | The light flows ahead — from the rear tip round both sides to the front, which the diagonal strips allow — and towards the destination's side once that is more than `LED_lead_straight_band_deg` off the heading. | `LED_lead_straight` / `_left` / `_right`, `LED_lead_direction` |
 | Progress | Each panel fills with `LED_lead_progress_color`, one LED per eighth of the straight-line distance to where the robot parks. The fill never goes back. | `led_signals.progress_fill`, drawn by the Nano firmware |
 | Conventional colour | Green for progress and arrival, yellow for attention. | the `*_seq` scripts |
-| Addressee | Attention and thanks light only the half of the robot facing the person. | `LEDBehaviourSequence(addressed=True)`, `LED_address_person` |
+| Addressee | The thank-you lights only the half of the robot facing the person. Asking for attention uses all four panels (it was addressed too until 2026-10-05, when two yellow panels turned out to be indistinguishable from the direction signal). | `LEDBehaviourSequence(addressed=True)`, `LED_address_person` |
 
 `LED_lead_direction: none` keeps the light flowing ahead throughout. The direction is
 the bearing of the drive's destination, not of the path nav2 plans, so round an

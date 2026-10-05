@@ -166,6 +166,9 @@ bottom_up_tree_node:
     LED_direction_base_color: 0        # black, on the other panels
     LED_direction_spread_deg: 67.5     # a panel points when the target is within this of the diagonal it faces
     LED_direction_hold: 6.0            # how long the signal is shown [s]
+    # Who gets it: a person within Dog_following_max_threshold of the robot
+    # (top of this file). Further off, the robot goes to them and catches
+    # attention instead.
 
     # Route. [0] is the start position, [-1] is the target.
     Dog_checkpoints:

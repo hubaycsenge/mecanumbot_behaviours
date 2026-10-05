@@ -238,7 +238,7 @@ bottom_up_tree_node:
     LED_lead_progress_color:     2        # Colour the panels fill with as the drive progresses (green)
     LED_lead_direction:          target   # target: flow towards the destination's side when it is off the heading | none: always ahead
     LED_lead_straight_band_deg:  30.0     # Destination within this of the heading counts as ahead [deg]
-    LED_address_person:          true     # Attention and thanks light only the half of the robot facing the person
+    LED_address_person:          true     # The thank-you lights only the half of the robot facing the person
 
     # At the end of the route, after the green indicate_target signal, the
     # robot turns to the person and blinks the panels that point at the target.
@@ -247,6 +247,9 @@ bottom_up_tree_node:
     LED_direction_base_color: 0        # black, on the other panels
     LED_direction_spread_deg: 67.5     # a panel points when the target is within this of the diagonal it faces
     LED_direction_hold: 6.0            # how long the signal is shown [s]
+    # Who gets it: a person within Dog_following_max_threshold of the robot
+    # (top of this file). Further off, the robot goes to them and catches
+    # attention instead.
 
     LED_indicate_target_seq:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid

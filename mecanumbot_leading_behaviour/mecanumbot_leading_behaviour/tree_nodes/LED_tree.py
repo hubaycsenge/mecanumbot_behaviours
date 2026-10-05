@@ -6,7 +6,8 @@ its head: there is no look back, no alternation, no gesture script. The one
 thing the head does is perceptual. While the robot is **looking for the
 person** -- the opening approach, the recovery search, the turn onto them, the
 scans at the target -- it is tilted to the height of the body the LiDAR expects
-(the body gaze, started below as a load hook), because one fixed tilt shows the
+(the body gaze, started below as a load hook; `LevelHead` parks it again as soon
+as the person is found and faced, before any signal is shown), because one fixed tilt shows the
 camera a standing person's knees up close and misses somebody sitting low. It
 does not nod: the look down onto a low face that the dog-inspired tree's search
 makes is switched off here (`look_down=False`), so the tilt compensation is the
@@ -17,19 +18,26 @@ the drive to the target and the signalling there the head is parked level
 
 The lights are on for the whole drive, not only before and after it: they flow
 the way the robot is going and fill with a second colour as it gets there
-(`LEDLeadSignal`). The signals meant for the person -- asking for attention,
-thanking -- are shown on the half of the robot that faces them.
+(`LEDLeadSignal`). Asking for attention uses all four panels; the thank-you for
+the ball is shown on the half of the robot that faces the person.
 
 At the end of the route the robot turns to the target and plays the green
-`indicate_target` signal, then turns to the person and blinks the panels that
-point at the target in yellow (`LEDTargetDirection`): arrived, and it is over
-there.
+`indicate_target` signal. What the person gets next depends on where they are.
+Somebody within `Dog_following_max_threshold` of the robot -- the dog-inspired
+tree's "is the human with the robot", set on the web GUI's behaviour page -- can
+read the panels, so the
+robot turns to them and blinks the ones that point at the target in yellow
+(`LEDTargetDirection`). Somebody further off, or out of view, is a person the
+robot goes to -- searching for them first if it has to -- and asks for
+attention. Either way it then turns back to the target and plays the green
+signal again.
 """
 
 import py_trees
 
 from mecanumbot_leading_behaviour.behaviours.LED_behaviours import (
     LEAD_KEYS,
+    CheckSubjectNearRobot,
     LEDBehaviourSequence,
     LEDLeadSignal,
     LEDTargetDirection,
@@ -48,6 +56,7 @@ from mecanumbot_leading_behaviour.behaviours.route_behaviours import (
     TurnToward,
 )
 from mecanumbot_movement_behaviours.defaults import start_body_gaze
+from mecanumbot_movement_behaviours.turning import SHORTEST
 from mecanumbot_movement_behaviours.targets import (
     LAST_CHECKPOINT,
     SUBJECT,
@@ -100,7 +109,10 @@ def create_root(yaml_path=None):
         [
             FindPeople(name="FindPersonClose"),
             CheckSubjectTargetSuccess(name="CheckSubjectNearTarget"),
-            LEDBehaviourSequence("LCatch", "catch_attention", addressed=True),
+            # The person is at the target, so near: they are shown where it is
+            # rather than asked for attention.
+            LevelHead(name="ParkHeadToPointClose"),
+            LEDTargetDirection(name="LDirectionClose", target_type=TARGET),
             TurnToward(name="TurnTowardTarget", target_type=TARGET, head=None),
             LEDBehaviourSequence("LNear", "indicate_close_target"),
         ]
@@ -145,17 +157,52 @@ def create_root(yaml_path=None):
         [LEDLeadSignal(name="LLead", target_type=LAST_CHECKPOINT), drive]
     )
 
-    # --- arrived: turn back to the person and point at the target ------------
-    # Nobody to turn to is not a reason to fail the root and lead the whole
-    # route again; the loop below looks for the person anyway.
+    # --- arrived: address the person, by how far away they are ---------------
+    # Near: turn to them and point at the target with the lights.
     point_out = py_trees.composites.Sequence(name="PointOutTarget", memory=True)
     point_out.add_children(
         [
-            FindPeople(name="FindPersonAtEnd"),
+            CheckSubjectNearRobot(name="CheckSubjectNearRobot"),
             TurnToward(name="TurnTowardSubjectAtEnd", target_type=SUBJECT, head=None),
+            LevelHead(name="ParkHeadToPoint"),
             LEDTargetDirection(name="LDirection", target_type=TARGET),
         ]
     )
+
+    # Far, or not in view: go to them the way the opening does -- directly, or
+    # after searching the route -- and ask for attention there.
+    search_then_approach = py_trees.composites.Sequence(
+        name="SearchThenApproachAtEnd", memory=True
+    )
+    search_then_approach.add_children(
+        [
+            create_recover_lost_sequence(ID="End", look_down=False),
+            Approach(
+                name="ApproachSubjectEndRecov",
+                target_type=SUBJECT,
+                mode="fixed_distance",
+            ),
+        ]
+    )
+    reach_person = py_trees.composites.Selector("ReachPersonAtEnd", memory=True)
+    reach_person.add_children(
+        [
+            Approach(name="ApproachSubjectAtEnd", target_type=SUBJECT),
+            search_then_approach,
+        ]
+    )
+    fetch_attention = py_trees.composites.Sequence(name="GoAndCatchAttention", memory=True)
+    fetch_attention.add_children(
+        [
+            reach_person,
+            TurnToward(name="TurnTowardSubjectFound", target_type=SUBJECT, head=None),
+            LevelHead(name="ParkHeadToCatch"),
+            LEDBehaviourSequence("LCatch", "catch_attention"),
+        ]
+    )
+
+    address_person = py_trees.composites.Selector("AddressPersonAtEnd", memory=True)
+    address_person.add_children([point_out, fetch_attention])
 
     root = py_trees.composites.Sequence("ROOT", memory=True)
     root.add_children(
@@ -169,10 +216,10 @@ def create_root(yaml_path=None):
             ),
             seek_or_find,
             TurnToward(name="TurnTowardSubject", target_type=SUBJECT, head=None),
-            LEDBehaviourSequence("LCatchO", "catch_attention", addressed=True),
-            # The person is found and has been addressed: from here to the next
-            # time the robot looks for them the head is parked.
+            # The person is found and faced: from here to the next time the
+            # robot looks for them the head is parked, signals included.
             LevelHead(name="ParkHeadToLead"),
+            LEDBehaviourSequence("LCatchO", "catch_attention"),
             # Drive to the last checkpoint of the route, then face the target itself
             # to signal it -- the robot stops short of where the human should end up.
             lead,
@@ -182,11 +229,24 @@ def create_root(yaml_path=None):
             # root, which finds the human and leads again. The route index is
             # left out because this tree never walks it.
             CheckRobotAtLastCheckpoint(name="CheckRobotAtRouteEnd", by_index=False),
-            TurnToward(name="TurnTowardTargetAtEnd", target_type=TARGET, head=None),
-            LEDBehaviourSequence("LShow", "indicate_target"),
-            py_trees.decorators.FailureIsSuccess(
-                name="PointOutIfSomebodyIsThere", child=point_out
+            # The turns onto the target go the short way round. The library's
+            # default for a place unwinds the last search turn, which here was
+            # most of a circle (316 degrees in the run of 2026-10-05).
+            TurnToward(
+                name="TurnTowardTargetAtEnd",
+                target_type=TARGET,
+                head=None,
+                direction=SHORTEST,
             ),
+            LEDBehaviourSequence("LShow", "indicate_target"),
+            address_person,
+            TurnToward(
+                name="TurnBackTowardTarget",
+                target_type=TARGET,
+                head=None,
+                direction=SHORTEST,
+            ),
+            LEDBehaviourSequence("LShowAgain", "indicate_target"),
             py_trees.decorators.Repeat(
                 name="BallOrShowLoop", child=ball_or_show, num_success=-1
             ),
