@@ -96,6 +96,7 @@ from mecanumbot_fetch_behaviour.behaviours.delivery import (
     ReleaseBall,
     SomeoneToGiveTo,
 )
+from mecanumbot_fetch_behaviour.behaviours.lights import ShowBallDirection
 from mecanumbot_fetch_behaviour.behaviours.searching import (
     CircleSearch,
     HoldSearchGaze,
@@ -215,7 +216,9 @@ def create_secure(attempts):
     Closing in is a parallel on the same pattern as the search: the drive and
     the centring turn are the selected sequence, and the head tracker beside
     them only ever runs, so it lasts exactly as long as they do and is stopped
-    before the grab takes the grippers.
+    before the grab takes the grippers. `ShowBallDirection` is a third child on
+    the same terms: the lights blink, the ones on the ball's side in another
+    colour, for as long as the robot is closing in, and go dark for the grab.
     """
     close_in = py_trees.composites.Sequence(name="DriveAndFace", memory=True)
     close_in.add_children(
@@ -231,7 +234,13 @@ def create_secure(attempts):
             children=[close_in], synchronise=False
         ),
     )
-    watching.add_children([TrackBallWithHead(name="TrackBallWithHead"), close_in])
+    watching.add_children(
+        [
+            TrackBallWithHead(name="TrackBallWithHead"),
+            ShowBallDirection(name="ShowBallDirection"),
+            close_in,
+        ]
+    )
 
     attempt = py_trees.composites.Sequence(name="ApproachAndGrab", memory=True)
     attempt.add_children(
@@ -268,6 +277,11 @@ def create_delivery(turn_timeout):
     library picks the head pose from the target type; that is the neck coming up
     off the floor it has been watching since the approach, which is the moment
     the robot stops being a machine collecting an object.
+
+    How far up it comes is the body gaze's business (the loader starts it):
+    looking for somebody, walking up to them and facing them all ask for the
+    seeking head, and the gaze tilts that head to the body the LiDAR expects --
+    further up the nearer they stand, lower for somebody on a seat.
     """
     audience = py_trees.composites.Selector("FindSomeone", memory=True)
     audience.add_children(

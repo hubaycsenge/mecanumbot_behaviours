@@ -46,6 +46,7 @@ from mecanumbot_movement_behaviours.ros_interfaces import (
     STATUS_SUCCEEDED,
     HEAD_SEEK,
     AccessoryCommander,
+    BodyGaze,
     Nav2PoseNavigator,
     PeopleTracker,
     RobotPoseTracker,
@@ -140,8 +141,15 @@ class ReleaseBall(py_trees.behaviour.Behaviour):
         # From here on every head command, the library's included, carries the
         # open grippers again.
         self.gripper.keep_grippers(self.open_left, self.open_right)
+        # Where the body gaze is running the head is already on the person, at
+        # the tilt their distance asks for: open the grabbers at that tilt and
+        # hand the head back to the gaze, rather than dropping it to the one
+        # seeking pose as they reach for the ball.
+        neck = self.neck
+        if BodyGaze.running() and AccessoryCommander._last_neck_pos is not None:
+            neck = AccessoryCommander._last_neck_pos
+        self.gripper.send(neck, self.open_left, self.open_right)
         self.accessories.look(HEAD_SEEK)
-        self.gripper.send(self.neck, self.open_left, self.open_right)
         self.blackboard.fetch_grasped = False
         self.blackboard.fetch_delivered = True
         self.node.get_logger().info(f"{self.name}: ball released")

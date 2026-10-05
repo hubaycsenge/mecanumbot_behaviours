@@ -22,6 +22,7 @@ from mecanumbot_bt_config.tree_runner import RUNTIME_DEFAULTS
 from mecanumbot_movement_behaviours.defaults import (
     MOVEMENT_DEFAULTS,
     configure_accessories,
+    start_body_gaze,
 )
 
 from mecanumbot_fetch_behaviour.behaviours.ros_interfaces import GripperCommander
@@ -127,7 +128,15 @@ def check_fetch_geometry(node, blackboard, values):
 
 
 class FetchParamsToBlackboard(ParamsToBlackboard):
-    """Load the fetch constants and hand the accessory poses to the commander."""
+    """
+    Load the fetch constants and hand the accessory poses to the commander.
+
+    `start_body_gaze` gives the delivery a head that tilts to the body the
+    LiDAR expects while the robot looks for somebody and walks up to them. It
+    only steers a head that was asked for the seeking pose, and every tilt this
+    package places itself takes the head out of it (`GripperCommander.send`),
+    so it does nothing while the robot searches for or tracks a ball.
+    """
 
     def __init__(self, name, yaml_path):
         super().__init__(
@@ -136,7 +145,7 @@ class FetchParamsToBlackboard(ParamsToBlackboard):
             defaults=LOADED_DEFAULTS,
             required=FETCH_REQUIRED,
             state=RUN_STATE,
-            on_loaded=(configure_accessories, check_fetch_geometry),
+            on_loaded=(configure_accessories, check_fetch_geometry, start_body_gaze),
         )
 
 
