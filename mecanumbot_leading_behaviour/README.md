@@ -400,17 +400,24 @@ shoulders came out (0.4 m and 0.95 m). They are a starting point: check them
 against the room, and move them when the furniture moves. The other map's file
 lists none.
 
-**This is a head movement the human can see**, and the LED and control trees do
-not have it: they park the head (`head=None`) so that the comparison conditions
-carry no head gestures, and they do not install the gaze. The cost is that those
-two conditions still look for people with one fixed tilt. `body_gaze_enabled:
-false` in the constants file switches it off here too.
+**This is a head movement the human can see.** The control tree does not have it: it
+parks the head (`head=None`) and does not install the gaze, so it still looks for
+people with one fixed tilt. The LED tree has had it since 2026-10-05, but only while
+it is **looking for the person** — the opening approach, the recovery search, the turn
+onto them and the scans at the target. It installs the gaze and its `FindPeople` scans
+ask for the seeking head; before the drive to the target `LevelHead` parks the head at
+`neck_level_pos`, and the turn onto the target levels it too, so the robot leads and
+signals with a still head. The LED condition still has no head *gesture* — no look
+back, no alternation, no script — but its head is no longer motionless, which is a
+difference from the runs before that date. `body_gaze_enabled: false` in the constants
+file switches the gaze off in both trees.
 
 ### `LED_tree.py` logic
 
 1. Load constants.
 2. `SeekOrFind` selector — approach the subject, or run lost recovery then approach.
-3. Turn toward the subject and catch attention with the LEDs.
+3. Turn toward the subject and catch attention with the LEDs, then park the head
+   (`LevelHead`): up to here the body gaze has been tilting it to the person.
 4. Approach the target **with the lights running** (`LeadWithLights`, a parallel of the
    drive and `LEDLeadSignal` that ends when the drive does), then indicate it.
 5. Endless `BallOrShowLoop`, asking about the ball first on every cycle (as the dog

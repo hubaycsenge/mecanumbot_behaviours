@@ -230,9 +230,9 @@ def start_body_gaze(node, blackboard, values):
 
     A `ParamsToBlackboard` load hook, and an opt-in one: a tree gets a gaze by
     listing this beside `configure_accessories`. The leading conditions differ
-    in exactly this -- the dog-inspired tree moves its head and the LED and
-    control trees deliberately do not -- so it is the tree's choice, not the
-    constants file's, and `body_gaze_enabled` in the file can only turn it off.
+    in exactly this -- the dog-inspired tree moves its head, the LED tree only
+    while it looks for the person, and the control tree deliberately not at
+    all -- so it is the tree's choice, not the constants file's, and `body_gaze_enabled` in the file can only turn it off.
     """
     from mecanumbot_movement_behaviours.ros_interfaces import BodyGaze
 

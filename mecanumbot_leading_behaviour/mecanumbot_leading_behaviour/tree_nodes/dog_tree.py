@@ -55,8 +55,9 @@ And one thing this tree has that the other leading conditions do not:
   one of the `seats` the constants file lists for the room, where a body is a
   sitting one and the head comes down for it instead. This is the robot using
   the LiDAR to find people rather than only to range the ones the camera has
-  already found, and it is a head movement the human can see: the LED and
-  control trees keep the head parked, so they do not have it.
+  already found, and it is a head movement the human can see: the LED
+  tree has it only while it looks for the person, and the control tree, which
+  keeps the head parked, not at all.
 """
 
 import py_trees

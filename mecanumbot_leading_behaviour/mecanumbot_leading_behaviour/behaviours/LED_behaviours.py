@@ -10,6 +10,8 @@ from mecanumbot_movement_behaviours.geometry import (
     normalize_angle,
 )
 from mecanumbot_movement_behaviours.ros_interfaces import (
+    HEAD_LEVEL,
+    AccessoryCommander,
     RobotPoseTracker,
     SubjectPoseTracker,
     duration,
@@ -178,6 +180,31 @@ class LEDBehaviourSequence(py_trees.behaviour.Behaviour):
                 setattr(request, f"{corner}_mode", OFF_MODE)
                 setattr(request, f"{corner}_color", OFF_COLOR)
         return request
+
+
+class LevelHead(py_trees.behaviour.Behaviour):
+    """
+    Park the head at the level pose, and return SUCCESS.
+
+    The LED condition's head only moves while the robot is looking for the
+    person, where the body gaze tilts it to the height the LiDAR expects them
+    at. This ends that: it takes the head out of the seeking pose, so the gaze
+    leaves it alone, and puts it back where the condition has always held it.
+    Placed before the drive to the target, so the robot leads and signals with
+    a still head.
+    """
+
+    def __init__(self, name="LevelHead"):
+        super().__init__(name)
+
+    def setup(self, **kwargs):
+        self.node = kwargs["node"]
+        self.accessories = AccessoryCommander(self.node)
+        self.logger.info(f"{self.name}: Setup complete")
+
+    def update(self):
+        self.accessories.look(HEAD_LEVEL)
+        return py_trees.common.Status.SUCCESS
 
 
 class LEDLeadSignal(py_trees.behaviour.Behaviour):
