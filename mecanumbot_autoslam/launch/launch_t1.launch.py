@@ -67,8 +67,13 @@ PASSED_THROUGH = (
     ("use_deep3r", "true",
      "Start the Deep3R client. false is mapping only, and then require_cloud "
      "must be false too or the exit criteria can never be satisfied."),
-    ("server", "tcp://127.0.0.1:5555",
-     "Local end of the forward tunnel, not a cluster address."),
+    # Before `server`, whose default is built from it.
+    ("server_port", "5555",
+     "Port of the local end of the forward tunnel. Change it when 5555 is "
+     "taken; the tunnel has to forward the same port."),
+    ("server", ["tcp://127.0.0.1:", LaunchConfiguration("server_port")],
+     "Local end of the forward tunnel, not a cluster address. Set it whole to "
+     "override the host as well, and server_port is then ignored."),
     ("client_path", "~/robocam_client.py",
      "Deployed robocam_client.py, or the directory holding it."),
     ("run_id", "",

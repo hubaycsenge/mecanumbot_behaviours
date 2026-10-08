@@ -214,7 +214,8 @@ ros2 run nav2_map_server map_saver_cli -f <maps>/AI_dept/AI_dept
 | `use_camera` | `true` | Start the compressed camera publisher (USB backend) on `/camera/image_raw/compressed`. `false` when something already publishes it. Not the same switch as perception's `camera_source`: T1 runs no people detector, and the Deep3R client needs the frames as a ROS topic. |
 | `camera_width` / `camera_height` / `camera_fps` | `1280` / `720` / `15.0` | The camera's frame; matches `deep3r.yaml`'s advertised size. |
 | `use_deep3r` | `true` | Start the Deep3R client (`mecanumbot_deep3r/deep3r.launch.py`). `false` when one is already running, or for a mapping-only run with `require_cloud:=false`. |
-| `server` / `client_path` | `tcp://127.0.0.1:5555` / `~/robocam_client.py` | Passed to the client: the local end of the tunnel, and the deployed `robocam_client.py`. |
+| `server_port` | `5555` | Port of the local end of the tunnel. Change it when 5555 is taken; the tunnel has to forward the same port. |
+| `server` / `client_path` | `tcp://127.0.0.1:<server_port>` / `~/robocam_client.py` | Passed to the client: the local end of the tunnel, and the deployed `robocam_client.py`. Setting `server` whole overrides `server_port`. |
 | `run_id` | *(empty)* | Passed to the client. Empty starts a fresh reconstruction on the server; a previous run's id (the client logs it at startup) resumes that run across a restart. |
 | `use_agreement` | `true` | Start the 2D/3D comparison handler. `false` for a session that already has one from the T2 launch. |
 | `agreement_params` | `mecanumbot_custom_nav2/config/map_agreement.yaml` | The comparison handler's constants. |
@@ -224,7 +225,7 @@ ros2 run nav2_map_server map_saver_cli -f <maps>/AI_dept/AI_dept
 
 `launch_t1.launch.py` starts the base launch and, after `explorer_delay`
 (15 s), this file. It passes `require_cloud`, `use_camera`, the camera size,
-`use_deep3r`, `server`, `client_path` and `run_id` through, and hard-codes
+`use_deep3r`, `server_port`, `server`, `client_path` and `run_id` through, and hard-codes
 `use_nav2:=false` for the base launch, because there is no T1 in which the study
 nav2 stack is what you want.
 

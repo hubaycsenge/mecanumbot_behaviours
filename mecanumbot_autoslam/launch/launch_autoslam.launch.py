@@ -201,9 +201,22 @@ def generate_launch_description():
                 "must be false too, or the pass never finishes."
             ),
         ),
+        # Declared before `server`, whose default is built from it.
         DeclareLaunchArgument(
-            "server", default_value="tcp://127.0.0.1:5555",
-            description="Local end of the forward tunnel, not a cluster address.",
+            "server_port", default_value="5555",
+            description=(
+                "Port of the local end of the forward tunnel. Change it when "
+                "5555 is taken; the tunnel has to forward the same port."
+            ),
+        ),
+        DeclareLaunchArgument(
+            "server",
+            default_value=["tcp://127.0.0.1:", LaunchConfiguration("server_port")],
+            description=(
+                "Local end of the forward tunnel, not a cluster address. Set "
+                "it whole to override the host as well, and server_port is "
+                "then ignored."
+            ),
         ),
         DeclareLaunchArgument(
             "client_path", default_value="~/robocam_client.py",
