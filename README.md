@@ -301,8 +301,9 @@ What it does:
    `pose` detector. With `camera_source:=direct`, the default, the detector opens the
    webcam itself: no camera node and no ROS image topic in the frame path.
    `camera_source:=topic` reads `/camera/image_raw/compressed`, which neither this
-   file nor perception starts, so run
-   `mecanumbot_camera_stream camera_compressed.launch.py` first.
+   file nor perception starts -- and the camera package that used to is gone. The
+   surviving publisher is `mecanumbot_cam_optim`'s `camera_stream_node`, started by
+   hand with `ros2 run` (it has no launch file).
 6. Starts exactly one BT node based on `condition` (`Doglike`, `Control`, or `LED`),
    remapping `/mecanumbot/cmd_vel` and `/mecanumbot/cmd_accessory_pos` out of the
    namespace.

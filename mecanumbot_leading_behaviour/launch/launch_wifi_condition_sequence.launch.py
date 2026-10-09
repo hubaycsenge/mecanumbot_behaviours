@@ -20,9 +20,11 @@ by default), and that is the topic to record for scoring it afterwards.
 `camera_source:=topic` reads `/camera/image_raw/compressed` instead, for a
 clean, unannotated recording, at the cost of a JPEG encode and a decode per
 frame. **It does not start the camera**, and nothing publishes that topic by
-default any more: the Deep3R client opens the device itself and only
-republishes with `publish_debug_image:=true`. Point this at that topic, or use
-the direct source.
+default any more. The surviving publisher is `mecanumbot_cam_optim`'s
+`camera_stream_node`, started by hand with `ros2 run`. (The Deep3R client's
+`publish_debug_image` is not a substitute: it republishes on its own private
+topic, and only while it is holding the device -- which is the device this
+detector would then be unable to open.)
 
 Still needed, already running: the base launch (drivers, nav2 with AMCL
 localized against the room's map, the LED service for the LED condition).
@@ -136,8 +138,9 @@ def generate_launch_description():
                     "direct (default): the detector opens the webcam itself, no "
                     "ROS 2 middleware in the frame path; record debug_image to "
                     "score the trial. topic: read /camera/image_raw/compressed "
-                    "-- does NOT start the camera, run "
-                    "camera_compressed.launch.py first"
+                    "-- does NOT start the camera; "
+                    "run mecanumbot_cam_optim's camera_stream_node first "
+                    "(ros2 run; it has no launch file)"
                 ),
             ),
             DeclareLaunchArgument(

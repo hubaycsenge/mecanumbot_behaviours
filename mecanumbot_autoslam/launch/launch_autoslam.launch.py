@@ -70,8 +70,8 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, GroupAction,
-                            IncludeLaunchDescription, LogInfo, Shutdown,
-                            RegisterEventHandler)
+                            IncludeLaunchDescription, LogInfo, OpaqueFunction,
+                            Shutdown, RegisterEventHandler)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -201,6 +201,19 @@ def generate_launch_description():
             description=(
                 "Have the Deep3R client republish the exact frames it sent, "
                 "for eyes on the robot. Off by default."
+            ),
+        ),
+        # Retired, and kept only so that passing it says so. It used to start
+        # mecanumbot_camera_stream's compressed publisher; there is no
+        # publisher any more, and launch would otherwise accept the argument
+        # in silence and run without the camera switch the caller thought
+        # they had set. Empty means "not passed".
+        DeclareLaunchArgument(
+            "use_camera", default_value="",
+            description=(
+                "RETIRED, ignored. The Deep3R client opens the camera itself, "
+                "so there is nothing to switch on: use use_deep3r. Passing it "
+                "logs a warning and changes nothing."
             ),
         ),
         DeclareLaunchArgument(
@@ -369,9 +382,24 @@ def generate_launch_description():
             ),
         ]
 
+    def _retired_arguments(context):
+        """Warn about arguments that no longer do anything."""
+        value = context.perform_substitution(LaunchConfiguration("use_camera"))
+        if not value:
+            return []
+        return [LogInfo(msg=(
+            f"[autoslam] use_camera:={value} is retired and was ignored. The "
+            "Deep3R client opens /dev/video0 itself -- there is no camera "
+            "publisher to start, and no image topic in the frame path. Use "
+            "use_deep3r to decide whether the camera is opened at all, "
+            "camera_device to say which one, and publish_debug_image:=true to "
+            "see the frames it sends."
+        ))]
+
     return LaunchDescription(
         arguments
         + [
+            OpaqueFunction(function=_retired_arguments),
             LogInfo(
                 msg=(
                     "autoslam (T1): Deep3R client (which opens the camera), "

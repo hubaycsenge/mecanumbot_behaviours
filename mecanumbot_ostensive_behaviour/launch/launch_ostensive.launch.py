@@ -16,7 +16,8 @@ fetch detector -- the other option -- emits boxes and no skeleton at all.
 webcam itself (`v4l2src`), with no camera node and no ROS image topic in the
 frame path. `camera_source:=topic` reads `/camera/image_raw/compressed` instead,
 at the cost of a JPEG encode and decode per frame -- and does not start the
-camera, so run `camera_compressed.launch.py` first.
+camera. The package that used to publish it is gone; the surviving publisher is
+`mecanumbot_cam_optim`'s `camera_stream_node`, started with `ros2 run`.
 
 Still needed, already running: nav2 with AMCL localized, for `/amcl_pose` and
 the `/goal_pose` goals.
@@ -122,8 +123,9 @@ def generate_launch_description():
                 description=(
                     "direct (default): the detector opens the webcam itself, no "
                     "ROS 2 middleware in the frame path. topic: read "
-                    "/camera/image_raw/compressed -- does NOT start the camera, "
-                    "run camera_compressed.launch.py first"
+                    "/camera/image_raw/compressed -- does NOT start the camera; "
+                    "run mecanumbot_cam_optim's camera_stream_node first "
+                    "(ros2 run; it has no launch file)"
                 ),
             ),
             DeclareLaunchArgument(

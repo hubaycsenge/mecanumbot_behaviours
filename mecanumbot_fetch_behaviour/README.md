@@ -69,8 +69,9 @@ with the check it failed (`score`, `size`, `shape`, `unconfirmed`). With
 `camera_source:=direct`, the default, the detector opens the webcam itself (no camera
 node, no ROS image topic in the frame path), and this is the only view of the camera
 there is. (`camera_source:=topic` makes the detector read `/camera/image_raw/compressed`
-but does not start a publisher for it. Start `mecanumbot_camera_stream`'s
-`camera_compressed.launch.py` by hand.) It costs a copy of
+but does not start a publisher for it, and the camera package that used to provide
+one was removed on 2026-10-09. Start `mecanumbot_cam_optim`'s `camera_stream_node`
+by hand -- `ros2 run`, it has no launch file.) It costs a copy of
 the frame out of GPU memory and a JPEG encode per frame; switch it off for runs that
 need the GPU and CPU headroom.
 

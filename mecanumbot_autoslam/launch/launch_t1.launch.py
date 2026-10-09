@@ -1,11 +1,12 @@
 """
-T1 in one terminal: drivers, then the camera, the Deep3R client, SLAM, nav2 and the explorer.
+T1 in one terminal: drivers, then the Deep3R client, SLAM, nav2 and the explorer.
 
-`launch_autoslam.launch.py` is the whole pass -- camera, Deep3R client,
-preflight, SLAM, nav2 and the explorer -- but deliberately not the robot's
-drivers: a launch file that also owned the OpenCR link would be two files
-fighting over one serial port whenever the drivers were already up. This file
-is the convenience wrapper that adds them: one Ctrl-C stops everything.
+`launch_autoslam.launch.py` is the whole pass -- the Deep3R client (which
+opens the camera itself), the preflight, SLAM, nav2 and the explorer -- but
+deliberately not the robot's drivers: a launch file that also owned the OpenCR
+link would be two files fighting over one serial port whenever the drivers were
+already up. This file is the convenience wrapper that adds them: one Ctrl-C
+stops everything.
 
     ros2 launch mecanumbot_autoslam launch_t1.launch.py
 
@@ -19,9 +20,9 @@ What it starts, in order:
    preflight that would shut it down anyway; not starting it is cheaper and
    quieter than starting it and retiring it.
 2. `launch_autoslam.launch.py`, after `explorer_delay` seconds -- slam_toolbox
-   wants odometry and a scan before its first update. It starts the camera and
-   the Deep3R client at once, and SLAM, nav2 and the explorer when its preflight
-   has cleared the graph.
+   wants odometry and a scan before its first update. It starts the Deep3R
+   client -- and with it the camera -- at once, and SLAM, nav2 and the
+   explorer when its preflight has cleared the graph.
 
 The delay is generous rather than tuned. Nothing here is a race that a
 correctly ordered start would lose; it exists so the logs read in the order the
@@ -58,12 +59,24 @@ PASSED_THROUGH = (
      "Let the server's verdict decide when T1 is over. false drops the `placed` "
      "test -- right for a mapping dry run, wrong during a trial, because a "
      "failed T1 then looks exactly like a successful one."),
-    ("use_camera", "true",
-     "Start the compressed camera publisher. false only when something else "
-     "already publishes /camera/image_raw/compressed."),
-    ("camera_width", "1280", "Frame width; matches deep3r.yaml's advertised_width."),
-    ("camera_height", "720", "Frame height; matches deep3r.yaml's advertised_height."),
-    ("camera_fps", "15.0", "Capture and publish rate. The server reconstructs at ~6 Hz."),
+    ("camera_device", "/dev/video0",
+     "The camera the Deep3R client opens. Nothing else may hold it: a device "
+     "can be opened once, and the client is the only thing that needs it."),
+    ("camera_width", "1280",
+     "Width to ASK the camera for. A driver may refuse and give another; the "
+     "client logs what it actually got, and the server's calib_width has to "
+     "describe that, not this."),
+    ("camera_height", "720", "Height to ask for; see camera_width."),
+    ("camera_fps", "15.0", "Capture rate. The server reconstructs at ~6 Hz."),
+    ("publish_debug_image", "false",
+     "Have the Deep3R client republish the exact frames it sent, for eyes on "
+     "the robot. Off by default: nothing in the pass reads it."),
+    # Declared and passed on only so that launch_autoslam can say it was
+    # ignored. Dropping it here instead would make it vanish in silence.
+    ("use_camera", "",
+     "RETIRED, ignored. There is no camera publisher: the Deep3R client opens "
+     "the device itself, so use_deep3r is the switch. Passing it logs a "
+     "warning and changes nothing."),
     ("use_deep3r", "true",
      "Start the Deep3R client. false is mapping only, and then require_cloud "
      "must be false too or the exit criteria can never be satisfied."),
@@ -97,8 +110,8 @@ def generate_launch_description():
     explorer = TimerAction(
         period=LaunchConfiguration("explorer_delay"),
         actions=[
-            LogInfo(msg="[t1] camera and Deep3R client, then preflight, SLAM, "
-                        "nav2 and the exploration behaviours"),
+            LogInfo(msg="[t1] Deep3R client (it opens the camera), then preflight, "
+                        "SLAM, nav2 and the exploration behaviours"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(AUTOSLAM_SHARE, "launch", "launch_autoslam.launch.py")

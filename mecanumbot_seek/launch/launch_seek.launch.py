@@ -144,11 +144,15 @@ def generate_launch_description():
                 description=(
                     "direct (default): the detector opens the webcam itself, no "
                     "ROS 2 middleware in the frame path. topic: read "
-                    "/camera/image_raw/compressed -- does NOT start the camera, "
-                    "run camera_compressed.launch.py first. The camera can only "
-                    "be opened once, and in T2 the Deep3R client wants the "
-                    "stream too, so use topic whenever the cloud is being "
-                    "updated during the run"
+                    "/camera/image_raw/compressed -- does NOT start the camera; "
+                    "run mecanumbot_cam_optim's camera_stream_node first "
+                    "(ros2 run; it has no launch file). /dev/video0 opens "
+                    "once, and in T2 the "
+                    "Deep3R client wants the camera too -- and by default it "
+                    "opens the device directly. So for a run that keeps "
+                    "updating the cloud, one process reads the device and "
+                    "publishes, and both this detector and the Deep3R client "
+                    "take camera_source:=topic"
                 ),
             ),
             DeclareLaunchArgument(

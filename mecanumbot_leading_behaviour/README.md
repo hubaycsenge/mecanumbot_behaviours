@@ -608,13 +608,20 @@ the detector got no frames and the leading trees ran on DR-SPAAM alone, with no 
 If you want it, start the camera first:
 
 ```bash
-ros2 launch mecanumbot_camera_stream camera_compressed.launch.py width:=1280 height:=720
+ros2 run mecanumbot_cam_optim camera_stream_node --ros-args \
+  -p device:=/dev/video0 -p width:=1280 -p height:=720
 ros2 launch mecanumbot_leading_behaviour launch_wifi_condition_sequence.launch.py \
   condition:=Doglike camera_source:=topic
 ```
 
-`mecanumbot_autoslam`'s `use_camera` is a different switch: it starts the camera
-publisher itself. The old perception `use_camera` passed here stops the launch.
+`mecanumbot_cam_optim`'s `camera_stream_node` is what starts it: the camera package
+that used to, `mecanumbot_camera_stream`, was removed on 2026-10-09 along with the
+`camera.launch.py` that wrapped it. It has no launch file, hence `ros2 run`.
+
+`mecanumbot_autoslam`'s `use_camera` is retired too, and for the same reason: its
+Deep3R client opens the device itself. That launch still accepts the argument, logs
+that it did nothing and carries on. The old perception `use_camera` passed *here* still
+stops the launch.
 
 ```bash
 # the default path, with the smaller pose model

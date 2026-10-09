@@ -360,14 +360,24 @@ Besides the tree, `launch_seek.launch.py` starts two things:
 `camera_source` defaults to `direct`: the detector opens the webcam itself, with no
 camera node and no ROS image topic in the frame path. `camera_source:=topic` makes it
 read `/camera/image_raw/compressed` instead. The launch does **not** start that
-publisher (perception stopped including it), so start it first. The camera can only be
-opened once, and the Deep3R client wants the stream too, so `topic` is the setting
-whenever the cloud is being updated during T2:
+publisher, and the camera package that used to is gone; the surviving one is
+`mecanumbot_cam_optim`'s `camera_stream_node`, by hand.
+
+A device opens once, and during T2 the Deep3R client wants the camera too -- and it
+opens `/dev/video0` directly. **Two direct openers cannot share it.** So for a T2 pass
+that keeps updating the cloud, one process reads the device and the other reads the
+topic: run the publisher, point the detector at it, and set the Deep3R client to
+`camera_source:=topic` as well.
 
 ```bash
-ros2 launch mecanumbot_camera_stream camera_compressed.launch.py width:=1280 height:=720
+ros2 run mecanumbot_cam_optim camera_stream_node --ros-args \
+  -p device:=/dev/video0 -p width:=1280 -p height:=720
 ros2 launch mecanumbot_seek launch_seek.launch.py camera_source:=topic
+ros2 launch mecanumbot_deep3r deep3r.launch.py camera_source:=topic
 ```
+
+Note what that costs: frames then come from a publisher whose mode nobody reads back,
+so the server's `calib_width`/`calib_height` have to describe what *it* produces.
 
 The node runs in `namespace` (default `mecanumbot`) with `/mecanumbot/cmd_vel`
 and `/mecanumbot/cmd_accessory_pos` remapped to the root topics; `params` /

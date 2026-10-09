@@ -143,9 +143,9 @@ a SIGTERM.
 `/cmd_vel`, so by the letter of the rule it contradicts an autonomous pass, and
 it is also the only way a person in the room can take the robot off a wall. A
 run that has disarmed the human override is a worse failure than one that gets a
-joystick nudge in the log. And the **drivers, camera, perception stack and
-Deep3R client**: none of them decide where the robot goes, and T1 needs all of
-them.
+joystick nudge in the log. And the **drivers, the perception stack and the
+Deep3R client** (which holds the camera): none of them decide where the robot
+goes, and T1 needs them.
 
 **It reports what it could not do and starts anyway.** A node on the operator PC
 cannot be signalled from the robot. Saying so in the log is the difference
@@ -155,15 +155,20 @@ screen; refusing to explore over it would not be.
 ## Running
 
 ```bash
-# one terminal: drivers, then camera + Deep3R client + the pass
+# one terminal: drivers, then the Deep3R client (it opens the camera) + the pass
 ros2 launch mecanumbot_autoslam launch_t1.launch.py
 
 # or two terminals: the drivers, then everything else
 ros2 launch mecanumbot_bringup launch_mecanumbot_base.launch.py use_nav2:=false
 ros2 launch mecanumbot_autoslam launch_autoslam.launch.py   # needs the tunnel up
 
-# mapping only, with no server at all
+# mapping only, with no server at all -- and no camera, since the client holds it
 ros2 launch mecanumbot_autoslam launch_autoslam.launch.py require_cloud:=false use_deep3r:=false
+
+# watch the frames the client actually sent (the same bytes, not a re-encode)
+ros2 launch mecanumbot_autoslam launch_autoslam.launch.py publish_debug_image:=true
+ros2 run rqt_image_view rqt_image_view \
+  /mecanumbot/mecanumbot_deep3r_client_node/debug/image_raw/compressed
 
 # watch
 ros2 topic echo /mecanumbot/exploration/state       # every criterion, with its reason
@@ -171,18 +176,26 @@ ros2 topic echo /mecanumbot/exploration/finished    # latches true when T1 is ov
 ros2 topic echo /mecanumbot/deep3r/map_agreement    # the server's verdict
 ```
 
-**`launch_autoslam.launch.py` starts the camera and the Deep3R client itself**,
-straight away and in parallel with the preflight, which leaves both alone. The
-web GUI's **Autoslam (T1)** runs the same file, so a pass started from the
-browser brings them up too. They are part of the pass because T1 cannot finish
-without them: no frames means no cloud, no `map_agreement`, and a `CLOUD`
-criterion that is never met, with no error anywhere. The camera is the robot's
-USB webcam, published on `/camera/image_raw/compressed`, which is where the
-client reads it. If either is already running, pass `use_camera:=false` /
-`use_deep3r:=false`: the camera can be opened once, and a second client is a
-second run, for which the server wipes its reconstruction. The drivers are
-still not part of this file, so that it never becomes a second owner of the
-OpenCR link.
+**`launch_autoslam.launch.py` starts the Deep3R client itself**, straight away
+and in parallel with the preflight, which leaves it alone. The web GUI's
+**Autoslam (T1)** runs the same file, so a pass started from the browser brings
+it up too. It is part of the pass because T1 cannot finish without it: no frames
+means no cloud, no `map_agreement`, and a `CLOUD` criterion that is never met,
+with no error anywhere.
+
+**The client opens the camera itself** -- the robot's USB webcam on
+`/dev/video0` -- and sends the frames straight to the server. There is no image
+topic in that path and no publisher to start: since 2026-10-09 there is no
+camera publisher in the workspace at all. `camera_device` says which device,
+`camera_width` / `camera_height` / `camera_fps` say what to *ask* it for, and
+`publish_debug_image:=true` republishes the exact bytes it sent when you want
+eyes on a run. `use_camera` is retired -- still accepted, and it logs that it
+did nothing.
+
+If a client is already running, pass `use_deep3r:=false`: a second one is a
+second run, for which the server wipes its reconstruction, and it would be a
+second process after a device that opens once. The drivers are still not part
+of this file, so that it never becomes a second owner of the OpenCR link.
 
 **slam_toolbox reads `/mecanumbot/scan_grid`, not the driver's scan.** The launch file also starts
 `mecanumbot_core`'s `mecanumbot_scan_grid_node`, which republishes every LD08
@@ -211,8 +224,10 @@ ros2 run nav2_map_server map_saver_cli -f <maps>/AI_dept/AI_dept
 | `preflight_strict` | `true` | Stop if the preflight could not clear a **name collision**. Those make nav2 bringup abort, so starting anyway wastes the run rather than degrading it. |
 | `require_cloud` | `true` | Whether the pass may only end once the server says the reconstruction is good enough. `false` is right for a dry run and wrong during a trial. |
 | `use_preflight` | `true` | Shut the contradicting nodes down first. |
-| `use_camera` | `true` | Start the compressed camera publisher (USB backend) on `/camera/image_raw/compressed`. `false` when something already publishes it. Not the same switch as perception's `camera_source`: T1 runs no people detector, and the Deep3R client needs the frames as a ROS topic. |
-| `camera_width` / `camera_height` / `camera_fps` | `1280` / `720` / `15.0` | The camera's frame; matches `deep3r.yaml`'s advertised size. |
+| `camera_device` | `/dev/video0` | The camera the Deep3R client opens. Nothing else may hold it. |
+| `camera_width` / `camera_height` / `camera_fps` | `1280` / `720` / `15.0` | What to **ask** the camera for. `cap.set` is a request: a driver that cannot do the mode picks another and reports success, so the client reads the mode back and logs what it got. The server's `calib_width` / `calib_height` have to describe *that*, not this. |
+| `publish_debug_image` | `false` | Republish the exact bytes the client sent, on `~/debug/image_raw/compressed`. The same JPEG, not a second encoding, so what you watch is what the reconstruction was built from. Nothing in the pass reads it. |
+| `use_camera` | *(retired)* | Ignored. It used to start the compressed camera publisher; there is no publisher any more, because the client opens the device itself. Still accepted so that passing it logs a warning rather than being silently dropped. |
 | `use_deep3r` | `true` | Start the Deep3R client (`mecanumbot_deep3r/deep3r.launch.py`). `false` when one is already running, or for a mapping-only run with `require_cloud:=false`. |
 | `server_port` | `5555` | Port of the local end of the tunnel. Change it when 5555 is taken; the tunnel has to forward the same port. |
 | `server` / `client_path` | `tcp://127.0.0.1:<server_port>` / `~/robocam_client.py` | Passed to the client: the local end of the tunnel, and the deployed `robocam_client.py`. Setting `server` whole overrides `server_port`. |
@@ -224,8 +239,9 @@ ros2 run nav2_map_server map_saver_cli -f <maps>/AI_dept/AI_dept
 | `use_sim_time` | `false` | Set by `sim.launch.py`. |
 
 `launch_t1.launch.py` starts the base launch and, after `explorer_delay`
-(15 s), this file. It passes `require_cloud`, `use_camera`, the camera size,
-`use_deep3r`, `server_port`, `server`, `client_path` and `run_id` through, and hard-codes
+(15 s), this file. It passes `require_cloud`, the camera device and size,
+`publish_debug_image`, `use_deep3r`, `server_port`, `server`, `client_path` and
+`run_id` through, and hard-codes
 `use_nav2:=false` for the base launch, because there is no T1 in which the study
 nav2 stack is what you want.
 
