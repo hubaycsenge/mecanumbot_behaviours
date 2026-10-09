@@ -49,9 +49,9 @@
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
 
-  <!-- NOT declared, deliberately: mecanumbot_bringup, mecanumbot_camera_stream
-       and mecanumbot_deep3r. launch_t1.launch.py includes the first, and
-       launch_autoslam.launch.py the other two, all resolved at launch time the
+  <!-- NOT declared, deliberately: mecanumbot_bringup and mecanumbot_deep3r.
+       launch_t1.launch.py includes the first and launch_autoslam.launch.py the
+       second, both resolved at launch time the
        way launch_t1's previous home in mecanumbot_custom_nav2 did. Declaring
        mecanumbot_bringup would make this package one edit away from a
        dependency cycle, since mecanumbot_bringup depends on mecanumbot_web,
