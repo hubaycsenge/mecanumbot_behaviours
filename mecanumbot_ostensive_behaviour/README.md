@@ -374,8 +374,10 @@ ros2 launch mecanumbot_ostensive_behaviour launch_ostensive.launch.py use_percep
 # webcam itself, no camera node, no image topic in the frame path.
 
 # ... with the detector reading /camera/image_raw/compressed, for a recording. The
-# launch does NOT start the camera (perception stopped including it), so start it first
-ros2 launch mecanumbot_camera_stream camera_compressed.launch.py width:=1280 height:=720
+# launch does NOT start a publisher, and the camera package that used to is gone; this
+# is the surviving one, and it has no launch file
+ros2 run mecanumbot_cam_optim camera_stream_node --ros-args \
+  -p device:=/dev/video0 -p width:=1280 -p height:=720
 ros2 launch mecanumbot_ostensive_behaviour launch_ostensive.launch.py camera_source:=topic
 
 # what the detector saw -- boxes and skeletons, on by default; debug_image:=false

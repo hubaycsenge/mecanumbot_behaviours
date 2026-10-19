@@ -138,8 +138,9 @@ def generate_launch_description():
                 description=(
                     "direct (default): the detector opens the webcam itself, no "
                     "ROS 2 middleware in the frame path. topic: read "
-                    "/camera/image_raw/compressed -- does NOT start the camera, "
-                    "run camera_compressed.launch.py first"
+                    "/camera/image_raw/compressed -- does NOT start the camera; "
+                    "run mecanumbot_cam_optim's camera_stream_node first "
+                    "(ros2 run; it has no launch file)"
                 ),
             ),
             DeclareLaunchArgument(

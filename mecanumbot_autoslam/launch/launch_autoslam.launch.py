@@ -1,22 +1,24 @@
 """
-T1: the camera and the Deep3R client, then clear the graph, SLAM, nav2 and explore.
+T1: the Deep3R client, then clear the graph, SLAM, nav2 and explore.
 
-This is the whole first pass in one launch file. It starts the camera and the
-Deep3R client, shuts down whatever contradicts an exploration run, brings up
+This is the whole first pass in one launch file. It starts the Deep3R client,
+shuts down whatever contradicts an exploration run, brings up
 slam_toolbox in mapping mode, nav2 against the exploration parameter file in
 `mecanumbot_description`, the 2D/3D comparison handler, and the behaviours that
 drive the two of them around until the exit criteria are met.
 
-**The camera and the Deep3R client start here, straight away.** T1 cannot finish
-without them -- no frames means no cloud, no `map_agreement`, and a `CLOUD`
-exit criterion that is never met, with no error anywhere -- and until they were
-part of this file, starting T1 from a terminal or from the web GUI brought up
-everything except the two things the pass waits on. They start in parallel with
-the preflight rather than behind it, because the preflight leaves both alone.
-`use_camera:=false` / `use_deep3r:=false` when they are already running: a
-second camera publisher cannot open the device, and a second client is a second
-session with its own `run_id`, which the server answers by wiping the
-reconstruction.
+**The Deep3R client starts here, straight away, and it owns the camera.** It
+opens the device itself and sends the frames to the server; there is no image
+topic in that path and no publisher to start. T1 cannot finish without it -- no
+frames means no cloud, no `map_agreement`, and a `CLOUD` exit criterion that is
+never met, with no error anywhere -- and until it was part of this file,
+starting T1 from a terminal or from the web GUI brought up everything except
+the thing the pass waits on. It starts in parallel with the preflight rather
+than behind it, because the preflight leaves it alone. `use_deep3r:=false` when
+one is already running: the camera can be opened once, and a second client is a
+second session with its own `run_id`, which the server answers by wiping the
+reconstruction. `publish_debug_image:=true` puts the frames it sent on a topic
+when you want to watch them.
 
 **The preflight runs first and the rest waits for it to exit.** Not a timer: the
 stack below has to come up into a graph that has already been cleared, and a
@@ -68,8 +70,8 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, GroupAction,
-                            IncludeLaunchDescription, LogInfo, Shutdown,
-                            RegisterEventHandler)
+                            IncludeLaunchDescription, LogInfo, OpaqueFunction,
+                            Shutdown, RegisterEventHandler)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -84,8 +86,6 @@ NAV2_SHARE = get_package_share_directory("nav2_bringup")
 # Resolved only when included, not at import: mecanumbot_deep3r has no remote
 # and is not in every checkout, and a mapping-only run with use_deep3r:=false
 # should not need it installed.
-CAMERA_LAUNCH = PathJoinSubstitution(
-    [FindPackageShare("mecanumbot_camera_stream"), "launch", "camera_compressed.launch.py"])
 DEEP3R_LAUNCH = PathJoinSubstitution(
     [FindPackageShare("mecanumbot_deep3r"), "launch", "deep3r.launch.py"])
 
@@ -171,26 +171,50 @@ def generate_launch_description():
                 "degrading it. false starts regardless."
             ),
         ),
+        # No camera publisher is started. The Deep3R client opens the device
+        # itself and sends what it reads, so there is no image topic in the
+        # path and nothing between the sensor and the server that could change
+        # the picture. These three say what to ASK the camera for; what it
+        # gives back is read, logged and sent.
         DeclareLaunchArgument(
-            "use_camera",
-            default_value="true",
-            description=(
-                "Start the compressed camera publisher on "
-                "/camera/image_raw/compressed. false only when something else "
-                "already publishes it: the camera can be opened once."
-            ),
+            "camera_device", default_value="/dev/video0",
+            description="The camera the Deep3R client opens.",
         ),
         DeclareLaunchArgument(
             "camera_width", default_value="1280",
-            description="Frame width; matches deep3r.yaml's advertised_width.",
+            description=(
+                "Width to ask the camera for. A driver may refuse and give "
+                "another; the client logs what it got, and the server's "
+                "calib_width must describe that, not this."
+            ),
         ),
         DeclareLaunchArgument(
             "camera_height", default_value="720",
-            description="Frame height; matches deep3r.yaml's advertised_height.",
+            description="Height to ask for; see camera_width.",
         ),
         DeclareLaunchArgument(
             "camera_fps", default_value="15.0",
-            description="Capture and publish rate. The server reconstructs at ~6 Hz.",
+            description="Capture rate. The server reconstructs at ~6 Hz.",
+        ),
+        DeclareLaunchArgument(
+            "publish_debug_image", default_value="false",
+            description=(
+                "Have the Deep3R client republish the exact frames it sent, "
+                "for eyes on the robot. Off by default."
+            ),
+        ),
+        # Retired, and kept only so that passing it says so. It used to start
+        # mecanumbot_camera_stream's compressed publisher; there is no
+        # publisher any more, and launch would otherwise accept the argument
+        # in silence and run without the camera switch the caller thought
+        # they had set. Empty means "not passed".
+        DeclareLaunchArgument(
+            "use_camera", default_value="",
+            description=(
+                "RETIRED, ignored. The Deep3R client opens the camera itself, "
+                "so there is nothing to switch on: use use_deep3r. Passing it "
+                "logs a warning and changes nothing."
+            ),
         ),
         DeclareLaunchArgument(
             "use_deep3r",
@@ -201,9 +225,22 @@ def generate_launch_description():
                 "must be false too, or the pass never finishes."
             ),
         ),
+        # Declared before `server`, whose default is built from it.
         DeclareLaunchArgument(
-            "server", default_value="tcp://127.0.0.1:5555",
-            description="Local end of the forward tunnel, not a cluster address.",
+            "server_port", default_value="5555",
+            description=(
+                "Port of the local end of the forward tunnel. Change it when "
+                "5555 is taken; the tunnel has to forward the same port."
+            ),
+        ),
+        DeclareLaunchArgument(
+            "server",
+            default_value=["tcp://127.0.0.1:", LaunchConfiguration("server_port")],
+            description=(
+                "Local end of the forward tunnel, not a cluster address. Set "
+                "it whole to override the host as well, and server_port is "
+                "then ignored."
+            ),
         ),
         DeclareLaunchArgument(
             "client_path", default_value="~/robocam_client.py",
@@ -226,19 +263,10 @@ def generate_launch_description():
         ),
     ]
 
-    # The USB webcam is the robot's camera; csi cannot open it. The topic is the
-    # un-namespaced one perception also uses, and the one the client reads.
-    camera = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(CAMERA_LAUNCH),
-        condition=IfCondition(LaunchConfiguration("use_camera")),
-        launch_arguments={
-            "camera_backend": "usb",
-            "topic_name": "/camera/image_raw/compressed",
-            "width": LaunchConfiguration("camera_width"),
-            "height": LaunchConfiguration("camera_height"),
-            "fps": LaunchConfiguration("camera_fps"),
-        }.items(),
-    )
+    # The USB webcam is the robot's camera, and the Deep3R client owns it: it
+    # opens the device, sends the frames, and nothing republishes them unless
+    # publish_debug_image asks. The camera can be opened once, so use_deep3r
+    # false means no camera at all.
     deep3r = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(DEEP3R_LAUNCH),
         condition=IfCondition(LaunchConfiguration("use_deep3r")),
@@ -246,6 +274,11 @@ def generate_launch_description():
             "server": LaunchConfiguration("server"),
             "client_path": LaunchConfiguration("client_path"),
             "run_id": LaunchConfiguration("run_id"),
+            "camera_device": LaunchConfiguration("camera_device"),
+            "camera_width": LaunchConfiguration("camera_width"),
+            "camera_height": LaunchConfiguration("camera_height"),
+            "camera_fps": LaunchConfiguration("camera_fps"),
+            "publish_debug_image": LaunchConfiguration("publish_debug_image"),
         }.items(),
     )
 
@@ -349,18 +382,33 @@ def generate_launch_description():
             ),
         ]
 
+    def _retired_arguments(context):
+        """Warn about arguments that no longer do anything."""
+        value = context.perform_substitution(LaunchConfiguration("use_camera"))
+        if not value:
+            return []
+        return [LogInfo(msg=(
+            f"[autoslam] use_camera:={value} is retired and was ignored. The "
+            "Deep3R client opens /dev/video0 itself -- there is no camera "
+            "publisher to start, and no image topic in the frame path. Use "
+            "use_deep3r to decide whether the camera is opened at all, "
+            "camera_device to say which one, and publish_debug_image:=true to "
+            "see the frames it sends."
+        ))]
+
     return LaunchDescription(
         arguments
         + [
+            OpaqueFunction(function=_retired_arguments),
             LogInfo(
                 msg=(
-                    "autoslam (T1): camera + Deep3R client, then preflight, "
+                    "autoslam (T1): Deep3R client (which opens the camera), "
+                    "then preflight, "
                     "slam_toolbox + nav2 (no AMCL) + the 2D/3D comparison "
                     "handler + the exploration behaviours. The cluster server "
                     "is NOT started by this -- bring it and the tunnel up first."
                 )
             ),
-            camera,
             deep3r,
             LogInfo(
                 msg=["constants from ", params,
