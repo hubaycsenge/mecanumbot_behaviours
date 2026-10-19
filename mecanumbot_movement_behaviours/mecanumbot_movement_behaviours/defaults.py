@@ -170,8 +170,8 @@ MOVEMENT_DEFAULTS = {
     "body_gaze_switch_delay": 2.0,
     # How old the LiDAR's candidate list may be.
     "body_gaze_candidate_timeout": 0.5,
-    # The band of heights [m] the detector needs of each kind of body, hips to
-    # the top of the head, as `{'body': kind, 'low': .., 'high': ..}`. Kinds a
+    # The band of heights [m] each kind of body occupies, floor to the top of
+    # the head, as `{'body': kind, 'low': .., 'high': ..}`. Kinds a
     # file leaves out keep `body_gaze.BODY_PROFILES`.
     "body_profiles": [],
     # Known places in the map where a body is lower than a standing one, as

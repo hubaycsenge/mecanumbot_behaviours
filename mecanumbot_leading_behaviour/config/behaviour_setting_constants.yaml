@@ -192,13 +192,15 @@ bottom_up_tree_node:
     body_gaze_switch_jump: 0.8       # a body this much further off than the one in view is another body [m]
     body_gaze_switch_delay: 2.0      # ...and is only followed after being the nearest this long [s]
     body_gaze_candidate_timeout: 0.5 # how old the LiDAR's candidate list may be [s]
-    # The band of heights the pose detector needs of each kind of body, from
-    # the hips to the top of the head [m]. A kind left out keeps the packaged
-    # band; `standing` is anybody not on a seat.
+    # The band of heights each kind of body occupies, from the floor to the
+    # top of the head [m]; the head looks at its middle height (the waist of
+    # somebody standing). A kind left out keeps the packaged band; `standing`
+    # is anybody not on a seat. Until 2026-10-19 the bands were hips to head
+    # and a close body kept its top, which aimed the camera over people.
     body_profiles:
-      - "{'body':'standing', 'low':0.85, 'high':1.80}"
-      - "{'body':'chair',    'low':0.40, 'high':1.30}"
-      - "{'body':'bean_bag', 'low':0.10, 'high':0.75}"
+      - "{'body':'standing', 'low':0.0, 'high':1.75}"
+      - "{'body':'chair',    'low':0.0, 'high':1.30}"
+      - "{'body':'bean_bag', 'low':0.0, 'high':0.75}"
     # Known places in THIS map where a body is lower than a standing one, as
     #   - "{'seat':'bean_bag', 'x':-0.80, 'y':2.20, 'radius':0.70}"
     # with x, y in map coordinates (lower case: 'X'/'Y' would be read as a route

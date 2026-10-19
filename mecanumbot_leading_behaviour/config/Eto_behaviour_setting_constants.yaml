@@ -147,8 +147,8 @@ bottom_up_tree_node:
 
     # Kept as found: this editor does not render these.
     body_gaze_enabled: true
-    body_profiles: ['{''body'':''standing'', ''low'':0.85, ''high'':1.80}', '{''body'':''chair'',    ''low'':0.40,
-    ''high'':1.30}', '{''body'':''bean_bag'', ''low'':0.10, ''high'':0.75}']
+    body_profiles: ['{''body'':''standing'', ''low'':0.0, ''high'':1.75}', '{''body'':''chair'',    ''low'':0.0,
+    ''high'':1.30}', '{''body'':''bean_bag'', ''low'':0.0, ''high'':0.75}']
     seats: ['{''seat'':''bean_bag'', ''x'':-0.80, ''y'':2.20, ''radius'':0.70}', '{''seat'':''chair'',    ''x'':1.15,  ''y'':3.35,
     ''radius'':0.60}']
     LED_lead_straight: ['{''fl'':{''mode'':1, ''color'':1},''fr'':{''mode'':2, ''color'':1},''bl'':{''mode'':2,

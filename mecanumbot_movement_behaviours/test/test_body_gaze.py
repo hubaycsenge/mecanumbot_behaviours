@@ -85,31 +85,48 @@ class TestCloserMeansHigher:
         assert positions == sorted(positions)
         assert positions[-1] - positions[0] > 1.0
 
-    def test_a_standing_head_is_in_frame_at_every_range(self):
+    def test_a_standing_waist_is_mid_frame_at_every_range(self):
+        # The middle of a 1.75 m body, where the hands, elbows and hips are.
         for distance in (0.6, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0):
             pos = pos_for(candidates=[(distance, 0.0)])
-            assert in_frame(pos, distance, 1.45), distance  # shoulders
-            assert in_frame(pos, distance, 1.70), distance  # head
+            low, high = NECK.visible_band(pos, distance)
+            assert low < 0.875 < high, distance
+            assert (low + high) / 2.0 == pytest.approx(0.875, abs=0.35), distance
 
-    def test_the_seeking_pose_alone_loses_the_head_up_close(self):
+    def test_a_close_person_is_not_looked_over(self):
+        # The 2026-10-16 pilot: aimed at the top of the head, the camera looked
+        # at the ceiling and the person was at the bottom edge. Hips to chest
+        # now, with the head above the frame.
+        pos = pos_for(candidates=[(0.7, 0.0)])
+        low, high = NECK.visible_band(pos, 0.7)
+        assert low < 0.9 and high > 1.3
+        assert high < 1.5
+
+    def test_a_whole_standing_body_is_in_frame_from_three_metres(self):
+        pos = pos_for(candidates=[(3.0, 0.0)])
+        low, high = NECK.visible_band(pos, 3.0)
+        assert low < 0.2 and high > 1.6
+
+    def test_the_seeking_pose_alone_misses_the_body_up_close(self):
         # Why one fixed pose was never going to do.
-        assert not in_frame(REST, 0.7, 1.45)
-        assert not in_frame(7.0, 0.7, 1.45)
+        assert not in_frame(REST, 0.7, 0.875)
 
-    def test_a_body_too_tall_for_the_frame_keeps_its_top(self):
-        # Somebody on a bean bag from 0.8 m: floor to head is more than the
-        # frame holds, and it is the head and shoulders the detector needs.
-        low, high = BODY_PROFILES[BEAN_BAG]
-        target = GazeTarget(0.8, low, high, "somebody")
+    def test_a_body_too_tall_for_the_frame_is_looked_at_round_its_middle(self):
+        # Somebody standing 0.8 m away: floor to head is more than the frame
+        # holds, so there is no tilt that fits it, and the middle is kept.
+        target = standing_at(0.8)
         lowest, highest, ideal = tilt_interval(NECK, target, SETTINGS.frame_margin)
         assert lowest == highest == ideal
-        top = NECK.pitch(NECK.pos(ideal)) + NECK.vfov / 2.0
-        top_of_head = math.atan2(high - NECK.camera_height, 0.8 - NECK.camera_forward)
-        assert top - top_of_head == pytest.approx(SETTINGS.frame_margin, abs=1e-6)
+        middle = math.atan2(0.875 - NECK.camera_height, 0.8 - NECK.camera_forward)
+        assert ideal == pytest.approx(middle)
 
-    def test_a_body_that_fits_is_centred(self):
-        low, high, ideal = tilt_interval(NECK, standing_at(3.0), SETTINGS.frame_margin)
-        assert low < ideal < high
+    def test_a_body_that_fits_is_looked_at_round_its_middle(self):
+        low, high = BODY_PROFILES[BEAN_BAG]
+        target = GazeTarget(3.0, low, high, "somebody")
+        lowest, highest, ideal = tilt_interval(NECK, target, SETTINGS.frame_margin)
+        assert lowest < ideal < highest
+        middle = math.atan2(0.375 - NECK.camera_height, 3.0 - NECK.camera_forward)
+        assert ideal == pytest.approx(middle)
 
 
 class TestSeats:
@@ -187,12 +204,18 @@ class TestWhatIsLookedAt:
         near_only = pos_for(candidates=[(1.0, 0.0)])
         assert pos_for(candidates=[(3.5, 0.2), (1.0, 0.0)]) == near_only
 
-    def test_two_far_bodies_are_both_kept_in_frame(self):
-        targets = [standing_at(3.0), standing_at(4.0)]
+    def test_two_far_bodies_are_both_in_frame(self):
+        pos = pos_for(candidates=[(3.0, 0.0), (4.0, 0.2)])
+        assert in_frame(pos, 3.0, 0.875)
+        assert in_frame(pos, 4.0, 0.875)
+
+    def test_a_second_body_that_fits_narrows_the_choice(self):
+        low, high = BODY_PROFILES[BEAN_BAG]
+        targets = [GazeTarget(3.0, low, high, "a"), GazeTarget(4.0, low, high, "b")]
         tilt = choose_tilt(NECK, targets, SETTINGS.frame_margin)
         for target in targets:
-            low, high, _ = tilt_interval(NECK, target, SETTINGS.frame_margin)
-            assert low - 1e-9 <= tilt <= high + 1e-9
+            lowest, highest, _ = tilt_interval(NECK, target, SETTINGS.frame_margin)
+            assert lowest - 1e-9 <= tilt <= highest + 1e-9
 
     def test_the_gaze_stays_inside_its_own_limits(self):
         assert pos_for(candidates=[(0.35, 0.0)]) <= SETTINGS.max_pos
@@ -209,8 +232,9 @@ class TestController:
 
     def test_range_noise_does_not_move_it(self):
         gaze = BodyGazeController()
-        pos = gaze.update(0.0, ROBOT, [], [(2.0, 0.0)], REST, REST)
-        assert gaze.update(1.0, ROBOT, [], [(2.05, 0.0)], REST, pos) is None
+        pos = gaze.update(0.0, ROBOT, [], [(1.0, 0.0)], REST, REST)
+        assert pos is not None
+        assert gaze.update(1.0, ROBOT, [], [(1.05, 0.0)], REST, pos) is None
 
     def test_commands_are_spaced_out(self):
         gaze = BodyGazeController()

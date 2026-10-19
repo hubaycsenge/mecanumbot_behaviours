@@ -19,9 +19,9 @@ expected to be**, and the robot knows both before the camera has seen anything:
   not part of the mapped room is a place a person may be standing
   (`lidar_candidates`, published by the fusion node), and a person the fusion is
   already tracking is a better answer still. The nearer the body, the further up
-  the head has to look to keep its top in the frame;
-* a body is expected to be a **standing** one, shoulders at 1.4 m and a head
-  above them -- except where the room says otherwise. A **seat** is a known
+  the head has to look to keep its middle in the frame;
+* a body is expected to be a **standing** one, 1.5 to 2 m tall -- except where
+  the room says otherwise. A **seat** is a known
   place in the map where a body is lower: a chair, a bean bag. Somebody there is
   looked for at the height a sitting person is. A seat is also looked at when
   the LiDAR reports nothing on it at all, because that is exactly the case the
@@ -29,13 +29,21 @@ expected to be**, and the robot knows both before the camera has seen anything:
   wall, and a bean bag that was in the room when it was mapped is part of the
   map.
 
-Each thing in view asks for a band of heights to be in the frame -- the part of
-that body the pose detector needs, hips to the top of the head -- which at its
-range is an interval of tilts. The head takes the tilt in the middle of the
-first target's interval, moved as little as it must be to satisfy the others
-too. A body too tall for the frame at its range keeps its top: a face and two
-shoulders are seven keypoints, which the detection gate accepts, and knees are
-not.
+Each thing in view asks for a band of heights to be in the frame -- the whole
+body, from the floor to the top of the head -- which at its range is an
+interval of tilts. The head looks at the **middle height** of the first
+target's band -- the waist of somebody standing -- moved as little as it must
+be to keep the others in frame too. A body too tall for the frame at its range
+is looked at the same way: the frame is full of body at any tilt inside it, and
+round the waist it holds the hips, the hands and the elbows, more joints than
+anywhere else on a body. The detection gate does not ask which part
+of a body it was shown, only how sure the network is of it.
+
+Until 2026-10-19 the band was hips to head, and a body too tall for the frame
+kept its top, because the gate then wanted a torso far away and accepted a face
+and shoulders. Close in, that pointed the camera at the ceiling: in the
+2026-10-16 leading pilot the people it was following were at the bottom edge of
+the frame, cut off, and dropped.
 
 No ROS here. `ros_interfaces.BodyGaze` feeds this the robot's pose, the tracked
 people and the candidates, and sends what it returns.
@@ -48,18 +56,18 @@ STANDING = "standing"
 CHAIR = "chair"
 BEAN_BAG = "bean_bag"
 
-# The band of heights [m] the pose detector needs of each kind of body: from
-# the hips to the top of the head. Standing is sized for an adult; the seated
-# ones are what the bags of 2026-09-30 measured, with room above -- shoulders
-# at ~0.95 m and the head at ~1.1 m on the chair by the wall, shoulders at
-# ~0.4 m and the nose at ~0.55 m on the bean bag. The top of a band matters
-# more than its bottom: close in, a body is taller than the frame, the top is
-# what is kept, and every centimetre of air above the head is one taken from
-# the shoulders -- at 1.1 m the whole frame is 0.55 m tall.
+# The band of heights [m] a body of each kind occupies: from the floor, where
+# the feet are, to the top of the head. Standing is an adult of 1.5 to 2 m,
+# taken at the middle; the seated ones are what the bags of 2026-09-30
+# measured, with room above -- the head at ~1.1 m on the chair by the wall,
+# the nose at ~0.55 m on the bean bag. The head is aimed at the middle of the
+# band's height, so it is the middle that matters: a standing person is looked
+# at around the waist, somebody on a chair around the lap, somebody on the bean
+# bag around the chest.
 BODY_PROFILES = {
-    STANDING: (0.85, 1.80),
-    CHAIR: (0.40, 1.30),
-    BEAN_BAG: (0.10, 0.75),
+    STANDING: (0.0, 1.75),
+    CHAIR: (0.0, 1.30),
+    BEAN_BAG: (0.0, 0.75),
 }
 
 
@@ -236,19 +244,23 @@ def tilt_interval(neck, target, frame_margin):
 
     The band between `target.low` and `target.high` subtends an interval of
     elevations at its range; any tilt that puts both ends inside the frame
-    (less the margin) will do, and the ideal is the one that centres it. A band
-    taller than the frame has no such tilt, and then the answer is the one that
-    keeps its top -- the head and shoulders -- with the margin above it.
+    (less the margin) will do, and the ideal is the one that looks at the
+    band's middle height. A band taller than the frame has no such tilt, and
+    then the answer is that ideal all the same: the frame is full of body
+    either way. The middle *height* rather than the middle *angle*, because up
+    close perspective pulls the angular middle down to the knees, and the head
+    would start dropping again as a person came nearer.
     """
     reach = max(target.distance - neck.camera_forward, 0.2)
     bottom = math.atan2(target.low - neck.camera_height, reach)
     top = math.atan2(target.high - neck.camera_height, reach)
     half = neck.vfov / 2.0 - frame_margin
+    middle = math.atan2((target.low + target.high) / 2.0 - neck.camera_height, reach)
     lowest = top - half
     highest = bottom + half
     if lowest > highest:
-        return lowest, lowest, lowest
-    return lowest, highest, (bottom + top) / 2.0
+        return middle, middle, middle
+    return lowest, highest, max(lowest, min(highest, middle))
 
 
 def choose_tilt(neck, targets, frame_margin):

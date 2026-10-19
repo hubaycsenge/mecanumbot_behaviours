@@ -178,20 +178,29 @@ the camera has seen anything:
 - **the LiDAR says how far.** The fusion node publishes `lidar_candidates` —
   anything the scan sees that is the size of a person and not part of the mapped
   room — and `people_fusion` is a better answer still once somebody is tracked.
-  Nearer means further up: `7.9` for a standing person at 0.7 m, `6.8` at 2 m,
-  `6.45` at 3.5 m.
+  Nearer means further up: `7.5` for a standing person at 0.7 m, `6.5` at 2 m,
+  `6.2` at 3.5 m.
 - **a seat says how tall.** A body is expected to be a standing one unless it
   is on one of the `seats` the constants file lists for the room, where it is
-  looked for at the height of its `body_profiles` entry instead: `6.4` for the
-  bean bag at 1.1 m, where a standing body would have had `7.4`. A seat is looked
+  looked for at the height of its `body_profiles` entry instead: `6.1` for the
+  bean bag at 1.1 m, where a standing body would have had `7.0`. A seat is looked
   at even with no LiDAR return on it, because that is the case the LiDAR is bad
   at — a person in a chair against the wall is one return with the wall.
 
-Each thing in view asks for a band of heights to be in frame, hips to the top of
-the head. The head takes the tilt that centres the first one's band — a tracked
-person before a candidate, nearer before further — moved as little as it must be
-to keep the others in frame too. A body taller than the frame at its range keeps
-its top. `body_gaze_deadband`, `_min_interval` and `_release_delay` keep it from
+Each thing in view is a band of heights, the whole body from the floor to the top
+of the head. The head looks at the middle height of the first one's band — the
+waist of somebody standing, a tracked person before a candidate, nearer before
+further — moved as little as it must be to keep the others in frame too. A body
+taller than the frame at its range is looked at the same way: at any tilt inside
+it the frame is full of body, and round the waist it holds the hips, hands and
+elbows. The detection gate takes any joints the network is sure of, so whatever
+part of a person that shows is enough.
+
+Until 2026-10-19 the band was hips to head and a body taller than the frame kept
+its top, because the gate then wanted a torso far away and took a face and
+shoulders. Close in that pointed the camera at the ceiling: in the 2026-10-16
+leading pilot people were followed at the bottom edge of the frame, cut off, and
+lost. `body_gaze_deadband`, `_min_interval` and `_release_delay` keep it from
 following range noise or nodding when a scan drops out.
 
 It is **opt-in per tree**, by listing `defaults.start_body_gaze` among the
@@ -216,7 +225,7 @@ while it is down. The next `look("seek")` hands it back.
 | `body_gaze_release_delay` | `1.0` | Seconds with nothing in view before the head returns to `neck_seek_pos`. |
 | `body_gaze_switch_jump`, `body_gaze_switch_delay` | `0.8`, `2.0` | A body more than this many metres further off than the one the head is on is only followed once it has been the nearest for this many seconds, so a near person dropping out of the detections for a moment does not make the head nod to whatever stands behind them. A nearer body is followed at once. |
 | `body_gaze_candidate_timeout` | `0.5` | How old the `lidar_candidates` list may be [s]. |
-| `body_profiles` | standing `0.85–1.80`, chair `0.40–1.30`, bean_bag `0.10–0.75` | `{'body': kind, 'low': .., 'high': ..}` — the heights the detector needs of each kind of body. |
+| `body_profiles` | standing `0.0–1.75`, chair `0.0–1.30`, bean_bag `0.0–0.75` | `{'body': kind, 'low': .., 'high': ..}` — the heights each kind of body occupies, floor to head; the head looks at the middle. |
 | `seats` | none | `{'seat': kind, 'x': .., 'y': .., 'radius': ..}` in map coordinates, optionally `'low'` / `'high'`. Lower-case `x`/`y`: `X`/`Y` is a route checkpoint. They belong to a room, so a constants file lists its own. |
 
 The neck model itself (`body_gaze.NeckModel`: 4.7° up at `6.0`, 29° per unit of
@@ -290,7 +299,8 @@ the wiggle's sweep pattern. `pacing.py`
 imports nothing, so most of it runs against a bare interpreter; the three
 `route_poses` tests need `geometry_msgs` and skip without it.
 
-`test/test_body_gaze.py` — 40 tests over the gaze: nearer means further up, a
+`test/test_body_gaze.py` — 47 tests over the gaze: nearer means further up, the
+waist is mid-frame at every range, a close person is not looked over, a
 seat means lower, a seat is looked at with no LiDAR return on it, a tracked
 person comes before a nearer candidate, and the head does not follow range noise.
 The scenes are the ones in the bags of 2026-09-30. Pure Python; the two cases
