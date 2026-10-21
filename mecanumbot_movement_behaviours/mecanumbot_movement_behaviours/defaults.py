@@ -157,8 +157,10 @@ MOVEMENT_DEFAULTS = {
     # The neck positions the gaze may command, the smallest change worth a
     # command (0.1 is ~3 deg), the shortest time between two, and how long the
     # head waits with nothing in view before going back to `neck_seek_pos`.
-    "body_gaze_min_pos": 5.5,
-    "body_gaze_max_pos": 8.2,
+    # The two limits are the tilts -9.8 and +68.5 deg: until the 2026-10-21
+    # recalibration (lens level at ~505, not ~584) they were written 5.5 / 8.2.
+    "body_gaze_min_pos": 4.71,
+    "body_gaze_max_pos": 7.41,
     "body_gaze_deadband": 0.1,
     "body_gaze_min_interval": 0.4,
     "body_gaze_release_delay": 1.0,

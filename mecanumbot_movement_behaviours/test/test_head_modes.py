@@ -157,7 +157,8 @@ class TestTheGazeSteersASeekingHead:
         head.look(HEAD_SEEK)
         lidar_sees(node, (0.8, 0.0))
         tick(node)
-        assert node.neck_commands()[-1] > 7.0
+        # Above 33.7 degrees: a standing waist at 0.8 m.
+        assert node.neck_commands()[-1] > 6.2
 
     def test_a_seat_lowers_it(self, node):
         head = AccessoryCommander(node)

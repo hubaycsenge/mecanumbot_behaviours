@@ -241,6 +241,11 @@ about 1 m in front of the robot:
   0.005061 rad/tick (a free fit gave 0.005115). At 600 ticks the camera looks **+4.7°**
   up (+4.4° coming down, +5.0° going up, so a couple of ticks of backlash), which puts
   optical level at ~584 ticks. It was 0 before.
+  **Superseded 2026-10-21:** the head had moved on its servo since. A ball on the floor
+  1 m out with the neck at 500 gave −1.8° by its size and −1.2° by its known distance,
+  so the camera is now level at **~505 ticks** and `pitch_at_level_deg` is **27.5**.
+  The 2026-09-30 bags still match the old number, so the shift happened after them.
+  `fetch_head_search` (5.5) was chosen as −9.8° under the old number; it is now +13°.
 * **Lens:** **51°** horizontal, not the assumed 60°. The robot turned ±0.2 rad in place,
   and the ball's pixel shift against odometry yaw gave a ~1340 px focal length. At 60°
   the neck slope came out 1.2× the datasheet's and the ball ranged 20 % short; at 51°

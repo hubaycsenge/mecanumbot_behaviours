@@ -133,8 +133,8 @@ bottom_up_tree_node:
     body_gaze_max_range: 4.5         # bodies further off than this are not tilted for [m]
     body_gaze_view_margin_deg: 12.0  # attended to this far beyond the edge of the picture
     body_gaze_frame_margin_deg: 3.0  # kept clear above and below a body in the frame
-    body_gaze_min_pos: 5.5  # the neck positions the gaze may command
-    body_gaze_max_pos: 8.2
+    body_gaze_min_pos: 4.71  # the neck positions the gaze may command: tilts -9.8..+68.5 deg (lens level at 5.05)
+    body_gaze_max_pos: 7.41
     body_gaze_deadband: 0.1  # smallest change worth a command (0.1 is ~3 deg)
     body_gaze_min_interval: 0.4  # shortest time between two commands [s]
     body_gaze_release_delay: 1.0  # nothing in view this long -> back to neck_seek_pos [s]

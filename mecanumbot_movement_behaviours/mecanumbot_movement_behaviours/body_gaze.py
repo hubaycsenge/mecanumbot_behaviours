@@ -78,14 +78,15 @@ class NeckModel:
 
     `n_pos` is the servo position in the units the trees command (board ticks
     over 100). The numbers are the ones `mecanumbot_sensorprocess_smart` places
-    a ball with (`ball.neck.*`, measured 2026-09-15 and 2026-09-18) and
-    `mecanumbot_deep3r` reconstructs with: 0.005061 rad per tick, the lens
-    looking 4.7 degrees up at 600 ticks. They describe the same servo, so change
-    all three or none.
+    a ball with (`ball.neck.*`) and `mecanumbot_deep3r` reconstructs with:
+    0.005061 rad per tick, the lens level at ~505 ticks and so looking 27.5
+    degrees up at 600 (2026-10-21; it was 4.7, which aimed every gaze ~24
+    degrees higher than intended -- at the ceiling, close in). They describe
+    the same servo, so change all three or none.
     """
 
     level_pos: float = 6.0
-    pitch_at_level: float = math.radians(4.7)
+    pitch_at_level: float = math.radians(27.5)
     rad_per_pos: float = 0.5061
     min_pos: float = 2.0
     max_pos: float = 8.6
@@ -216,8 +217,10 @@ class GazeSettings:
     # touches the edge is a truncated box.
     frame_margin: float = math.radians(3.0)
     # The neck positions the gaze may command.
-    min_pos: float = 5.5
-    max_pos: float = 8.2
+    # Tilts of -9.8 and +68.5 deg; 5.5 and 8.2 before the 2026-10-21
+    # recalibration put the lens level at ~505 rather than ~584.
+    min_pos: float = 4.71
+    max_pos: float = 7.41
     # Smallest change worth a command [n_pos; 0.1 is ~3 degrees], and the
     # shortest time between two [s]. Without them the head would follow the
     # range noise of whatever it is looking at.

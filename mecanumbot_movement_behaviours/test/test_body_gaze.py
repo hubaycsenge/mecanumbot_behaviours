@@ -31,10 +31,16 @@ from mecanumbot_movement_behaviours.body_gaze import (
 )
 
 NECK = NeckModel()
+# The neck as it was mounted until at least 2026-09-30: lens level at ~584
+# ticks. The bags of that day were recorded with it. By 2026-10-21 it was
+# level at ~505 (a ball on the floor, measured), so the head had moved on its
+# servo in between.
+NECK_UNTIL_SEPTEMBER = NeckModel(pitch_at_level=math.radians(4.7))
 SETTINGS = GazeSettings()
 # The robot at the map origin, looking down +x.
 ROBOT = (0.0, 0.0, 0.0)
-REST = 6.5
+# A seeking pose 19 degrees up -- what 6.5 was under the old calibration.
+REST = round(NECK.pos(math.radians(19.2)), 2)
 
 BEAN_BAG_SEAT = Seat(BEAN_BAG, 1.5, 0.0, 0.7)
 CHAIR_SEAT = Seat(CHAIR, 3.9, 0.0, 0.6)
@@ -57,10 +63,10 @@ def in_frame(pos, distance, height):
 
 class TestNeckModel:
     def test_the_measured_calibration(self):
-        # 4.7 degrees up at 600 ticks, 0.29 degrees a tick.
-        assert math.degrees(NECK.pitch(6.0)) == pytest.approx(4.7)
-        assert math.degrees(NECK.pitch(6.5)) == pytest.approx(19.2, abs=0.1)
-        assert math.degrees(NECK.pitch(7.0)) == pytest.approx(33.7, abs=0.1)
+        # 2026-10-21: level at ~505 ticks, so 27.5 degrees up at 600, 0.29 a tick.
+        assert math.degrees(NECK.pitch(6.0)) == pytest.approx(27.5)
+        assert math.degrees(NECK.pitch(5.0)) == pytest.approx(-1.5, abs=0.1)
+        assert NECK.pos(0.0) == pytest.approx(5.05, abs=0.01)
 
     def test_position_and_tilt_are_inverses(self):
         for pos in (5.5, 6.0, 6.84, 8.0):
@@ -73,9 +79,11 @@ class TestNeckModel:
     def test_what_the_trials_of_2026_09_30_saw(self):
         # Head at 6.5: a pair of jeans from 0.7 m, and at 1.43 m a frame whose
         # bottom edge is 0.33 m up -- so a face at 0.55 m is at the very bottom.
-        low, high = NECK.visible_band(6.5, 0.7)
+        # With the neck as it was mounted then; today's model does not
+        # reproduce this, which is the evidence the head moved on its servo.
+        low, high = NECK_UNTIL_SEPTEMBER.visible_band(6.5, 0.7)
         assert high < 0.7
-        low, high = NECK.visible_band(6.5, 1.43)
+        low, high = NECK_UNTIL_SEPTEMBER.visible_band(6.5, 1.43)
         assert low == pytest.approx(0.33, abs=0.03)
 
 

@@ -220,7 +220,7 @@ while it is down. The next `look("seek")` hands it back.
 | `body_gaze_max_range` | `4.5` | Metres beyond which a body is not tilted for. |
 | `body_gaze_view_margin_deg` | `12` | How far beyond the edge of the picture a target is still attended to, so the head is ready as a turn brings it into shot. |
 | `body_gaze_frame_margin_deg` | `3` | Kept clear above and below a body in the frame. |
-| `body_gaze_min_pos` / `_max_pos` | `5.5` / `8.2` | The neck positions the gaze may command. |
+| `body_gaze_min_pos` / `_max_pos` | `4.71` / `7.41` | The neck positions the gaze may command: tilts of −9.8° and +68.5°. They were `5.5` / `8.2` until the 2026-10-21 recalibration. |
 | `body_gaze_deadband` / `_min_interval` | `0.1` / `0.4` | Smallest change worth a command (`0.1` is ~3°) and the shortest time between two [s]. |
 | `body_gaze_release_delay` | `1.0` | Seconds with nothing in view before the head returns to `neck_seek_pos`. |
 | `body_gaze_subject_gate`, `body_gaze_subject_memory` | `1.0`, `10.0` | The human the tree is dealing with is looked for first: a tracked person or candidate within this many metres of where they were last placed (`FollowedSubjectTracker`) goes ahead of nearer ones, and with no candidate there, that place itself is the target. The place is believed for this many seconds. Before 2026-10-21 the head went to whichever unmapped cluster was nearest while the robot walked up to somebody else. |
@@ -229,7 +229,8 @@ while it is down. The next `look("seek")` hands it back.
 | `body_profiles` | standing `0.0–1.75`, chair `0.0–1.30`, bean_bag `0.0–0.75` | `{'body': kind, 'low': .., 'high': ..}` — the heights each kind of body occupies, floor to head; the head looks at the middle. |
 | `seats` | none | `{'seat': kind, 'x': .., 'y': .., 'radius': ..}` in map coordinates, optionally `'low'` / `'high'`. Lower-case `x`/`y`: `X`/`Y` is a route checkpoint. They belong to a room, so a constants file lists its own. |
 
-The neck model itself (`body_gaze.NeckModel`: 4.7° up at `6.0`, 29° per unit of
+The neck model itself (`body_gaze.NeckModel`: 27.5° up at `6.0`, level at ~`5.05`,
+measured 2026-10-21 -- 4.7° before the head moved on its servo -- 29° per unit of
 `n_pos`, the 51° × 30° lens) is not in the YAML. It is the calibration
 `mecanumbot_sensorprocess_smart` places a ball with and `mecanumbot_deep3r`
 reconstructs with — the same servo, so change all three or none.
