@@ -56,20 +56,25 @@ LEADING_DEFAULTS = {
     "LED_direction_hold": 6.0,
     # --- when the trial starts (trial_start.py) --------------------------------
     # Every leading tree holds still after loading until `people_fusion` tracks
-    # a person (`trial_start_camera`) or the LiDAR pattern changes from the
-    # room it saw first. `trial_start_enabled: false` starts at once, as before.
+    # a person (`trial_start_camera`) or the LiDAR sees something new standing
+    # in front of the room it saw first (`trial_start_lidar`).
+    # `trial_start_enabled: false` starts at once, as before.
     "trial_start_enabled": True,
     "trial_start_camera": True,
     "trial_start_lidar": True,
-    # The scan comparison: bins of this width, a baseline of this many scans,
-    # a change of this many metres within this range, over this many
-    # neighbouring bins, for this many scans running.
-    "trial_start_bin_width": math.radians(2.0),
-    "trial_start_baseline_scans": 10,
+    # The scan comparison (trial_start.py): the nearest return in each
+    # direction over the first `baseline_scans` is the room; a return
+    # `min_change` m nearer than every room return within `angle_tolerance`,
+    # within `max_range`, is new; `min_beams` neighbouring new returns are an
+    # object; and one that holds its bearing within `persist_gate` for
+    # `persist_scans` scans running starts the trial.
+    "trial_start_baseline_scans": 20,
     "trial_start_min_change": 0.3,
+    "trial_start_angle_tolerance": math.radians(2.0),
     "trial_start_max_range": 4.5,
-    "trial_start_min_bins": 2,
-    "trial_start_persist_scans": 3,
+    "trial_start_min_beams": 3,
+    "trial_start_persist_scans": 5,
+    "trial_start_persist_gate": math.radians(10.0),
 }
 
 # The order matters: a key declared in more than one of these takes the value

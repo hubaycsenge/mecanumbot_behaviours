@@ -196,13 +196,19 @@ colcon test --packages-select mecanumbot_leading_behaviour   # lint only
 1. **Hold still until somebody comes in** (`WaitForTrialStart`, `behaviours/start_gate.py`),
    in all four trees. It succeeds the first time `people_fusion` tracks a person
    (`trial_start_camera`) — the same source the tree then walks to — or
-   the LiDAR pattern changes from the room it saw first: the scan is binned into
-   `trial_start_bin_width_deg` bins (the LD08 changes its beam geometry every
-   revolution), the median of the first `trial_start_baseline_scans` is the baseline,
-   and `trial_start_min_bins` neighbouring bins moving by more than
-   `trial_start_min_change` within `trial_start_max_range`, for
-   `trial_start_persist_scans` scans running, is somebody walking in. A bin that lost
-   its return is not a change. Latched, so a root that fails and restarts does not wait
+   the LiDAR sees **something new standing in the room**: the nearest return in each
+   direction over the first `trial_start_baseline_scans` scans is the room; a return
+   `trial_start_min_change` nearer than every room return within
+   `trial_start_angle_tolerance_deg` (and within `trial_start_max_range`) is new;
+   `trial_start_min_beams` neighbouring new returns are an object; and an object that holds
+   its bearing within `trial_start_persist_gate_deg` for `trial_start_persist_scans` scans
+   running is somebody walking in. Only things appearing in front of the room count — not
+   the room receding, not a lost return. The first version compared 2° bins in both
+   directions and started every trial at once in a still room: the LD08's ~203 beams a turn
+   are 1.8° apart and shift every revolution, so bins emptied and filled, and every depth
+   edge flipped between its near and far surface. Replayed on 373 still scans of the room
+   (2026-10-21) this version never saw more than one new beam; a person 1.5–2.5 m out in
+   open space is found in 5 scans. Latched, so a root that fails and restarts does not wait
    again. `trial_start_enabled: false` (or both `trial_start_camera` and
    `trial_start_lidar` false) starts at once, as before. The logic is `behaviours/trial_start.py`.
 2. Build a sequence/selector/retry structure from movement and signalling behaviours.

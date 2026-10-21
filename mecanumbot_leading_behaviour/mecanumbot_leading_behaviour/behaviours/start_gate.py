@@ -25,12 +25,13 @@ START_KEYS = (
     "trial_start_enabled",
     "trial_start_camera",
     "trial_start_lidar",
-    "trial_start_bin_width",
     "trial_start_baseline_scans",
     "trial_start_min_change",
+    "trial_start_angle_tolerance",
     "trial_start_max_range",
-    "trial_start_min_bins",
+    "trial_start_min_beams",
     "trial_start_persist_scans",
+    "trial_start_persist_gate",
 )
 
 
@@ -79,19 +80,20 @@ class WaitForTrialStart(py_trees.behaviour.Behaviour):
         # are only on the blackboard once the loader has run.
         self.scan_change = ScanChangeDetector(
             ScanChangeSettings(
-                bin_width=float(value("trial_start_bin_width")),
                 baseline_scans=int(value("trial_start_baseline_scans")),
                 min_change=float(value("trial_start_min_change")),
+                angle_tolerance=float(value("trial_start_angle_tolerance")),
                 max_range=float(value("trial_start_max_range")),
-                min_bins=int(value("trial_start_min_bins")),
+                min_beams=int(value("trial_start_min_beams")),
                 persist_scans=int(value("trial_start_persist_scans")),
+                persist_gate=float(value("trial_start_persist_gate")),
             )
         )
         sources = [
             name
             for name, used in (
                 ("a person is tracked", self.use_camera),
-                ("the LiDAR pattern changes", self.use_lidar),
+                ("something new stands in the LiDAR's room", self.use_lidar),
             )
             if used
         ]

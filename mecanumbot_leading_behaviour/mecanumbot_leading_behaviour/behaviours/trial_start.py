@@ -12,16 +12,21 @@ person has arrived:
   frame-filling `close_range` one only with the LiDAR's backing), or a body
   the LiDAR has followed for a while right next to the robot, where the camera
   cannot see;
-* **the LiDAR pattern changes**: the room the robot saw when it was switched on
-  is the baseline, and a stretch of neighbouring directions in which something
-  is now nearer or further than it was, for a few scans running, is somebody
-  walking in.
+* **something new stands in the room**: the room the robot saw when it was
+  switched on is the baseline, and an object *in front of* it -- nearer than
+  anything the baseline had in that direction -- that holds its bearing for a
+  few scans is somebody walking in.
 
-The scan comparison is made on fixed angular bins rather than beam by beam,
-because the LD08 driver changes its scan geometry every revolution (see
-`mecanumbot_core`'s scan grid). Each bin keeps the nearest valid return in it.
-A bin that has lost its return is not a change: the LD08 drops beams all the
-time, and an empty bin says nothing about what is there.
+Only something appearing in front of the room counts, never the room receding
+or a return going missing, and the comparison is deliberately coarse in angle.
+The first version binned the scan into 2-degree bins and counted any change in
+either direction, and it started every trial at once in a still room
+(2026-10-21): the LD08 gives ~203 beams a turn, 1.8 degrees apart, and changes
+its beam geometry every revolution, so a bin held a return in one scan and none
+in the next, and at every depth edge the nearest return in a bin flipped
+between the near surface and the far one. Here a beam has changed only when it
+is nearer than *every* return the baseline ever had within `angle_tolerance`
+of it, which no edge and no beam jitter can produce.
 
 No ROS here; `start_gate.WaitForTrialStart` feeds it.
 """
@@ -31,138 +36,181 @@ from dataclasses import dataclass
 
 import numpy as np
 
+FULL_TURN = 2.0 * math.pi
+
 
 @dataclass(frozen=True)
 class ScanChangeSettings:
     """The tunables of the scan comparison; the constants file spells them `trial_start_*`."""
 
-    # Width of one angular bin [rad]. A person at 3 m is ~6 degrees across.
-    bin_width: float = math.radians(2.0)
-    # Scans averaged (per-bin median) into the baseline before anything is
-    # compared against it.
-    baseline_scans: int = 10
-    # Metres a bin has to move by to count as changed. The LD08's range noise
-    # is a few centimetres; a person is not.
+    # Scans whose returns make the baseline. The robot must stand still while
+    # they are taken, which it does: the tree has not started yet.
+    baseline_scans: int = 20
+    # A return counts as new only if it is this many metres nearer than every
+    # baseline return within `angle_tolerance` of it.
     min_change: float = 0.3
-    # Only changes within this range count [m]: past it a leg is one beam.
+    angle_tolerance: float = math.radians(2.0)
+    # Only things within this range count [m]: past it a leg is one beam.
     max_range: float = 4.5
-    # Neighbouring changed bins that make one change: a single bin is noise.
-    min_bins: int = 2
-    # Consecutive scans the change has to be seen in.
-    persist_scans: int = 3
+    # Neighbouring new returns that make an object: a single beam is noise. At
+    # 1.8 degrees a beam, three is a pair of legs at ~2.5 m.
+    min_beams: int = 3
+    # Scans running the object has to be seen in, each within `persist_gate`
+    # of the bearing it had in the scan before.
+    persist_scans: int = 5
+    persist_gate: float = math.radians(10.0)
 
 
-def bin_scan(ranges, angle_min, angle_increment, bin_width, range_min=0.0, range_max=math.inf):
+# Resolution the baseline is kept at: finer than the LD08's beam spacing, so
+# the angle tolerance, not the grid, decides what is "the same direction".
+_GRID = math.radians(0.5)
+
+
+def _angles(count, angle_min, angle_increment):
+    return np.mod(angle_min + angle_increment * np.arange(count), FULL_TURN)
+
+
+def _valid(ranges, range_min, range_max):
+    return np.isfinite(ranges) & (ranges > range_min) & (ranges < range_max)
+
+
+def wrap(angle):
+    """Wrap an angle to (-pi, pi]."""
+    return math.atan2(math.sin(angle), math.cos(angle))
+
+
+class RoomBaseline:
     """
-    Return the nearest valid return in each fixed angular bin over a full turn.
+    The nearest return ever seen in each direction while the baseline was taken.
 
-    Bins with no valid return are NaN. Bin 0 starts at bearing 0; bearings are
-    taken modulo a full turn, so a 0..2pi scan and a -pi..pi one bin alike.
+    Kept on a fine angular grid; a direction no baseline scan had a return in
+    is +inf -- open space, or glass -- and anything appearing there is new.
     """
-    count = max(1, int(round(2.0 * math.pi / bin_width)))
+
+    def __init__(self):
+        self.cells = int(round(FULL_TURN / _GRID))
+        self.nearest = np.full(self.cells, np.inf)
+
+    def add(self, ranges, angle_min, angle_increment, range_min=0.0, range_max=math.inf):
+        """Fold one scan's valid returns into the baseline."""
+        ranges = np.asarray(ranges, dtype=float)
+        valid = _valid(ranges, range_min, range_max)
+        cells = (
+            _angles(ranges.size, angle_min, angle_increment)[valid] / _GRID
+        ).astype(int) % self.cells
+        np.minimum.at(self.nearest, cells, ranges[valid])
+
+    def nearest_around(self, angles, tolerance):
+        """Return, for each angle, the nearest baseline return within `tolerance`."""
+        reach = int(math.ceil(tolerance / _GRID))
+        cells = (np.asarray(angles) / _GRID).astype(int) % self.cells
+        out = np.full(cells.shape, np.inf)
+        for offset in range(-reach, reach + 1):
+            out = np.minimum(out, self.nearest[(cells + offset) % self.cells])
+        return out
+
+
+def new_returns(baseline, ranges, angle_min, angle_increment, settings,
+                range_min=0.0, range_max=math.inf):
+    """
+    Return a boolean mask over the beams: which are something new in the room.
+
+    New means valid, within `max_range`, and `min_change` nearer than every
+    baseline return within `angle_tolerance`. A missing return is never new.
+    """
     ranges = np.asarray(ranges, dtype=float)
-    angles = angle_min + angle_increment * np.arange(ranges.size)
-    valid = np.isfinite(ranges) & (ranges > range_min) & (ranges < range_max)
-    binned = np.full(count, np.nan)
-    if not valid.any():
-        return binned
-    index = (np.floor(np.mod(angles[valid], 2.0 * math.pi) / (2.0 * math.pi) * count)
-             .astype(int) % count)
-    values = ranges[valid]
-    order = np.argsort(-values)  # far first, so the nearest is written last
-    binned[index[order]] = values[order]
-    return binned
-
-
-def changed_bins(baseline, current, min_change, max_range):
-    """
-    Return a boolean mask of the bins in which the room has changed.
-
-    A bin has changed when it has a return now that is `min_change` nearer or
-    further than the baseline's, within `max_range` -- or a return within
-    `max_range` where the baseline had none, which is something arriving in
-    open space. A bin that has lost its return is never a change.
-    """
-    baseline = np.asarray(baseline, dtype=float)
-    current = np.asarray(current, dtype=float)
-    has_now = np.isfinite(current)
-    had = np.isfinite(baseline)
-    both = has_now & had
-    moved = np.zeros(current.shape, dtype=bool)
-    moved[both] = (np.abs(current[both] - baseline[both]) > min_change) & (
-        np.minimum(current[both], baseline[both]) <= max_range
+    valid = _valid(ranges, range_min, range_max) & (ranges <= settings.max_range)
+    behind = baseline.nearest_around(
+        _angles(ranges.size, angle_min, angle_increment), settings.angle_tolerance
     )
-    appeared = has_now & ~had & (np.nan_to_num(current, nan=np.inf) <= max_range)
-    return moved | appeared
+    new = np.zeros(ranges.shape, dtype=bool)
+    new[valid] = ranges[valid] < behind[valid] - settings.min_change
+    return new
 
 
-def longest_run(mask):
-    """Return the longest run of True in a circular mask."""
+def objects(mask, angle_min, angle_increment, min_beams):
+    """
+    Return the bearings of the runs of at least `min_beams` neighbouring new beams.
+
+    The scan is circular, so a run across its seam is one object.
+    """
     mask = np.asarray(mask, dtype=bool)
+    count = mask.size
+    if count == 0 or not mask.any():
+        return []
     if mask.all():
-        return int(mask.size)
-    best = run = 0
-    # Twice round, so a run across the seam is counted whole.
-    for value in np.concatenate([mask, mask]):
-        run = run + 1 if value else 0
-        best = max(best, run)
-    return int(min(best, mask.size))
+        return [0.0]
+    start = int(np.argmin(mask))  # a beam that is not new: runs cannot wrap past it
+    order = [(start + k) % count for k in range(count)]
+    found, run = [], []
+    for index in order + [start]:
+        if mask[index]:
+            run.append(index)
+            continue
+        if len(run) >= min_beams:
+            middle = run[len(run) // 2]
+            found.append(wrap(angle_min + angle_increment * middle))
+        run = []
+    return found
 
 
 class ScanChangeDetector:
     """
-    Build a baseline of the room, then say when the scan stops matching it.
+    Build a baseline of the room, then say when something new stands in it.
 
-    `update()` returns True from the scan on which a change has persisted for
-    `persist_scans` scans, and keeps returning True after that: the trial has
-    started, and a person standing still again does not un-start it.
+    `update()` returns True from the scan on which one object has been seen,
+    near the same bearing, for `persist_scans` scans running, and keeps
+    returning True after that: the trial has started, and the person standing
+    still again does not un-start it.
     """
 
     def __init__(self, settings=None):
         self.settings = settings or ScanChangeSettings()
-        self._collected = []
-        self.baseline = None
+        self.baseline = RoomBaseline()
+        self._baseline_count = 0
         self.changed = False
         self.reason = ""
+        self._bearing = None
         self._streak = 0
 
     @property
     def ready(self):
         """Say whether the baseline has been built."""
-        return self.baseline is not None
+        return self._baseline_count >= self.settings.baseline_scans
 
     def update(self, ranges, angle_min, angle_increment, range_min=0.0, range_max=math.inf):
-        """Fold in one scan; return whether the room has changed."""
+        """Fold in one scan; return whether something new has come in."""
         if self.changed:
             return True
         cfg = self.settings
-        binned = bin_scan(
-            ranges, angle_min, angle_increment, cfg.bin_width, range_min, range_max
-        )
-        if self.baseline is None:
-            self._collected.append(binned)
-            if len(self._collected) >= cfg.baseline_scans:
-                with np.errstate(all="ignore"):
-                    stack = np.vstack(self._collected)
-                    # A bin that was empty in most of the baseline scans is
-                    # empty in the baseline: one stray return is not the room.
-                    present = np.isfinite(stack).sum(axis=0) * 2 > len(stack)
-                    medians = np.full(stack.shape[1], np.nan)
-                    if present.any():
-                        medians[present] = np.nanmedian(stack[:, present], axis=0)
-                self.baseline = medians
-                self._collected = []
+        if not self.ready:
+            self.baseline.add(ranges, angle_min, angle_increment, range_min, range_max)
+            self._baseline_count += 1
             return False
 
-        run = longest_run(changed_bins(self.baseline, binned, cfg.min_change, cfg.max_range))
-        if run >= cfg.min_bins:
+        mask = new_returns(
+            self.baseline, ranges, angle_min, angle_increment, cfg, range_min, range_max
+        )
+        bearings = objects(mask, angle_min, angle_increment, cfg.min_beams)
+        if self._bearing is not None:
+            same = [b for b in bearings if abs(wrap(b - self._bearing)) <= cfg.persist_gate]
+        else:
+            same = bearings
+        if same:
+            reference = self._bearing
+            self._bearing = (
+                same[0] if reference is None
+                else min(same, key=lambda b: abs(wrap(b - reference)))
+            )
             self._streak += 1
         else:
-            self._streak = 0
+            self._bearing = bearings[0] if bearings else None
+            self._streak = 1 if bearings else 0
+
         if self._streak >= cfg.persist_scans:
             self.changed = True
             self.reason = (
-                f"the LiDAR pattern changed over {math.degrees(run * cfg.bin_width):.0f} "
-                f"deg for {self._streak} scans"
+                "something new stands in the room at "
+                f"{math.degrees(self._bearing):+.0f} deg, for {self._streak} scans"
             )
         return self.changed

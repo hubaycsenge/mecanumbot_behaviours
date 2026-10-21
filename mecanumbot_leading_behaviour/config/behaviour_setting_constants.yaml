@@ -257,17 +257,19 @@ bottom_up_tree_node:
 
     # ----- When the trial starts (behaviours/trial_start.py) -----------------
     # After loading, every leading tree holds still until people_fusion tracks
-    # a person or the LiDAR pattern changes from the room it saw first.
+    # a person or the LiDAR sees something new standing in front of the room
+    # it saw first.
     # false starts at once, as before.
     trial_start_enabled: true
     trial_start_camera: true           # start on a tracked person (people_fusion)
     trial_start_lidar: true
-    trial_start_bin_width_deg: 2.0     # angular bins the scan is compared in
-    trial_start_baseline_scans: 10     # scans that make the room's baseline
-    trial_start_min_change: 0.3        # a bin has to move this much to count [m]
-    trial_start_max_range: 4.5         # only changes within this range count [m]
-    trial_start_min_bins: 2            # neighbouring changed bins that make one change
-    trial_start_persist_scans: 3       # scans running the change has to be seen in
+    trial_start_baseline_scans: 20     # scans whose nearest returns make the room
+    trial_start_min_change: 0.3        # a return this much nearer than the room is new [m]
+    trial_start_angle_tolerance_deg: 2.0  # ...than every room return within this angle
+    trial_start_max_range: 4.5         # only new returns within this range count [m]
+    trial_start_min_beams: 3           # neighbouring new returns that make an object
+    trial_start_persist_scans: 5       # scans running the object has to be seen in
+    trial_start_persist_gate_deg: 10.0 # ...each within this of its last bearing
 
     LED_indicate_target_seq:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
