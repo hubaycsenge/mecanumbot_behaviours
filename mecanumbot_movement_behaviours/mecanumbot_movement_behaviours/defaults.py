@@ -168,6 +168,12 @@ MOVEMENT_DEFAULTS = {
     # whatever stands behind them.
     "body_gaze_switch_jump": 0.8,
     "body_gaze_switch_delay": 2.0,
+    # The human the tree is dealing with is looked for first: a candidate
+    # within this many metres of where they were last placed beats any nearer
+    # one, and with none there the head is aimed at that place. The place is
+    # believed for `body_gaze_subject_memory` seconds.
+    "body_gaze_subject_gate": 1.0,
+    "body_gaze_subject_memory": 10.0,
     # How old the LiDAR's candidate list may be.
     "body_gaze_candidate_timeout": 0.5,
     # The band of heights [m] each kind of body occupies, floor to the top of
@@ -209,6 +215,8 @@ BODY_GAZE_SETTINGS = {
     "release_delay": "body_gaze_release_delay",
     "switch_jump": "body_gaze_switch_jump",
     "switch_delay": "body_gaze_switch_delay",
+    "subject_gate": "body_gaze_subject_gate",
+    "subject_memory": "body_gaze_subject_memory",
 }
 
 

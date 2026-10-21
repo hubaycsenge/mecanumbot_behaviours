@@ -14,7 +14,6 @@ from mecanumbot_movement_behaviours.ros_interfaces import (
     AccessoryCommander,
     PeopleTracker,
     RobotPoseTracker,
-    SubjectPoseTracker,
     duration,
 )
 from mecanumbot_movement_behaviours.targets import (
@@ -110,7 +109,7 @@ class LEDBehaviourSequence(py_trees.behaviour.Behaviour):
         self.seq_key, self.times_key = LED_KEYS[mode]
 
         self.blackboard = self.attach_blackboard_client(name=name)
-        register_param_keys(self.blackboard, "LED_address_person")
+        register_param_keys(self.blackboard, "LED_address_person", "sight_timeout")
         for seq_key, times_key in LED_KEYS.values():
             self.blackboard.register_key(
                 key=seq_key, access=py_trees.common.Access.READ
@@ -123,7 +122,15 @@ class LEDBehaviourSequence(py_trees.behaviour.Behaviour):
         self.node = kwargs["node"]
         self.led_client = self.node.create_client(SetLedStatus, LED_SERVICE)
         self.pose = RobotPoseTracker(self.node) if self.addressed else None
-        self.subject = SubjectPoseTracker(self.node) if self.addressed else None
+        # The person the lights face is the one the fusion tracks, and only
+        # while they are actually seen: `subject_pose` was kept forever and on
+        # the robot was almost never published, so until 2026-10-21 the panels
+        # either all lit or faced wherever DR-SPAAM last saw somebody.
+        self.people = (
+            PeopleTracker(self.node, constant(self.blackboard, "sight_timeout"))
+            if self.addressed
+            else None
+        )
         self.logger.info(f"{self.name}: Setup complete")
 
     def initialise(self):
@@ -170,9 +177,10 @@ class LEDBehaviourSequence(py_trees.behaviour.Behaviour):
         """Return the panels to light, or None for all of them."""
         if not self.addressed or not constant(self.blackboard, "LED_address_person"):
             return None
-        if self.pose.pose is None or self.subject.position is None:
+        if self.pose.pose is None or not self.people.has_fresh_detection():
             return None
-        return facing_corners(relative_bearing(self.pose, self.subject.position))
+        person = self.people.last_seen_pose.position
+        return facing_corners(relative_bearing(self.pose, person))
 
     def _addressed(self, pattern):
         if self.lit_corners is None:

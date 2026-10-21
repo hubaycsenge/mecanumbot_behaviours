@@ -18,6 +18,7 @@ from mecanumbot_movement_behaviours.targets import (
     SUBJECT,
     TARGET,
 )
+from mecanumbot_leading_behaviour.behaviours.start_gate import WaitForTrialStart
 from mecanumbot_leading_behaviour.tree_nodes.tree_common import (
     resolve_yaml_path,
     run_tree,
@@ -57,6 +58,9 @@ def create_root(yaml_path=None):
                 yaml_path=yaml_path,
                 scripts=LED_SCRIPTS,
             ),
+            # Hold still until somebody comes in: the camera confirms a person
+            # or the LiDAR pattern changes (start_gate.py, trial_start.py).
+            WaitForTrialStart(name="WaitForTrialStart"),
             # `init_delay` was declared in the YAML all along; this is the pause
             # it names, which used to be a hard-coded 2 s.
             ConfiguredTimer(name="DelayTimer", key="init_delay"),

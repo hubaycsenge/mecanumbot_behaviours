@@ -236,6 +236,14 @@ class GazeSettings:
     # once: that is the one about to leave the top of the frame.
     switch_jump: float = 0.8
     switch_delay: float = 2.0
+    # The human the tree is dealing with comes before any other body: a
+    # candidate within `subject_gate` metres of where they were last placed is
+    # looked at ahead of nearer ones, and with none there, that place itself
+    # is. `subject_memory` is how many seconds that place is believed. Without
+    # it the head went to whichever unmapped cluster was nearest -- a chair, a
+    # plant pot -- while the robot walked up to somebody else (2026-10-21).
+    subject_gate: float = 1.0
+    subject_memory: float = 10.0
 
 
 def tilt_interval(neck, target, frame_margin):
@@ -287,7 +295,7 @@ def _bearing_offset(robot, x, y):
 
 
 def gaze_targets(
-    robot, people, candidates, seats, profiles, neck=None, settings=None
+    robot, people, candidates, seats, profiles, neck=None, settings=None, subject=None
 ):
     """
     Return what is in view and worth tilting the head for, most important first.
@@ -297,6 +305,12 @@ def gaze_targets(
     people come first, nearest first; then candidates and seats together,
     nearest first -- nearest, because that is where the tilt matters: a body at
     four metres is in frame at almost any of them.
+
+    `subject` is where the human the tree is dealing with was last placed, or
+    None. Within each of the two groups, whatever lies within `subject_gate` of
+    it goes first; and if no candidate does, the place itself is added at the
+    head of the second group, standing (or on its seat), so the head is aimed
+    at the body the robot expects to find rather than at the nearest thing.
 
     A point on a seat is looked for at that seat's height. A seat with nothing
     on it is still a target, once: see the module docstring for why.
@@ -342,11 +356,28 @@ def gaze_targets(
         posture = STANDING if seat is None else seat.kind
         return GazeTarget(distance, low, high, f"{what} ({posture}) at {distance:.1f} m")
 
-    tracked = [target(x, y, "a tracked person") for x, y in people]
-    tracked = sorted((t for t in tracked if t), key=lambda t: t.distance)
+    def near_subject(x, y):
+        return subject is not None and (
+            math.hypot(x - subject[0], y - subject[1]) <= settings.subject_gate
+        )
 
-    suspected = [target(x, y, "a LiDAR candidate") for x, y in candidates]
-    suspected = [t for t in suspected if t]
+    def ranked(points, what):
+        found = []
+        for x, y in points:
+            first = near_subject(x, y)
+            found_target = target(x, y, f"{what} by the subject" if first else what)
+            if found_target is not None:
+                found.append((not first, found_target))
+        return found
+
+    tracked = ranked(people, "a tracked person")
+    tracked = [t for _, t in sorted(tracked, key=lambda r: (r[0], r[1].distance))]
+
+    suspected = ranked(candidates, "a LiDAR candidate")
+    if subject is not None and not any(not later for later, _ in suspected):
+        expected = target(subject[0], subject[1], "where the subject was last")
+        if expected is not None:
+            suspected.append((False, expected))
     for seat in seats:
         if seat in taken:
             continue
@@ -355,10 +386,15 @@ def gaze_targets(
             continue
         low, high = band(seat)
         suspected.append(
-            GazeTarget(distance, low, high, f"the {seat.kind} seat at {distance:.1f} m")
+            (
+                True,
+                GazeTarget(
+                    distance, low, high, f"the {seat.kind} seat at {distance:.1f} m"
+                ),
+            )
         )
-    suspected.sort(key=lambda t: t.distance)
-    return tracked + suspected
+    suspected.sort(key=lambda r: (r[0], r[1].distance))
+    return tracked + [t for _, t in suspected]
 
 
 class BodyGazeController:
@@ -382,12 +418,12 @@ class BodyGazeController:
         self._followed_distance = None
         self._further_since = None
 
-    def desired(self, robot, people, candidates):
+    def desired(self, robot, people, candidates, subject=None):
         """Return `(neck position, why)` for what is in view, or `(None, "")`."""
-        pos, why, _ = self._desired(robot, people, candidates)
+        pos, why, _ = self._desired(robot, people, candidates, subject)
         return pos, why
 
-    def _desired(self, robot, people, candidates):
+    def _desired(self, robot, people, candidates, subject=None):
         """Return `(neck position, why, distance of the first target)`."""
         targets = gaze_targets(
             robot,
@@ -397,6 +433,7 @@ class BodyGazeController:
             self.profiles,
             self.neck,
             self.settings,
+            subject,
         )
         if not targets:
             return None, "", None
@@ -415,17 +452,20 @@ class BodyGazeController:
             self._further_since = now
         return now - self._further_since < self.settings.switch_delay
 
-    def update(self, now, robot, people, candidates, rest_pos, current_pos):
+    def update(
+        self, now, robot, people, candidates, rest_pos, current_pos, subject=None
+    ):
         """
         Return the neck position to command, or None.
 
         `rest_pos` is where the head goes with nothing to look at -- the
         seeking pose -- and `current_pos` the last position it was commanded
-        to, None if it has never been moved.
+        to, None if it has never been moved. `subject` is where the human the
+        tree is dealing with was last placed, if that is recent enough.
         """
         if robot is None:
             return None
-        wanted, why, distance = self._desired(robot, people, candidates)
+        wanted, why, distance = self._desired(robot, people, candidates, subject)
         if wanted is None:
             held = self._last_target is not None and (
                 now - self._last_target < self.settings.release_delay

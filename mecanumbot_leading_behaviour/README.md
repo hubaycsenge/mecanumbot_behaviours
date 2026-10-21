@@ -52,9 +52,9 @@ goal has an identity, a result and a cancel (see *Navigating by action* below).
 | Topic                              | Data type                                     | Processing                                                                                                                        |
 | ---------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `/amcl_pose`                       | `geometry_msgs/msg/PoseWithCovarianceStamped` | Tracks robot pose for goal generation and checkpoint selection. Subscribed with `RELIABLE` + `TRANSIENT_LOCAL` QoS to match AMCL. |
-| `/mecanumbot/people_fusion`        | `geometry_msgs/msg/PoseArray`                 | Fused people detections — used to find, select and approach the subject and to test target success.                               |
-| `/mecanumbot/subject_pose`         | `geometry_msgs/msg/PoseStamped`               | Tracked subject pose. Read together with the fused detections by `FollowedSubjectTracker`, whichever of the two is fresher.       |
+| `/mecanumbot/people_fusion`        | `geometry_msgs/msg/PoseArray`                 | Fused people detections — used to find, select and approach the subject and to test target success. The **only** source of the person: `FollowedSubjectTracker`, the LED panels facing the person, and the trial start all read it. Until 2026-10-21 `/mecanumbot/subject_pose` (DR-SPAAM's nearest detection) was read too, and the LED condition read nothing else — so on the robot, where it was almost never published, `LED_address_person` mostly lit every panel. |
 | `/mecanumbot/has_object`           | `std_msgs/msg/Bool`                           | Ball-handover trigger read by `CheckRobotHasBall`.                                                                                |
+| `/mecanumbot/scan`                 | `sensor_msgs/msg/LaserScan`                   | Only until the trial starts: `WaitForTrialStart` compares it with the room's baseline. Sensor-data QoS.                            |
 | `/navigate_to_pose/_action/status` | `action_msgs/msg/GoalStatusArray`             | Only for `Nav2GoalMonitor.busy()` — "is Nav2 driving right now", which is what a turn waits for before it takes `/cmd_vel`.       |
 | `/navigate_through_poses/_action/status` | `action_msgs/msg/GoalStatusArray`       | The same question for a waypoint run, so a turn does not take `/cmd_vel` in the middle of one.                                     |
 
@@ -177,7 +177,10 @@ started by the launch file — run it with `ros2 run`.
 
 ## Tests
 
-This package has no unit tests of its own any more: `test_pacing.py` moved to
+`test_led_signals.py` covers what the LED condition's lights show, and
+`test_trial_start.py` when a trial starts: an unchanged, noisy room with dropped beams
+and a shifting scan geometry never starts it, somebody walking in does. Both are pure
+Python (`PYTHONPATH=. python3 -m pytest test/`). `test_pacing.py` moved to
 `mecanumbot_movement_behaviours` with the rules it covers.
 
 ```bash
@@ -190,6 +193,18 @@ colcon test --packages-select mecanumbot_leading_behaviour   # lint only
 
 1. Load YAML constants into blackboard (`ConstantParamsToBlackboard`) — always the
    first leaf, because every other behaviour reads its constants during `setup()`.
+1. **Hold still until somebody comes in** (`WaitForTrialStart`, `behaviours/start_gate.py`),
+   in all four trees. It succeeds the first time `people_fusion` tracks a person
+   (`trial_start_camera`) — the same source the tree then walks to — or
+   the LiDAR pattern changes from the room it saw first: the scan is binned into
+   `trial_start_bin_width_deg` bins (the LD08 changes its beam geometry every
+   revolution), the median of the first `trial_start_baseline_scans` is the baseline,
+   and `trial_start_min_bins` neighbouring bins moving by more than
+   `trial_start_min_change` within `trial_start_max_range`, for
+   `trial_start_persist_scans` scans running, is somebody walking in. A bin that lost
+   its return is not a change. Latched, so a root that fails and restarts does not wait
+   again. `trial_start_enabled: false` (or both `trial_start_camera` and
+   `trial_start_lidar` false) starts at once, as before. The logic is `behaviours/trial_start.py`.
 2. Build a sequence/selector/retry structure from movement and signalling behaviours.
 3. `tree_common.run_tree()` sets the tree up, ticks it every `tick_period_ms`
    (100 ms by default) and keeps the node alive with `rclpy.spin`.

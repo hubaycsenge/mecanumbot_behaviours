@@ -26,8 +26,8 @@ from mecanumbot_movement_behaviours.geometry import distance_xy
 from mecanumbot_movement_behaviours.ros_interfaces import (
     AccessoryCommander,
     HEAD_SEEK,
+    FollowedSubjectTracker,
     RobotPoseTracker,
-    SubjectPoseTracker,
 )
 from mecanumbot_movement_behaviours.routes import SEARCH_BACKWARDS
 
@@ -216,7 +216,7 @@ class DistanceToBlackboard(py_trees.behaviour.Behaviour):
     def setup(self, **kwargs):
         self.node = kwargs["node"]
         self.pose = RobotPoseTracker(self.node)
-        self.subject = SubjectPoseTracker(self.node)
+        self.subject = FollowedSubjectTracker(self.node)
         self.logger.info(f"{self.name}: Setup complete")
         return True
 

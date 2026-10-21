@@ -87,6 +87,7 @@ from mecanumbot_leading_behaviour.behaviours.route_behaviours import (
 from mecanumbot_movement_behaviours.defaults import start_body_gaze
 from mecanumbot_movement_behaviours.targets import CHECKPOINT, SUBJECT, TARGET
 from mecanumbot_movement_behaviours.turning import SHORTEST
+from mecanumbot_leading_behaviour.behaviours.start_gate import WaitForTrialStart
 from mecanumbot_leading_behaviour.tree_nodes.tree_common import (
     build_params,
     create_recover_lost_sequence,
@@ -359,6 +360,9 @@ def create_root(yaml_path=None):
                 scripts=GESTURE_SCRIPTS,
                 on_loaded=(start_body_gaze,),
             ),
+            # Hold still until somebody comes in: the camera confirms a person
+            # or the LiDAR pattern changes (start_gate.py, trial_start.py).
+            WaitForTrialStart(name="WaitForTrialStart"),
             seek_or_find,
             # Where the opening seek left the pair decides where leading starts:
             # a human found part-way along the first stretch is led on from

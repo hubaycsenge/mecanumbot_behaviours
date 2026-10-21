@@ -200,6 +200,45 @@ class TestWhatIsLookedAt:
         assert in_frame(both, 3.0, 1.70)
         assert both == pytest.approx(alone, abs=0.35)
 
+    def test_the_candidate_by_the_subject_comes_before_a_nearer_one(self):
+        # 2026-10-21: walking up to the subject at 3 m, the head went to a
+        # chair at 1.2 m instead.
+        targets = gaze_targets(
+            ROBOT, [], [(1.2, 0.2), (3.0, 0.0)], [], BODY_PROFILES, subject=(3.1, 0.1)
+        )
+        assert targets[0].distance == pytest.approx(3.0)
+        assert "by the subject" in targets[0].label
+
+    def test_with_nothing_by_the_subject_their_place_is_looked_at(self):
+        targets = gaze_targets(
+            ROBOT, [], [(1.2, 0.2)], [], BODY_PROFILES, subject=(3.0, 0.0)
+        )
+        assert targets[0].distance == pytest.approx(3.0)
+        assert "subject was last" in targets[0].label
+        assert len(targets) == 2
+
+    def test_the_tracked_person_by_the_subject_comes_first(self):
+        targets = gaze_targets(
+            ROBOT, [(1.0, 0.0), (2.5, 0.3)], [], [], BODY_PROFILES, subject=(2.6, 0.2)
+        )
+        assert targets[0].distance == pytest.approx(math.hypot(2.5, 0.3))
+
+    def test_a_subject_out_of_view_changes_nothing(self):
+        without = gaze_targets(ROBOT, [], [(1.2, 0.2)], [], BODY_PROFILES)
+        behind = gaze_targets(
+            ROBOT, [], [(1.2, 0.2)], [], BODY_PROFILES, subject=(-3.0, 0.0)
+        )
+        assert behind == without
+
+    def test_the_controller_passes_the_subject_on(self):
+        gaze = BodyGazeController()
+        to_chair = gaze.update(0.0, ROBOT, [], [(1.0, 0.0)], REST, REST)
+        gaze = BodyGazeController()
+        to_subject = gaze.update(
+            0.0, ROBOT, [], [(1.0, 0.0), (3.0, 0.0)], REST, REST, subject=(3.0, 0.0)
+        )
+        assert to_subject < to_chair
+
     def test_of_two_candidates_the_nearer_decides(self):
         near_only = pos_for(candidates=[(1.0, 0.0)])
         assert pos_for(candidates=[(3.5, 0.2), (1.0, 0.0)]) == near_only

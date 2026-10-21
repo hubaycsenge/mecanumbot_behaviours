@@ -185,28 +185,23 @@ class FollowedSubjectTracker:
     """
     Where the human being led is, and how long ago that was known.
 
-    `/mecanumbot/subject_pose` is the better answer of the two -- it is one
-    tracked person rather than whoever happened to be detected -- but it is not
-    always published, and a tracker can hold on to a pose after the person
-    behind it has gone. So both sources are kept and the fresher one is used;
-    with neither, `age` is None, which every caller reads as "not seen at all".
+    Read off `people_fusion` alone: the first person the fusion tracks. Until
+    2026-10-21 `/mecanumbot/subject_pose` was read too, whichever was fresher,
+    but on the robot that is DR-SPAAM's nearest detection, published on ~1 % of
+    scans, so it was nearly always the stale one -- and when it was not, it was
+    as often a table leg as the person. With no person seen, `age` is None,
+    which every caller reads as "not seen at all".
+
+    The fusion does not say which person is being led; with one participant in
+    the room the first track is them.
     """
 
     def __init__(self, node, sight_timeout=1.0):
-        self.subject = SubjectPoseTracker(node)
         self.people = PeopleTracker(node, sight_timeout)
-
-    def _fresher(self):
-        subject_age, people_age = self.subject.age, self.people.age
-        if subject_age is None:
-            return self.people.last_seen_pose, people_age
-        if people_age is None or subject_age <= people_age:
-            return self.subject.pose, subject_age
-        return self.people.last_seen_pose, people_age
 
     @property
     def pose(self):
-        return self._fresher()[0]
+        return self.people.last_seen_pose
 
     @property
     def position(self):
@@ -216,7 +211,7 @@ class FollowedSubjectTracker:
     @property
     def age(self):
         """Seconds since the human was last placed anywhere, or None."""
-        return self._fresher()[1]
+        return self.people.age
 
 
 class BallTracker:
@@ -716,6 +711,7 @@ class BodyGaze:
         self.accessories = AccessoryCommander(node)
         self.pose = RobotPoseTracker(node)
         self.people = PeopleTracker(node, sight_timeout)
+        self.subject = FollowedSubjectTracker(node, sight_timeout)
         self.candidates = CandidateTracker(node, candidate_timeout)
         self._timer = node.create_timer(float(period), self._tick)
 
@@ -737,6 +733,15 @@ class BodyGaze:
             return None
         return position.x, position.y, yaw
 
+    def _subject(self):
+        """Return where the human was last placed, if recently enough, or None."""
+        age, position = self.subject.age, self.subject.position
+        if age is None or position is None:
+            return None
+        if age > self.controller.settings.subject_memory:
+            return None
+        return position.x, position.y
+
     def _tick(self):
         if AccessoryCommander._head_mode != HEAD_SEEK or HeadLookDown.active():
             return
@@ -750,6 +755,7 @@ class BodyGaze:
             self.candidates.points(),
             AccessoryCommander.seek_pos,
             AccessoryCommander._last_neck_pos,
+            subject=self._subject(),
         )
         if pos is None:
             return

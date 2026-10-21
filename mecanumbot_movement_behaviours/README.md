@@ -223,6 +223,7 @@ while it is down. The next `look("seek")` hands it back.
 | `body_gaze_min_pos` / `_max_pos` | `5.5` / `8.2` | The neck positions the gaze may command. |
 | `body_gaze_deadband` / `_min_interval` | `0.1` / `0.4` | Smallest change worth a command (`0.1` is ~3°) and the shortest time between two [s]. |
 | `body_gaze_release_delay` | `1.0` | Seconds with nothing in view before the head returns to `neck_seek_pos`. |
+| `body_gaze_subject_gate`, `body_gaze_subject_memory` | `1.0`, `10.0` | The human the tree is dealing with is looked for first: a tracked person or candidate within this many metres of where they were last placed (`FollowedSubjectTracker`) goes ahead of nearer ones, and with no candidate there, that place itself is the target. The place is believed for this many seconds. Before 2026-10-21 the head went to whichever unmapped cluster was nearest while the robot walked up to somebody else. |
 | `body_gaze_switch_jump`, `body_gaze_switch_delay` | `0.8`, `2.0` | A body more than this many metres further off than the one the head is on is only followed once it has been the nearest for this many seconds, so a near person dropping out of the detections for a moment does not make the head nod to whatever stands behind them. A nearer body is followed at once. |
 | `body_gaze_candidate_timeout` | `0.5` | How old the `lidar_candidates` list may be [s]. |
 | `body_profiles` | standing `0.0–1.75`, chair `0.0–1.30`, bean_bag `0.0–0.75` | `{'body': kind, 'low': .., 'high': ..}` — the heights each kind of body occupies, floor to head; the head looks at the middle. |
@@ -284,7 +285,6 @@ behaviours.
 | --- | --- | --- |
 | `/amcl_pose` | `geometry_msgs/msg/PoseWithCovarianceStamped` | Robot pose for goal generation and checkpoint selection. `RELIABLE` + `TRANSIENT_LOCAL` QoS, to match AMCL. |
 | `/mecanumbot/people_fusion` | `geometry_msgs/msg/PoseArray` | Fused people detections — finding, selecting and approaching the subject. |
-| `/mecanumbot/subject_pose` | `geometry_msgs/msg/PoseStamped` | Tracked subject pose. Read together with the fused detections by `FollowedSubjectTracker`, whichever is fresher. |
 | `/mecanumbot/has_object` | `std_msgs/msg/Bool` | Ball-handover trigger read by `CheckRobotHasBall`. |
 | `/mecanumbot/lidar_candidates` | `geometry_msgs/msg/PoseArray` | Where the LiDAR sees something person-sized the map does not explain. Read by `BodyGaze`, in a tree that starts one. |
 | `/mecanumbot/cam_people_detections/low_head` | `std_msgs/msg/Float32` | A face at the bottom of the frame; the look-down's cue. |
