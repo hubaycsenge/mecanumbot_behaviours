@@ -58,8 +58,8 @@ def create_root(yaml_path=None):
                 yaml_path=yaml_path,
                 scripts=LED_SCRIPTS,
             ),
-            # Hold still until somebody comes in: the camera confirms a person
-            # or the LiDAR pattern changes (start_gate.py, trial_start.py).
+            # Hold still until somebody comes in: a person is tracked, or the
+            # LiDAR sees something new in the room (start_gate.py, trial_start.py).
             WaitForTrialStart(name="WaitForTrialStart"),
             # `init_delay` was declared in the YAML all along; this is the pause
             # it names, which used to be a hard-coded 2 s.

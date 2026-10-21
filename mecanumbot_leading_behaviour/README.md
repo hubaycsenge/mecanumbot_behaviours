@@ -451,13 +451,20 @@ file switches the gaze off in both trees.
    other panels stay dark). Further off or out of view: go to them — searching the
    route first if nobody is in view — face them and play `catch_attention` on all four
    panels. Either way, turn back to the target and play the green signal again.
-5. Endless `BallOrShowLoop`, asking about the ball first on every cycle (as the dog
-   tree does): while the robot holds the ball, find the person and play the thank
-   pattern; otherwise, while the subject is at the target, point at it with the lights
-   (the direction signal, where this used to ask for attention), turn to it and play
-   the near-target indication. Neither applying restarts the root (steps 2–4). Until 2026-09-21 the ball
-   reaction came *after* the show loop, which fails whenever the subject is not at the
-   target and so restarted the root every time — the robot never thanked for the ball.
+5. **The ball comes first from arrival on** (`BallFirstAfterArrival`, a selector
+   *without* memory over everything after step 4's drive): it asks about the ball on
+   every tick, so the moment the robot is handed it, whatever turn or signal is running
+   is stopped and the robot turns straight to where the person was last seen (the short
+   way round), plays the thank pattern on the panels facing them, and waits
+   `thank_delay` before thanking again while it still holds the ball. It only spins to
+   find somebody (`FindPeople`) if nobody has been seen at all. Otherwise: the end-of-route
+   signalling above, then, while the subject is at the target, point at it with the
+   lights, turn to it and play the near-target indication; when they are not, the root
+   restarts (steps 2–4). Until 2026-10-21 the ball was only asked about after all of
+   step 4 had played out, between rounds of the show loop, and the reaction always
+   spun to find a person first -- so the thank-you came late, after a search for
+   somebody who was standing right there. Until 2026-09-21 it came after the show loop
+   and was never reached at all.
 
 #### What the lights show, and why
 

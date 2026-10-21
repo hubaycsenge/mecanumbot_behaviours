@@ -45,6 +45,7 @@ from mecanumbot_leading_behaviour.behaviours.LED_behaviours import (
 )
 from mecanumbot_leading_behaviour.behaviours.blackboard_managers import (
     LED_SCRIPTS,
+    ConfiguredTimer,
     ConstantParamsToBlackboard,
 )
 from mecanumbot_leading_behaviour.behaviours.route_behaviours import (
@@ -120,27 +121,32 @@ def create_root(yaml_path=None):
     )
 
     # --- the human handed the ball over -------------------------------------
+    # Turn straight to where the person was last seen and thank them. Only if
+    # nobody has been seen does the robot spin to find somebody first. Until
+    # 2026-10-21 it always spun first (`FindPeople`), and the check was only
+    # reached once the whole end-of-route signalling had played out, so the
+    # thank-you came late and after a search for a person standing right there.
+    face_giver = py_trees.composites.Selector(name="FaceBallGiver", memory=True)
+    face_giver.add_children(
+        [
+            TurnToward(
+                name="TurnTowardBallGiver",
+                target_type=SUBJECT,
+                head=None,
+                direction=SHORTEST,
+            ),
+            FindPeople(name="FindPersonBallReaction"),
+        ]
+    )
     ball_reaction = py_trees.composites.Sequence(name="BallReactionSeq", memory=True)
     ball_reaction.add_children(
         [
             CheckRobotHasBall(name="CheckIfHasBall"),
-            FindPeople(name="FindPersonBallReaction"),
+            face_giver,
             LEDBehaviourSequence("LThank", "thank", addressed=True),
-        ]
-    )
-
-    # The ball is asked about first on every cycle, as in the dog tree. It used
-    # to come after the show loop in the root sequence, and that loop fails
-    # whenever the human is not at the target -- restarting the root -- so the
-    # ball reaction could never be reached. Neither applying still restarts the
-    # root: find the human, ask for attention and show the target again.
-    ball_or_show = py_trees.composites.Selector("BallOrShowSelector", memory=True)
-    ball_or_show.add_children(
-        [
-            py_trees.decorators.Repeat(
-                name="BallReactionRepeat", child=ball_reaction, num_success=-1
-            ),
-            show_while_close,
+            # Paces the thank-you while the robot holds on to the ball, as in
+            # the dog tree; without it the loop played it back to back.
+            ConfiguredTimer(name="ThankDelayTimer", key="thank_delay"),
         ]
     )
 
@@ -205,34 +211,13 @@ def create_root(yaml_path=None):
     address_person = py_trees.composites.Selector("AddressPersonAtEnd", memory=True)
     address_person.add_children([point_out, fetch_attention])
 
-    root = py_trees.composites.Sequence("ROOT", memory=True)
-    root.add_children(
+    # --- after arriving: show the target, unless the ball has been handed over
+    # The signalling at the end of the route. Its last step repeats while the
+    # human stays at the target; when they are not, it fails, and so does the
+    # root, which finds the human, asks for attention and leads again.
+    show_at_end = py_trees.composites.Sequence(name="ShowAtEndSeq", memory=True)
+    show_at_end.add_children(
         [
-            ConstantParamsToBlackboard(
-                name="LoadConstantParams",
-                yaml_path=yaml_path,
-                scripts=LED_SCRIPTS,
-                required=tuple(LEAD_KEYS.values()),
-                on_loaded=(start_body_gaze,),
-            ),
-            # Hold still until somebody comes in: the camera confirms a person
-            # or the LiDAR pattern changes (start_gate.py, trial_start.py).
-            WaitForTrialStart(name="WaitForTrialStart"),
-            seek_or_find,
-            TurnToward(name="TurnTowardSubject", target_type=SUBJECT, head=None),
-            # The person is found and faced: from here to the next time the
-            # robot looks for them the head is parked, signals included.
-            LevelHead(name="ParkHeadToLead"),
-            LEDBehaviourSequence("LCatchO", "catch_attention"),
-            # Drive to the last checkpoint of the route, then face the target itself
-            # to signal it -- the robot stops short of where the human should end up.
-            lead,
-            # Nothing asks for the ball from anywhere but the end of the route.
-            # The drive only succeeds there, so this holds already; it is here
-            # so that it goes on holding. A robot that is not there fails the
-            # root, which finds the human and leads again. The route index is
-            # left out because this tree never walks it.
-            CheckRobotAtLastCheckpoint(name="CheckRobotAtRouteEnd", by_index=False),
             # The turns onto the target go the short way round. The library's
             # default for a place unwinds the last search turn, which here was
             # most of a circle (316 degrees in the run of 2026-10-05).
@@ -252,8 +237,56 @@ def create_root(yaml_path=None):
             ),
             LEDBehaviourSequence("LShowAgain", "indicate_target"),
             py_trees.decorators.Repeat(
-                name="BallOrShowLoop", child=ball_or_show, num_success=-1
+                name="ShowWhileCloseLoop", child=show_while_close, num_success=-1
             ),
+        ]
+    )
+
+    # A selector without memory asks for the ball first on every tick, so the
+    # moment it is handed over the signal or turn under way is stopped and the
+    # robot turns to the person and thanks them. With memory, the ball was only
+    # looked at between rounds of signalling.
+    after_arrival = py_trees.composites.Selector("BallFirstAfterArrival", memory=False)
+    after_arrival.add_children(
+        [
+            py_trees.decorators.Repeat(
+                name="BallReactionRepeat", child=ball_reaction, num_success=-1
+            ),
+            show_at_end,
+        ]
+    )
+
+    root = py_trees.composites.Sequence("ROOT", memory=True)
+    root.add_children(
+        [
+            ConstantParamsToBlackboard(
+                name="LoadConstantParams",
+                yaml_path=yaml_path,
+                scripts=LED_SCRIPTS,
+                required=tuple(LEAD_KEYS.values()),
+                on_loaded=(start_body_gaze,),
+            ),
+            # Hold still until somebody comes in: a person is tracked, or the
+            # LiDAR sees something new in the room (start_gate.py, trial_start.py).
+            WaitForTrialStart(name="WaitForTrialStart"),
+            seek_or_find,
+            TurnToward(name="TurnTowardSubject", target_type=SUBJECT, head=None),
+            # The person is found and faced: from here to the next time the
+            # robot looks for them the head is parked, signals included.
+            LevelHead(name="ParkHeadToLead"),
+            LEDBehaviourSequence("LCatchO", "catch_attention"),
+            # Drive to the last checkpoint of the route, then face the target itself
+            # to signal it -- the robot stops short of where the human should end up.
+            lead,
+            # Nothing asks for the ball from anywhere but the end of the route.
+            # The drive only succeeds there, so this holds already; it is here
+            # so that it goes on holding. A robot that is not there fails the
+            # root, which finds the human and leads again. The route index is
+            # left out because this tree never walks it.
+            CheckRobotAtLastCheckpoint(name="CheckRobotAtRouteEnd", by_index=False),
+            # From here on the ball comes first: `after_arrival` re-asks for it
+            # on every tick and cuts into whatever signal or turn is running.
+            after_arrival,
         ]
     )
     return root
