@@ -29,5 +29,5 @@ colcon build --packages-select mecanumbot_fear_hri_behaviour
 source install/setup.bash
 ```
 
-Branch: `fahrad/fear_hri_behaviour` on `mecanumbot_behaviours`.  
-Canonical draft also lives in `fear_mecanumbot/ros_draft/`.
+Branch: `fahrad/fear_hri_behaviour` on `mecanumbot_behaviours`.
+The same package is in https://github.com/fahradnamazov-ops/fear_mecanumbot under `ros_draft/`.
