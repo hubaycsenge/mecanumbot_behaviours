@@ -15,7 +15,8 @@ def compute_risk(
         proximity = 0.0
     else:
         proximity = (safe_distance - min_range) / (safe_distance - hit_distance)
-    speed_term = max(0.0, float(closing_speed)) * speed_scale
+    # Cap closing so mocap jumps / walls cannot force risk=1 at long range
+    speed_term = min(0.25, max(0.0, float(closing_speed)) * speed_scale)
     return float(max(0.0, min(1.0, proximity + speed_term)))
 
 
@@ -53,12 +54,20 @@ def select_action(
     catch_low: float,
     catch_high: float,
 ) -> str:
-    if min_range <= hit_distance + 0.05 or (fear_level >= freeze_threshold and min_range < safe_distance):
+    # Hard stop when the person is near-collision close — freeze must fire here
+    # (do not leave this band to avoid-only "keep range ≳0.55").
+    if min_range <= hit_distance + 0.12:
         return "freeze"
-    if fear_level >= avoid_threshold or risk >= 0.5:
+    if fear_level >= freeze_threshold and min_range < hit_distance + 0.22:
+        return "freeze"
+    # Avoid needs person inside the safe bubble — not just a risk spike.
+    # Risk gate raised 0.55→0.65 so weak risk alone does not cancel N/S routing.
+    person_close = min_range < safe_distance
+    if person_close and (fear_level >= avoid_threshold or risk >= 0.65):
         return "avoid"
-    if catch_low <= fear_level < catch_high:
-        return "catch_attention"
+    # catch_attention is IRL-only (Csenge). Heuristic fallback never selects it —
+    # sim has no reactive person; real robots use the RL path with enable flag.
+    _ = (catch_low, catch_high)  # kept for API compatibility with BT params
     return "task"
 
 

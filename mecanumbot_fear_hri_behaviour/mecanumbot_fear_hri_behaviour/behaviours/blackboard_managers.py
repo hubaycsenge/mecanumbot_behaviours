@@ -21,8 +21,11 @@ RUN_STATE = {
     "fear_level": 0.0,
     "fear_risk": 0.0,
     "min_lidar_range": 10.0,
+    "person_range_m": 10.0,
     "selected_action": "task",
     "has_brick": False,
+    "target_dist_m": 99.0,
+    "policy_source": "init",
 }
 
 LOADED_DEFAULTS = (RUNTIME_DEFAULTS, MOVEMENT_DEFAULTS)

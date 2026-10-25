@@ -2,13 +2,19 @@ fear_hri_bt_node:
   ros__parameters:
     tick_period_ms: 100.0
     setup_timeout: 15.0
-    safe_distance_m: 1.0
-    hit_distance_m: 0.25
-    fear_decay_per_step: 0.2
+    # --- Csenge / Fear HRI V1 distances (tuned from brick-carry sim) ---
+    # Keep SAFE so task can still run and pick N/S while person is mid-corridor
+    # (sim stuck: range≈1.20, action=task but middle wait — planner, not fear).
+    safe_distance_m: 1.15
+    hit_distance_m: 0.28
+    # Slow decay at 10 Hz ≈ 0.2 fear units / second → residual caution
+    fear_decay_per_step: 0.025
     fear_spike_on_event: 50.0
     fear_rise_per_risk: 5.0
-    avoid_distance_m: 1.2
+    # Slightly shorter Nav2 retreat so task resumes & commits to N/S sooner
+    avoid_distance_m: 0.70
+    # Heuristic fallback only if Q-table missing (RL is primary)
     freeze_fear_threshold: 70.0
-    avoid_fear_threshold: 40.0
-    catch_fear_low: 25.0
+    avoid_fear_threshold: 45.0
+    catch_fear_low: 20.0
     catch_fear_high: 40.0
