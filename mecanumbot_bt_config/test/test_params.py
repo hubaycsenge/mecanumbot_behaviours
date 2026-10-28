@@ -153,6 +153,16 @@ def test_a_key_with_no_default_keeps_the_type_the_file_gave_it():
     assert values["Dog_max_wander_allowed"] == 1
 
 
+def test_a_key_written_with_no_value_keeps_its_default():
+    # 2026-10-21: `fetch_search_strategy:` left blank arrived as "None".
+    values = blackboard_values({"fetch_search_strategy": None}, {"fetch_search_strategy": "spin"})
+    assert values["fetch_search_strategy"] == "spin"
+
+
+def test_a_required_key_written_with_no_value_is_missing():
+    assert missing_keys({"Dog_checkpoints": None}, ("Dog_checkpoints",)) == ("Dog_checkpoints",)
+
+
 def test_defaults_merge_in_order():
     assert merge_defaults(({"a": 1, "b": 2}, {"b": 3})) == {"a": 1, "b": 3}
 

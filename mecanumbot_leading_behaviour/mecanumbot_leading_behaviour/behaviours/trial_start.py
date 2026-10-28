@@ -7,15 +7,19 @@ had entered, and the opening of the trial was whatever state that search had
 reached. The trees now hold still after loading until one of two things says a
 person has arrived:
 
-* **a person is tracked**: `people_fusion` carries somebody -- a camera
-  detection that passed the detector's gate and was placed on the map (a
-  frame-filling `close_range` one only with the LiDAR's backing), or a body
-  the LiDAR has followed for a while right next to the robot, where the camera
-  cannot see;
-* **something new stands in the room**: the room the robot saw when it was
-  switched on is the baseline, and an object *in front of* it -- nearer than
-  anything the baseline had in that direction -- that holds its bearing for a
-  few scans is somebody walking in.
+* **a person is on camera**: the camera detector reports somebody -- a
+  detection that passed its gate -- in every frame for `hold` seconds. The
+  camera's own detections, not `people_fusion`: the fusion also carries a
+  body the LiDAR alone has followed next to the robot, and in the ethology
+  lab that started trials in an empty room (2026-10-28);
+* **something new stands in the room** (off by default since 2026-10-28): the
+  room the robot saw when it was switched on is the baseline, and an object
+  *in front of* it -- nearer than anything the baseline had in that
+  direction -- that holds its bearing for a few scans is somebody walking in.
+  It started trials in the ethology lab with nobody there.
+
+While it waits the head is held where a standing person at the expected
+distance is in frame (`waiting_neck_pos`), so the camera can see them come in.
 
 Only something appearing in front of the room counts, never the room receding
 or a return going missing, and the comparison is deliberately coarse in angle.
@@ -35,6 +39,14 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
+
+from mecanumbot_movement_behaviours.body_gaze import (
+    BODY_PROFILES,
+    STANDING,
+    GazeTarget,
+    NeckModel,
+    tilt_interval,
+)
 
 FULL_TURN = 2.0 * math.pi
 
@@ -214,3 +226,50 @@ class ScanChangeDetector:
                 f"{math.degrees(self._bearing):+.0f} deg, for {self._streak} scans"
             )
         return self.changed
+
+
+class CameraSighting:
+    """
+    Say when the camera has had somebody in view for `hold` seconds running.
+
+    `update()` is fed every detection frame with whether it held a person. A
+    frame without one, or no frame for `gap` seconds, starts the count again,
+    so one false detection in an empty room is not a participant. Latched,
+    like the scan comparison.
+    """
+
+    def __init__(self, hold=0.5, gap=0.5):
+        self.hold = float(hold)
+        self.gap = float(gap)
+        self.seen = False
+        self.reason = ""
+        self._since = None
+        self._last = None
+
+    def update(self, now, person):
+        """Fold in one detection frame at time `now` [s]; return whether somebody is seen."""
+        if self.seen:
+            return True
+        if not person:
+            self._since = self._last = None
+            return False
+        if self._last is None or now - self._last > self.gap:
+            self._since = now
+        self._last = now
+        if now - self._since >= self.hold:
+            self.seen = True
+            self.reason = f"a person on camera for {now - self._since:.1f} s"
+        return self.seen
+
+
+def waiting_neck_pos(distance, min_pos, max_pos, neck=None, body=STANDING):
+    """
+    Return the neck position that frames a `body` at `distance` m, for the wait.
+
+    The tilt the body gaze would choose for that body at that range -- its
+    middle height in the middle of the frame -- clamped to the gaze's limits.
+    """
+    neck = neck or NeckModel()
+    low, high = BODY_PROFILES[body]
+    _, _, ideal = tilt_interval(neck, GazeTarget(float(distance), low, high, body), 0.0)
+    return max(float(min_pos), min(float(max_pos), neck.pos(ideal)))

@@ -45,8 +45,8 @@ def create_root(yaml_path=None):
                 yaml_path=yaml_path,
                 scripts=(),
             ),
-            # Hold still until somebody comes in: a person is tracked, or the
-            # LiDAR sees something new in the room (start_gate.py, trial_start.py).
+            # Hold still, head at person height, until somebody is on camera
+            # (start_gate.py, trial_start.py).
             WaitForTrialStart(name="WaitForTrialStart"),
             TurnToward(name="TurnTowardStart", target_type=START, head=None),
             Approach(name="ApproachStart", target_type=START),

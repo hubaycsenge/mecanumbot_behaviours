@@ -55,13 +55,23 @@ LEADING_DEFAULTS = {
     "LED_direction_spread": math.radians(67.5),
     "LED_direction_hold": 6.0,
     # --- when the trial starts (trial_start.py) --------------------------------
-    # Every leading tree holds still after loading until `people_fusion` tracks
-    # a person (`trial_start_camera`) or the LiDAR sees something new standing
-    # in front of the room it saw first (`trial_start_lidar`).
-    # `trial_start_enabled: false` starts at once, as before.
+    # Every leading tree holds still after loading until the camera detector
+    # has had a person in every frame for `trial_start_camera_hold` seconds
+    # (`trial_start_camera`; a gap of more than `trial_start_camera_gap`
+    # seconds starts the count again) or, if switched on, the LiDAR sees
+    # something new standing in front of the room it saw first
+    # (`trial_start_lidar`; off since it started trials in an empty ethology
+    # lab, 2026-10-28). `trial_start_enabled: false` starts at once, as before.
     "trial_start_enabled": True,
     "trial_start_camera": True,
-    "trial_start_lidar": True,
+    "trial_start_camera_hold": 0.5,
+    "trial_start_camera_gap": 0.5,
+    "trial_start_lidar": False,
+    # While it waits the head is held where a standing person
+    # `trial_start_look_distance` metres off is in frame; false leaves the
+    # head wherever it is.
+    "trial_start_head": True,
+    "trial_start_look_distance": 3.0,
     # The scan comparison (trial_start.py): the nearest return in each
     # direction over the first `baseline_scans` is the room; a return
     # `min_change` m nearer than every room return within `angle_tolerance`,

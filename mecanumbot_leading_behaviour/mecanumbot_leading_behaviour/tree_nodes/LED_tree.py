@@ -266,8 +266,8 @@ def create_root(yaml_path=None):
                 required=tuple(LEAD_KEYS.values()),
                 on_loaded=(start_body_gaze,),
             ),
-            # Hold still until somebody comes in: a person is tracked, or the
-            # LiDAR sees something new in the room (start_gate.py, trial_start.py).
+            # Hold still, head at person height, until somebody is on camera
+            # (start_gate.py, trial_start.py).
             WaitForTrialStart(name="WaitForTrialStart"),
             seek_or_find,
             TurnToward(name="TurnTowardSubject", target_type=SUBJECT, head=None),

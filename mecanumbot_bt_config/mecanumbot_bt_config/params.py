@@ -104,19 +104,31 @@ def blackboard_values(params, defaults=None):
     structured strings become the messages they describe. A value that has a
     default is converted to that default's type, so a count written `3.0` still
     arrives as an `int` and a threshold written `5` as a `float`.
+
+    A key written with no value (`fetch_search_strategy:`, which YAML reads as
+    null) counts as absent: it keeps its default. Converted to the default's
+    type it used to arrive as the string "None", and on 2026-10-21 the fetch
+    tree died on exactly that after a constants file was saved with the field
+    blank.
     """
     defaults = merge_defaults(defaults)
     values = dict(defaults)
     for name, raw in params.items():
         key = blackboard_key(name)
+        if raw is None and key in defaults:
+            continue
         value = _convert(name, raw)
         values[key] = _coerce(value, defaults.get(key))
     return values
 
 
 def missing_keys(params, keys):
-    """Names in `keys` the parameter block does not declare, in the given order."""
-    declared = {blackboard_key(name) for name in params}
+    """
+    Return the names in `keys` the parameter block does not declare, in order.
+
+    A name written with no value is not declared: it says nothing.
+    """
+    declared = {blackboard_key(name) for name, value in params.items() if value is not None}
     return tuple(key for key in keys if blackboard_key(key) not in declared)
 
 

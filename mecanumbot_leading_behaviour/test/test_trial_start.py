@@ -8,6 +8,8 @@ once somebody walks in front of it. The first version did not hold still -- it
 started every trial at once (2026-10-21) -- and the room scans here are built
 to have what defeated it: ~203 beams a turn whose angles shift every scan, and
 an object in front of a far wall whose edges a beam can land on either side of.
+The camera start, which is the one on by default, has its own claim: one
+frame with a person in it is not a participant, a person held in view is.
 No ROS.
 """
 
@@ -15,12 +17,16 @@ import math
 
 import numpy as np
 
+from mecanumbot_movement_behaviours.body_gaze import NeckModel
+
 from mecanumbot_leading_behaviour.behaviours.trial_start import (
+    CameraSighting,
     RoomBaseline,
     ScanChangeDetector,
     ScanChangeSettings,
     new_returns,
     objects,
+    waiting_neck_pos,
 )
 
 WALL = 4.0
@@ -158,3 +164,47 @@ def test_once_started_it_stays_started():
     detector = learned()
     feed(detector, [scan(person=(120.0, 0.4, 2.0), seed=i) for i in range(5)])
     assert feed(detector, [scan()])[0]
+
+
+def sight(sighting, frames, start=0.0, period=0.1):
+    return [sighting.update(start + k * period, person) for k, person in enumerate(frames)]
+
+
+def test_one_frame_with_a_person_does_not_start_it():
+    assert not any(sight(CameraSighting(hold=0.5), [True] + [False] * 20))
+
+
+def test_a_person_held_in_view_starts_it():
+    seen = sight(CameraSighting(hold=0.5), [True] * 7)
+    assert not any(seen[:5]) and seen[5]
+
+
+def test_an_empty_frame_starts_the_count_again():
+    sighting = CameraSighting(hold=0.5)
+    assert not any(sight(sighting, [True] * 4 + [False] + [True] * 4))
+
+
+def test_a_gap_in_the_frames_starts_the_count_again():
+    sighting = CameraSighting(hold=0.5, gap=0.5)
+    sight(sighting, [True] * 4)
+    assert not any(sight(sighting, [True] * 4, start=2.0))
+
+
+def test_once_seen_it_stays_seen():
+    sighting = CameraSighting(hold=0.5)
+    sight(sighting, [True] * 6)
+    assert sighting.update(10.0, False)
+
+
+def test_the_waiting_head_centres_a_standing_person():
+    neck = NeckModel()
+    distance = 3.0
+    pos = waiting_neck_pos(distance, 4.71, 7.41)
+    low, high = neck.visible_band(pos, distance)
+    assert low < 0.2 and high > 1.6   # ankles to head in frame
+    assert abs((low + high) / 2.0 - 0.875) < 0.1
+
+
+def test_the_waiting_head_looks_higher_for_a_nearer_person_within_limits():
+    assert waiting_neck_pos(1.5, 4.71, 7.41) > waiting_neck_pos(4.0, 4.71, 7.41)
+    assert waiting_neck_pos(0.3, 4.71, 5.0) == 5.0

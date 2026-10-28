@@ -88,7 +88,9 @@ class Tunables:
         exists.
         """
         defaults = self.defaults if defaults is None else defaults
-        if key in params:
+        # A key written with no value is null in YAML, and counts as absent;
+        # see params.blackboard_values.
+        if params.get(key) is not None:
             return params[key]
         return defaults[key]
 

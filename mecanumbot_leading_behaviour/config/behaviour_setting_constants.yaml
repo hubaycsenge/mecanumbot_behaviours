@@ -256,13 +256,18 @@ bottom_up_tree_node:
     # attention instead.
 
     # ----- When the trial starts (behaviours/trial_start.py) -----------------
-    # After loading, every leading tree holds still until people_fusion tracks
-    # a person or the LiDAR sees something new standing in front of the room
-    # it saw first.
-    # false starts at once, as before.
+    # After loading, every leading tree holds still until the camera has had a
+    # person in view, with the head raised to where a standing person would be.
+    # The LiDAR start (something new standing in front of the room it saw
+    # first) is off: it started trials in the ethology lab with nobody there.
+    # trial_start_enabled: false starts at once, as before.
     trial_start_enabled: true
-    trial_start_camera: true           # start on a tracked person (people_fusion)
-    trial_start_lidar: true
+    trial_start_camera: true           # start on a person in the camera detector's output
+    trial_start_camera_hold: 0.5       # ...seen in every frame for this long [s]
+    trial_start_camera_gap: 0.5        # ...a gap longer than this starts the count again [s]
+    trial_start_head: true             # hold the head at person height while waiting
+    trial_start_look_distance: 3.0     # ...a standing person this far off fills the frame [m]
+    trial_start_lidar: false           # also start on something new in the LiDAR's room
     trial_start_baseline_scans: 20     # scans whose nearest returns make the room
     trial_start_min_change: 0.3        # a return this much nearer than the room is new [m]
     trial_start_angle_tolerance_deg: 2.0  # ...than every room return within this angle

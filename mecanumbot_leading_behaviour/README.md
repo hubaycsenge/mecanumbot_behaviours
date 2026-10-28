@@ -52,9 +52,10 @@ goal has an identity, a result and a cancel (see *Navigating by action* below).
 | Topic                              | Data type                                     | Processing                                                                                                                        |
 | ---------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `/amcl_pose`                       | `geometry_msgs/msg/PoseWithCovarianceStamped` | Tracks robot pose for goal generation and checkpoint selection. Subscribed with `RELIABLE` + `TRANSIENT_LOCAL` QoS to match AMCL. |
-| `/mecanumbot/people_fusion`        | `geometry_msgs/msg/PoseArray`                 | Fused people detections — used to find, select and approach the subject and to test target success. The **only** source of the person: `FollowedSubjectTracker`, the LED panels facing the person, and the trial start all read it. Until 2026-10-21 `/mecanumbot/subject_pose` (DR-SPAAM's nearest detection) was read too, and the LED condition read nothing else — so on the robot, where it was almost never published, `LED_address_person` mostly lit every panel. |
+| `/mecanumbot/people_fusion`        | `geometry_msgs/msg/PoseArray`                 | Fused people detections — used to find, select and approach the subject and to test target success. The **only** source of the person: `FollowedSubjectTracker`, and the LED panels facing the person read it. The trial start deliberately does not (below). Until 2026-10-21 `/mecanumbot/subject_pose` (DR-SPAAM's nearest detection) was read too, and the LED condition read nothing else — so on the robot, where it was almost never published, `LED_address_person` mostly lit every panel. |
 | `/mecanumbot/has_object`           | `std_msgs/msg/Bool`                           | Ball-handover trigger read by `CheckRobotHasBall`.                                                                                |
-| `/mecanumbot/scan`                 | `sensor_msgs/msg/LaserScan`                   | Only until the trial starts: `WaitForTrialStart` compares it with the room's baseline. Sensor-data QoS.                            |
+| `/mecanumbot/cam_people_detections` | `mecanumbot_msgs/msg/CamPersonDetectionArray` | Only until the trial starts: `WaitForTrialStart` starts the trial on a person in it. The camera detector's own output rather than `people_fusion`, which also carries bodies only the LiDAR has seen. |
+| `/mecanumbot/scan`                 | `sensor_msgs/msg/LaserScan`                   | Only until the trial starts, and only with `trial_start_lidar: true`: `WaitForTrialStart` compares it with the room's baseline. Sensor-data QoS. |
 | `/navigate_to_pose/_action/status` | `action_msgs/msg/GoalStatusArray`             | Only for `Nav2GoalMonitor.busy()` — "is Nav2 driving right now", which is what a turn waits for before it takes `/cmd_vel`.       |
 | `/navigate_through_poses/_action/status` | `action_msgs/msg/GoalStatusArray`       | The same question for a waypoint run, so a turn does not take `/cmd_vel` in the middle of one.                                     |
 
@@ -179,7 +180,9 @@ started by the launch file — run it with `ros2 run`.
 
 `test_led_signals.py` covers what the LED condition's lights show, and
 `test_trial_start.py` when a trial starts: an unchanged, noisy room with dropped beams
-and a shifting scan geometry never starts it, somebody walking in does. Both are pure
+and a shifting scan geometry never starts it, somebody walking in does; a single camera
+frame with a person does not, a person held in view does; and the waiting head frames a
+standing person. Both are pure
 Python (`PYTHONPATH=. python3 -m pytest test/`). `test_pacing.py` moved to
 `mecanumbot_movement_behaviours` with the rules it covers.
 
@@ -194,9 +197,21 @@ colcon test --packages-select mecanumbot_leading_behaviour   # lint only
 1. Load YAML constants into blackboard (`ConstantParamsToBlackboard`) — always the
    first leaf, because every other behaviour reads its constants during `setup()`.
 1. **Hold still until somebody comes in** (`WaitForTrialStart`, `behaviours/start_gate.py`),
-   in all four trees. It succeeds the first time `people_fusion` tracks a person
-   (`trial_start_camera`) — the same source the tree then walks to — or
-   the LiDAR sees **something new standing in the room**: the nearest return in each
+   in all four trees. It succeeds once the camera detector (`cam_people_detections`) has
+   had a person in every frame for `trial_start_camera_hold` s, a gap of more than
+   `trial_start_camera_gap` s starting the count again (`trial_start_camera`). Until
+   2026-10-28 it read `people_fusion`, which also holds bodies the LiDAR alone has
+   followed, and the LiDAR start below was on as well; between them trials started in
+   the ethology lab with nobody in the room. While it waits it holds the head where a
+   standing person `trial_start_look_distance` m off is centred in the frame — the tilt
+   the body gaze would choose for them, within `body_gaze_min_pos`..`body_gaze_max_pos`
+   (n_pos ≈ 5.5 at 3 m) — and leaves it there for the tree's first head command
+   (`trial_start_head: false` leaves the head alone). It is not a named pose, so the
+   body gaze does not move it during the wait. The control and bottom-up trees never
+   command the head, so for them that waiting pose is the head for the whole trial.
+
+   Off by default (`trial_start_lidar`), the LiDAR can start it too, when it sees
+   **something new standing in the room**: the nearest return in each
    direction over the first `trial_start_baseline_scans` scans is the room; a return
    `trial_start_min_change` nearer than every room return within
    `trial_start_angle_tolerance_deg` (and within `trial_start_max_range`) is new;
