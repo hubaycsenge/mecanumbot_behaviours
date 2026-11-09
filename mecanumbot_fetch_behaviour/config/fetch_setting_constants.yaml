@@ -54,7 +54,7 @@ fetch_bt_node:
     # stopping, which only looks along the direction of travel and so can drive
     # straight past a ball lying beside the robot. Like `fetch_circle_facing`,
     # this is a choice about what the robot attends to.
-    fetch_search_strategy: spin
+    fetch_search_strategy: None
 
     # The spots `spin` turns at: rings around where the search began, nearest
     # first, laid out like the circles but sparser -- a spot is looked round

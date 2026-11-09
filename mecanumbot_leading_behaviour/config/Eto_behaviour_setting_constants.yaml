@@ -79,7 +79,7 @@ bottom_up_tree_node:
     check_in_every_checkpoints: 2
     check_in_interval: 20.0
     check_in_grace: 2.0
-    check_in_catch_up_timeout: 6.0
+    check_in_catch_up_timeout: 2.0
 
     # ----- Approaching with nav2 -----------------------------------------------
     approach_target_timeout: 3.0
@@ -118,19 +118,8 @@ bottom_up_tree_node:
     look_down_hold: 3.0
     look_down_cooldown: 4.0
     look_down_cue_age: 0.5
-    # ----- The head following the body the LiDAR expects (dog + LED conditions) -
-    # While the head is lifted to look for or at the human it is not held at
-    # neck_seek_pos but tilted to whichever height shows the body the LiDAR
-    # says should be there: nearer means further up, and a body on one of the
-    # seats below is looked for at sitting height. neck_seek_pos is where it
-    # rests with nothing in view. The dog-inspired tree does this whenever its
-    # head is lifted, the LED tree only while it looks for the person (it parks
-    # the head at neck_level_pos to lead and to signal), and the control tree
-    # never. false here switches it off in both, and the head goes back to one
-    # fixed seeking pose.
-    body_gaze_enabled: true
-    body_gaze_period: 0.2            # seconds between two looks at what is in view
-    body_gaze_max_range: 4.5         # bodies further off than this are not tilted for [m]
+    body_gaze_period: 0.2  # seconds between two looks at what is in view
+    body_gaze_max_range: 4.5  # bodies further off than this are not tilted for [m]
     body_gaze_view_margin_deg: 12.0  # attended to this far beyond the edge of the picture
     body_gaze_frame_margin_deg: 3.0  # kept clear above and below a body in the frame
     body_gaze_min_pos: 4.71  # the neck positions the gaze may command: tilts -9.8..+68.5 deg (lens level at 5.05)
@@ -141,11 +130,31 @@ bottom_up_tree_node:
     body_gaze_switch_jump: 0.8  # a body this much further off than the one in view is another body [m]
     body_gaze_switch_delay: 2.0  # ...and is only followed after being the nearest this long [s]
     body_gaze_candidate_timeout: 0.5  # how old the LiDAR's candidate list may be [s]
-    body_gaze_subject_gate: 1.0      # a candidate this near the subject's last place is looked at first [m]
-    body_gaze_subject_memory: 10.0   # how long that place is believed [s]
+    body_gaze_subject_gate: 1.0  # a candidate this near the subject's last place is looked at first [m]
+    body_gaze_subject_memory: 10.0  # how long that place is believed [s]
     LED_lead_progress_color: 2  # Colour the panels fill with as the drive progresses (green)
     LED_lead_direction: target  # target: flow towards the destination's side when it is off the heading | none: always ahead
     LED_lead_straight_band_deg: 30.0  # Destination within this of the heading counts as ahead [deg]
+    # At the end of the route, after the green indicate_target signal, the
+    # robot turns to the person and blinks the panels that point at the
+    # target.
+    LED_direction_mode: 5  # fast blink
+    LED_direction_color: 7  # yellow, on the panels pointing at the target
+    LED_direction_base_color: 0  # black, on the other panels
+    LED_direction_spread_deg: 67.5  # a panel points when the target is within this of the diagonal it faces
+    LED_direction_hold: 6.0  # how long the signal is shown [s]
+
+    # ----- When the trial starts (behaviours/trial_start.py) -------------------
+    trial_start_camera_hold: 0.5  # ...seen in every frame for this long [s]
+    trial_start_camera_gap: 0.5  # ...a gap longer than this starts the count again [s]
+    trial_start_look_distance: 3.0  # ...a standing person this far off fills the frame [m]
+    trial_start_baseline_scans: 20  # scans whose nearest returns make the room
+    trial_start_min_change: 0.3  # a return this much nearer than the room is new [m]
+    trial_start_angle_tolerance_deg: 2.0  # ...than every room return within this angle
+    trial_start_max_range: 4.5  # only new returns within this range count [m]
+    trial_start_min_beams: 3  # neighbouring new returns that make an object
+    trial_start_persist_scans: 5  # scans running the object has to be seen in
+    trial_start_persist_gate_deg: 10.0  # ...each within this of its last bearing
 
     # Kept as found: this editor does not render these.
     body_gaze_enabled: true
@@ -160,38 +169,10 @@ bottom_up_tree_node:
     LED_lead_right: ['{''fl'':{''mode'':1, ''color'':1},''fr'':{''mode'':1, ''color'':1},''bl'':{''mode'':1,
     ''color'':1},''br'':{''mode'':1, ''color'':1}}']
     LED_address_person: true
-
-    # At the end of the route, after the green indicate_target signal, the
-    # robot turns to the person and blinks the panels that point at the target.
-    LED_direction_mode: 5              # fast blink
-    LED_direction_color: 7             # yellow, on the panels pointing at the target
-    LED_direction_base_color: 0        # black, on the other panels
-    LED_direction_spread_deg: 67.5     # a panel points when the target is within this of the diagonal it faces
-    LED_direction_hold: 6.0            # how long the signal is shown [s]
-    # Who gets it: a person within Dog_following_max_threshold of the robot
-    # (top of this file). Further off, the robot goes to them and catches
-    # attention instead.
-
-    # ----- When the trial starts (behaviours/trial_start.py) -----------------
-    # After loading, every leading tree holds still until the camera has had a
-    # person in view, with the head raised to where a standing person would be.
-    # The LiDAR start (something new standing in front of the room it saw
-    # first) is off: it started trials in the ethology lab with nobody there.
-    # trial_start_enabled: false starts at once, as before.
     trial_start_enabled: true
-    trial_start_camera: true           # start on a person in the camera detector's output
-    trial_start_camera_hold: 0.5       # ...seen in every frame for this long [s]
-    trial_start_camera_gap: 0.5        # ...a gap longer than this starts the count again [s]
-    trial_start_head: true             # hold the head at person height while waiting
-    trial_start_look_distance: 3.0     # ...a standing person this far off fills the frame [m]
-    trial_start_lidar: false           # also start on something new in the LiDAR's room
-    trial_start_baseline_scans: 20     # scans whose nearest returns make the room
-    trial_start_min_change: 0.3        # a return this much nearer than the room is new [m]
-    trial_start_angle_tolerance_deg: 2.0  # ...than every room return within this angle
-    trial_start_max_range: 4.5         # only new returns within this range count [m]
-    trial_start_min_beams: 3           # neighbouring new returns that make an object
-    trial_start_persist_scans: 5       # scans running the object has to be seen in
-    trial_start_persist_gate_deg: 10.0 # ...each within this of its last bearing
+    trial_start_camera: true
+    trial_start_head: true
+    trial_start_lidar: false
 
     # Route. [0] is the start position, [-1] is the target.
     Dog_checkpoints:
