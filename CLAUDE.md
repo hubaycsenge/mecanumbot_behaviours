@@ -19,7 +19,7 @@ When a task needs information the code does not carry, look in these LLM-maintai
 - `wiki/models/dog-human-interaction-model.md` and `wiki/concepts/ostensive-signalling.md`: the leading and ostensive conditions
 - `wiki/experiments/seek-deep3r.md` and `wiki/experiments/validation-study.md`: how the studies are meant to run
 
-**2. `~/Documents/deep3r/deep3r/wiki/`**, the Deep3R wiki (Bitbucket `nipg/deep3r`, with its schema in `~/Documents/deep3r/deep3r/CLAUDE.md`). It covers 3D reconstruction, CUT3R, registration, scene change detection and the seeking server. Start at `wiki/index.md`, then grep. For this repo:
+**2. `~/Documents/installed_external/deep3r/deep3r/wiki/`**, the Deep3R wiki (Bitbucket `nipg/deep3r`, with its schema in `~/Documents/installed_external/deep3r/deep3r/CLAUDE.md`). It covers 3D reconstruction, CUT3R, registration, scene change detection and the seeking server. Start at `wiki/index.md`, then grep. For this repo:
 
 - `wiki/concepts/autonomous-exploration-coverage.md` and `wiki/synthesis/task3-mobile-robot-perception.md`: the T1 exploration pass and T2 seeking
 
