@@ -193,7 +193,7 @@ def generate_launch_description():
             description="Height to ask for; see camera_width.",
         ),
         DeclareLaunchArgument(
-            "camera_fps", default_value="15.0",
+            "camera_fps", default_value="30.0",
             description="Capture rate. The server reconstructs at ~6 Hz.",
         ),
         DeclareLaunchArgument(
