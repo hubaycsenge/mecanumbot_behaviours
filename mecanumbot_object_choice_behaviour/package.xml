@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mecanumbot_object_choice_behaviour</name>
+  <version>0.0.0</version>
+  <description>
+    Object-choice behaviour tree for Mecanumbot: the dog object-choice paradigm.
+    Coloured bricks lie on the floor; a person bids for the robot's attention
+    and points at one; the robot chooses the brick the pointing cue indicates
+    and approaches it, or grips it and brings it to the person. Every trial is
+    published as a JSON record. Bricks come from mecanumbot_detect_bricks.
+  </description>
+  <maintainer email="csengehubay@gmail.com">Csenge Hubay</maintainer>
+  <license>Apache License 2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>vision_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>mecanumbot_msgs</exec_depend>
+  <exec_depend>mecanumbot_bt_config</exec_depend>
+  <exec_depend>mecanumbot_movement_behaviours</exec_depend>
+  <!-- Two experiment packages, imported on purpose: the cue is read by the
+       ostensive tree's behaviours and the brick is approached and gripped by
+       the fetch tree's, unchanged. See README "Why it imports two experiments". -->
+  <exec_depend>mecanumbot_ostensive_behaviour</exec_depend>
+  <exec_depend>mecanumbot_fetch_behaviour</exec_depend>
+  <!-- The launch file includes perception.launch.py (pose detector + bricks). -->
+  <exec_depend>mecanumbot_sensorprocess_smart</exec_depend>
+  <exec_depend>py_trees</exec_depend>
+  <exec_depend>py_trees_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

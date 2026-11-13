@@ -1,0 +1,151 @@
+# Constants for the object-choice behaviour tree.
+#
+# This tree runs the ostensive package's exchange and the fetch package's
+# approach and grab unchanged, so this one file carries three trees' keys under
+# their own names: the ostensive ones (all required, as in that package), the
+# fetch ones it needs, and the object-choice `oc_*` ones. Anything left out
+# keeps its package's default -- see mecanumbot_object_choice_behaviour/defaults.py
+# for the fetch defaults this tree overrides.
+#
+# Angles are in degrees with a `_deg` suffix, loaded as radians without it.
+# Neck tilts are the accessory board's units (ticks / 100).
+#
+# THE NECK TILTS HERE ARE COMPUTED, NOT MEASURED. They come from the neck
+# calibration of 2026-10-21 (0.29 deg per tick, lens level at ~505 ticks), for
+# a person standing ~2.5 m away and bricks 0.5-3 m out on the floor. The
+# ostensive and fetch files' tilts (neck_seek_pos 7.0, fetch_head_search 5.5)
+# predate that shift and look ~23 deg higher than their comments say. Check
+# these two on the robot before the first trial:
+#   oc_survey_head -- cam_brick_detections/debug_image/compressed shows the bricks
+#   neck_seek_pos  -- cam_people_detections/debug_image/compressed shows shoulders
+#                     AND wrists of a person standing where participants will.
+
+object_choice_bt_node:
+  ros__parameters:
+    # ==========================================================================
+    # The trial
+    # ==========================================================================
+    # approach | grab. What the robot does with its choice -- the thing the
+    # trial scores. Read while the tree is built: changing it needs a restart.
+    oc_response_mode: approach
+    # Seconds the robot holds still at the chosen brick (approach mode).
+    oc_choice_hold: 3.0
+
+    # The colours a trial must find. Naming them makes the survey refuse a
+    # layout that is not the protocol's. Empty list: any oc_min_bricks colours.
+    oc_brick_colours: [red, blue]
+    oc_min_bricks: 2
+
+    # The survey: head tilt (480 ticks, lens ~7 deg below level, floor from
+    # ~0.5 m out in frame), settle, window, sightings needed, give-up time.
+    oc_survey_head: 4.8
+    oc_survey_settle: 1.0
+    oc_survey_window: 2.0
+    oc_survey_min_samples: 3
+    oc_survey_timeout: 20.0
+
+    # The choice (choice_geometry.py). The most a brick may lie off the
+    # pointing ray as seen from the person, the least the best must beat the
+    # second by -- below it the trial is recorded `ambiguous`, not guessed --
+    # and how near the person a brick may be and still be considered [m].
+    oc_max_deviation_deg: 35.0
+    oc_min_margin_deg: 10.0
+    oc_min_brick_distance: 0.3
+
+    # Between trials: wait for `ros2 topic pub --once
+    # /mecanumbot/object_choice/next std_msgs/Empty`, or rest oc_rest seconds.
+    oc_wait_for_go: true
+    oc_rest: 5.0
+    oc_return_timeout: 60.0
+
+    # ==========================================================================
+    # Reading the person -- the ostensive tree's keys, all required
+    # ==========================================================================
+    camera_hfov_deg: 51.0
+    # As in the ostensive file. NOT the same thing as the brick detector's
+    # mirror_image_x, which is about the brick boxes and defaults to false.
+    mirror_image_x: true
+    detection_timeout: 1.0
+
+    attention_signal_mode: any
+    attention_dwell: 1.0
+    # Longer than the ostensive tree's 30 s: there is no look-around to fall
+    # back on, and a timeout ends the trial as `not_addressed`.
+    attention_timeout: 60.0
+    wrist_above_shoulder_margin: 0.15
+    wave_window: 1.5
+    wave_min_amplitude: 0.25
+    wave_min_reversals: 2
+
+    target_max_image_jump: 0.25
+    target_bearing_tolerance_deg: 20.0
+    track_loss_timeout: 2.0
+    focus_tolerance_deg: 8.0
+    focus_turn_speed: 0.4
+    focus_timeout: 20.0
+
+    cue_min_extension: 1.1
+    cue_full_extension: 1.5
+    cue_min_lateral: 0.45
+    cue_dwell: 1.0
+    cue_stability_deg: 20.0
+    cue_timeout: 20.0
+    # Required by the ostensive loader but unused here: this tree does not
+    # drive along the ray, it chooses a brick with it.
+    cue_distance: 2.0
+    cue_goal_timeout: 60.0
+
+    # The nod, around the person-reading tilt below; must end on it.
+    ack_neck_seq: [6.3, 5.1, 6.3, 5.7]
+    ack_neck_times: [0.35, 0.35, 0.35, 0.3]
+
+    # ==========================================================================
+    # Movement library
+    # ==========================================================================
+    tick_period_ms: 100.0
+    setup_timeout: 15.0
+    sight_timeout: 1.0
+    turn_max_speed: 0.6
+    turn_accel: 0.8
+    turn_decel_gain: 1.6
+    turn_min_speed: 0.12
+    turn_tolerance_deg: 3.0
+    facing_epsilon_deg: 1.5
+    turn_timeout: 20.0
+    turn_nav2_wait: 2.0
+
+    # The person-reading tilt: 570 ticks, lens ~19 deg up, which frames a
+    # standing adult from the hips (~0.5 m) to the head (~1.8 m) at 2.5 m.
+    neck_seek_pos: 5.7
+    neck_level_pos: 5.1
+    gripper_left_neutral: 6.83
+    gripper_right_neutral: 3.36
+    # How close the robot may come to the person (grab mode's delivery).
+    robot_closeness_threshold: 1.2
+    robot_approach_distance: 1.5
+
+    # ==========================================================================
+    # Approaching and gripping -- the fetch tree's keys
+    # ==========================================================================
+    # Where the approach parks from the brick: in approach mode, the choice
+    # distance. Must stay above fetch_grasp_distance.
+    fetch_approach_stop: 0.45
+    fetch_approach_timeout: 45.0
+    fetch_grasp_distance: 0.28
+    # The bricks are 6.5 cm, centre ~3 cm up: well inside the pincer's band.
+    fetch_grasp_height_min: 0.0
+    fetch_grasp_height_max: 0.12
+    fetch_gripper_open_left: 6.83
+    fetch_gripper_open_right: 3.36
+    fetch_gripper_closed_left: 5.2
+    fetch_gripper_closed_right: 5.0
+    fetch_grasp_attempts: 3
+    # No lights: nothing but the movement may cue the person.
+    fetch_led_enabled: false
+    # Head range for tracking the brick: 360 ticks (~-42 deg) sees the floor
+    # just beyond the lens, 560 (~+16 deg) is above the horizon.
+    fetch_head_search: 4.8
+    fetch_head_low: 3.6
+    fetch_head_high: 5.6
+    fetch_detection_threshold: 0.4
+    fetch_detection_timeout: 1.0

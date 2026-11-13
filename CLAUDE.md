@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repository is
 
-`mecanumbot_behaviours` (`hubaycsenge/mecanumbot_behaviours`) is one of the separate git repos under `~/Documents/mecanumbot_ws/src/`: every behaviour that decides where the robot goes: the `bt_config` and `movement_behaviours` libraries, and the leading, demo, ostensive, seek, fetch and autoslam experiments. **Changing a tree changes an experiment's meaning.**
+`mecanumbot_behaviours` (`hubaycsenge/mecanumbot_behaviours`) is one of the separate git repos under `~/Documents/mecanumbot_ws/src/`: every behaviour that decides where the robot goes: the `bt_config` and `movement_behaviours` libraries, and the leading, demo, ostensive, seek, fetch, object-choice and autoslam experiments. **Changing a tree changes an experiment's meaning.**
 
 Build, test, environment and cross-repo conventions are in the workspace file `~/Documents/mecanumbot_ws/CLAUDE.md`, which is authoritative. Read it before building or testing. Each package's README has its full node interface.
 
