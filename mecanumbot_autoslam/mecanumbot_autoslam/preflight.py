@@ -239,6 +239,9 @@ PROCESSES = NAV2_STACK + CONTAINER + (
         "fetch_bt_node", BY_PROCESS,
         "the fetch tree sends its own nav2 goals"),
     Contradiction(
+        "object_choice_bt_node", BY_PROCESS,
+        "the object-choice tree sends its own nav2 goals"),
+    Contradiction(
         "wander_between_people_node", BY_PROCESS,
         "the demo tree sends its own nav2 goals"),
 )
