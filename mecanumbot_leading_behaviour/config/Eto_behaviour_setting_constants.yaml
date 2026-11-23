@@ -76,7 +76,7 @@ bottom_up_tree_node:
     # A look back every so many checkpoints and every so many seconds,
     # whichever falls due first, plus straight away when the human goes out of
     # sight or drops further than Dog_following_max_threshold.
-    check_in_every_checkpoints: 2
+    check_in_every_checkpoints: 1
     check_in_interval: 20.0
     check_in_grace: 2.0
     check_in_catch_up_timeout: 2.0

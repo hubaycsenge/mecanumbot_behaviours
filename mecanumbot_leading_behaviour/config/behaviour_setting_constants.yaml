@@ -103,7 +103,7 @@ bottom_up_tree_node:
     # whichever falls due first, plus straight away whenever the human goes
     # out of sight or drops further than Dog_following_max_threshold. Either
     # counter at 0 switches that half off.
-    check_in_every_checkpoints: 2
+    check_in_every_checkpoints: 1
     check_in_interval: 20.0
     # How long the human has to be out of sight or trailing before a leg of
     # the route is cut short for it -- somebody stepping behind a pillar is

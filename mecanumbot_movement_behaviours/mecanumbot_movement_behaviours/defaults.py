@@ -71,7 +71,7 @@ MOVEMENT_DEFAULTS = {
     # so many seconds, whichever falls due first. Either set to 0 switches that
     # half off; both at 0 means the robot only looks back when something about
     # the human says it should.
-    "check_in_every_checkpoints": 2,
+    "check_in_every_checkpoints": 1,
     "check_in_interval": 20.0,
     # How long the human has to be out of sight or trailing before a leg of the
     # route is cut short for it. Somebody stepping behind a pillar is still
