@@ -160,8 +160,11 @@ bottom_up_tree_node:
     body_gaze_enabled: true
     body_profiles: ['{''body'':''standing'', ''low'':0.0, ''high'':1.75}', '{''body'':''chair'',    ''low'':0.0,
     ''high'':1.30}', '{''body'':''bean_bag'', ''low'':0.0, ''high'':0.75}']
-    seats: ['{''seat'':''bean_bag'', ''x'':-0.80, ''y'':2.20, ''radius'':0.70}', '{''seat'':''chair'',    ''x'':1.15,  ''y'':3.35,
-    ''radius'':0.60}']
+    # No seats in the Etho_test layout (2026-11-24): the bean bags and the
+    # wheelchair are occupied by objects, so nobody is looked for at sitting
+    # height. The LED_exp room had a bean bag at (-0.80, 2.20) and a chair at
+    # (1.15, 3.35).
+    seats: []
     LED_lead_straight: ['{''fl'':{''mode'':1, ''color'':1},''fr'':{''mode'':2, ''color'':1},''bl'':{''mode'':2,
     ''color'':1},''br'':{''mode'':1, ''color'':1}}']
     LED_lead_left: ['{''fl'':{''mode'':2, ''color'':1},''fr'':{''mode'':2, ''color'':1},''bl'':{''mode'':2,
@@ -173,6 +176,16 @@ bottom_up_tree_node:
     trial_start_camera: true
     trial_start_head: true
     trial_start_lidar: false
+
+    # Where the robot is parked before a trial, in the Etho_test map frame:
+    # the corner between the screen's open end and the window wall, about
+    # 0.6 m from both walls, facing into the screen's alcove (the door the
+    # subject comes in by). Read off the 2026-11-24 calibration video
+    # (2Etho_calib_20261124_092018, cams 2 and 5), so good to ~0.2 m and
+    # ~20 deg. Documentation only: no behaviour reads these, and the route
+    # below still starts at Dog_checkpoints[0].
+    robot_start_pose: "{'X':0.15, 'Y':-0.12, 'Z':0.0}"
+    robot_start_yaw_deg: 19.0
 
     # Route. [0] is the start position, [-1] is the target.
     Dog_checkpoints:
