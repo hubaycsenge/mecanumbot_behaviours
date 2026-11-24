@@ -46,10 +46,11 @@ needs it, it belongs in `mecanumbot_movement_behaviours` next to
 
 import math
 
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Pose, Twist
 from nav_msgs.msg import Odometry
 from rclpy.time import Time
 from std_msgs.msg import String
+import tf2_ros
 from vision_msgs.msg import Detection2DArray, Detection3DArray
 
 from mecanumbot_movement_behaviours.ros_interfaces import AccessoryCommander
@@ -66,6 +67,9 @@ FETCH_STATE_TOPIC = "/mecanumbot/fetch/state"
 ACCESSORY_TOPIC = "/cmd_accessory_pos"
 ODOM_TOPIC = "/mecanumbot/odom"
 CMD_VEL_TOPIC = "/cmd_vel"
+# The frames the ball is placed between by mecanumbot_locate_detections.
+MAP_FRAME = "map"
+BASE_FRAME = "mecanumbot/base_link"
 
 
 def class_filter(value):
@@ -311,6 +315,66 @@ class GripperCommander:
         """Move only the neck, with the grippers left as they are."""
         left, right = self.grippers()
         self.send(neck, left, right)
+
+
+class MapPoseTracker:
+    """
+    The robot's pose in the map, read from TF -- the frame the ball is placed in.
+
+    A drop-in for the movement library's `RobotPoseTracker` (`.pose`,
+    `.position`, `.yaw`), for the behaviours that measure the robot against
+    the ball. `/amcl_pose` is only republished after the robot has moved
+    `update_min_d` (0.25 m) or turned `update_min_a`, so it can sit a
+    quarter-metre behind the robot -- while `mecanumbot_locate_detections`
+    places the ball with the live `map -> base_link` transform. Measured on the
+    robot on 2026-11-24: 0.13 m apart, standing still. With the AMCL pose,
+    `CreepToBall` fixed its distance from where the robot *was*, drove that
+    far from where it *is*, and ran the ball over or caught it on the grabber
+    tips.
+    """
+
+    _buffers = {}
+
+    def __init__(self, node, frame=MAP_FRAME, base_frame=BASE_FRAME):
+        self.node = node
+        self.frame = frame
+        self.base_frame = base_frame
+        # One buffer and listener per node, however many behaviours ask.
+        key = id(node)
+        if key not in MapPoseTracker._buffers:
+            buffer = tf2_ros.Buffer()
+            listener = tf2_ros.TransformListener(buffer, node)
+            MapPoseTracker._buffers[key] = (buffer, listener)
+        self._buffer = MapPoseTracker._buffers[key][0]
+
+    @property
+    def pose(self):
+        """Return the latest `map <- base_link` as a Pose, or None without one."""
+        try:
+            transform = self._buffer.lookup_transform(
+                self.frame, self.base_frame, Time()
+            )
+        except Exception:  # noqa: BLE001 -- no transform yet is a normal state
+            return None
+        pose = Pose()
+        pose.position.x = transform.transform.translation.x
+        pose.position.y = transform.transform.translation.y
+        pose.position.z = transform.transform.translation.z
+        pose.orientation = transform.transform.rotation
+        return pose
+
+    @property
+    def position(self):
+        pose = self.pose
+        return None if pose is None else pose.position
+
+    @property
+    def yaw(self):
+        pose = self.pose
+        if pose is None:
+            return None
+        q = pose.orientation
+        return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
 
 class OdometryTracker:

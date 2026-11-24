@@ -26,10 +26,10 @@ from mecanumbot_movement_behaviours.ros_interfaces import (
     BallTracker,
     Nav2GoalMonitor,
     Nav2PoseNavigator,
-    RobotPoseTracker,
 )
 
 from mecanumbot_fetch_behaviour.behaviours.ros_interfaces import (
+    MapPoseTracker,
     BallBoxTracker,
     BallDetectionTracker,
     CreepCommander,
@@ -82,7 +82,7 @@ class ApproachBall(py_trees.behaviour.Behaviour):
         self.stop_distance = float(constant(self.blackboard, "fetch_approach_stop"))
         self.grasp_distance = float(constant(self.blackboard, "fetch_grasp_distance"))
         self.threshold = float(constant(self.blackboard, "fetch_detection_threshold"))
-        self.pose = RobotPoseTracker(self.node)
+        self.pose = MapPoseTracker(self.node)
         self.nav2 = Nav2PoseNavigator(self.node)
         self.balls = BallDetectionTracker(
             self.node,
@@ -107,7 +107,7 @@ class ApproachBall(py_trees.behaviour.Behaviour):
     def update(self):
         """Drive to the ball, re-aiming as its estimated position moves."""
         if self.pose.pose is None:
-            self.feedback_message = "waiting for AMCL pose"
+            self.feedback_message = "waiting for the map -> base_link transform"
             return py_trees.common.Status.RUNNING
 
         target = self._current_target()
@@ -211,7 +211,7 @@ class CreepToBall(py_trees.behaviour.Behaviour):
     gone under the lens, which it does for the last few centimetres.
 
     The distance is settled once, at the start, from the located ball and the
-    AMCL pose -- both taken with the robot standing still, and an in-place turn
+    robot pose from TF -- both taken with the robot standing still, and an in-place turn
     does not change the range. Capped at `fetch_creep_max`, because this is the
     one forward drive in the repository that bypasses the costmap.
 
@@ -241,7 +241,7 @@ class CreepToBall(py_trees.behaviour.Behaviour):
         self.height = float(constant(self.blackboard, "fetch_camera_height"))
         self.hfov = float(constant(self.blackboard, "fetch_camera_hfov"))
         timeout = constant(self.blackboard, "fetch_detection_timeout")
-        self.pose = RobotPoseTracker(self.node)
+        self.pose = MapPoseTracker(self.node)
         self.balls = BallDetectionTracker(
             self.node,
             timeout=timeout,
@@ -275,7 +275,7 @@ class CreepToBall(py_trees.behaviour.Behaviour):
                 self.feedback_message = "waiting for nav2 to let go"
                 return py_trees.common.Status.RUNNING
             if self.pose.pose is None or not self.odom.mark():
-                self.feedback_message = "waiting for AMCL pose and odometry"
+                self.feedback_message = "waiting for the robot pose and odometry"
                 return py_trees.common.Status.RUNNING
             ball = self._ball_position()
             if ball is None:

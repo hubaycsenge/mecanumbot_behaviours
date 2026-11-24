@@ -24,6 +24,7 @@
   <!-- The located ball. A standard type: a labelled pose with a confidence is
        exactly what Detection3DArray carries, and the z is what tells a ball on
        the floor from a ball in somebody's hand. -->
+  <exec_depend>tf2_ros</exec_depend>
   <exec_depend>vision_msgs</exec_depend>
   <exec_depend>mecanumbot_msgs</exec_depend>
   <!-- The behaviour libraries this package builds on: Approach and its nav2

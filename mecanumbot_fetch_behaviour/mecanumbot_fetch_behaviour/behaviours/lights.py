@@ -14,9 +14,9 @@ turn the lights off when the approach ends.
 import py_trees
 
 from mecanumbot_movement_behaviours.geometry import bearing_to, normalize_angle
-from mecanumbot_movement_behaviours.ros_interfaces import RobotPoseTracker
 from mecanumbot_msgs.srv import SetLedStatus
 
+from mecanumbot_fetch_behaviour.behaviours.ros_interfaces import MapPoseTracker
 from mecanumbot_fetch_behaviour.ball_lights import (
     CORNERS,
     direction_corners,
@@ -74,7 +74,7 @@ class ShowBallDirection(py_trees.behaviour.Behaviour):
         )
         self.spread = float(constant(self.blackboard, "fetch_led_direction_spread"))
         self.led_client = self.node.create_client(SetLedStatus, LED_SERVICE)
-        self.pose = RobotPoseTracker(self.node)
+        self.pose = MapPoseTracker(self.node)
         self.logger.info(f"{self.name}: Setup complete")
         return True
 

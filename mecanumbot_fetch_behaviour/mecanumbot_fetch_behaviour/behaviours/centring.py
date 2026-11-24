@@ -28,11 +28,11 @@ import py_trees
 from mecanumbot_movement_behaviours.geometry import distance_xy
 from mecanumbot_movement_behaviours.ros_interfaces import (
     Nav2GoalMonitor,
-    RobotPoseTracker,
     VelocityCommander,
 )
 
 from mecanumbot_fetch_behaviour.behaviours.ros_interfaces import (
+    MapPoseTracker,
     BallBoxTracker,
     GripperCommander,
 )
@@ -96,7 +96,7 @@ class TrackBallWithHead(py_trees.behaviour.Behaviour):
         self.boxes = BallBoxTracker(
             self.node, timeout=constant(self.blackboard, "fetch_detection_timeout")
         )
-        self.pose = RobotPoseTracker(self.node)
+        self.pose = MapPoseTracker(self.node)
         self.neck = GripperCommander(self.node)
         self.logger.info(f"{self.name}: Setup complete")
         return True

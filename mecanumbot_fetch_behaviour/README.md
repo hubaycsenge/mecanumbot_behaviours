@@ -217,6 +217,14 @@ neck's zero is.
   exception to the "`/cmd_vel` only for in-place turns" rule, kept in this package
   rather than in the movement library for that reason. A tennis ball is below the lidar
   plane, so the costmap could not see it anyway. Like `FaceBall`, it never fails.
+* **Every distance to the ball is measured from TF, not `/amcl_pose`.** The ball is
+  placed with the live `map -> base_link` transform, but AMCL only republishes its pose
+  after 0.25 m or 0.2 rad of motion, so `/amcl_pose` can sit a quarter-metre behind the
+  robot (0.13 m measured on 2026-11-24, standing still). With it, the creep's length
+  was fixed from where the robot *had been*, and the robot ran the ball over or caught
+  it on the grabber tips and flicked it forward. `ApproachBall`, `CreepToBall`,
+  `TrackBallWithHead` and `ShowBallDirection` use `MapPoseTracker` for this reason;
+  the movement library's `RobotPoseTracker` is unchanged for every other tree.
 
 The tracker stops before `CheckBallReachable` and `GraspBall`, because every neck command
 is also a gripper command and the grab owns the grippers. `GraspBall` keeps the head
