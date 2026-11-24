@@ -159,6 +159,12 @@ FETCH_DEFAULTS = {
     "fetch_creep_max_rate": 0.3,
     "fetch_creep_max": 0.6,
     "fetch_creep_timeout": 12.0,
+    # The creep stops when `/mecanumbot/has_object` says the ball is between
+    # the shafts (the VL53L0X there sees it within 6 cm). The camera's range
+    # is only the backstop: the creep may drive this much past the point it
+    # puts at `fetch_grasp_distance` while it waits for the sensor [m]. Zero
+    # stops at the camera's estimate, as before the sensor was used.
+    "fetch_creep_overshoot": 0.10,
 
     # ===== Approaching and gripping ===========================================
     # Where the approach stops short of the ball [m]. Far enough that the ball

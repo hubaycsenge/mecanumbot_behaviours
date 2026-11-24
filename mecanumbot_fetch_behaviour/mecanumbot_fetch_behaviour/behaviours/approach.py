@@ -222,6 +222,11 @@ class CreepToBall(py_trees.behaviour.Behaviour):
     is smallest there). Capped at `fetch_creep_max` in all, because this is the
     one forward drive in the repository that bypasses the costmap.
 
+    What ends it is `/mecanumbot/has_object`: the VL53L0X between the shafts
+    seeing the ball within 6 cm, i.e. the ball is in the open pincer. The
+    camera's range only sets the backstop, `fetch_creep_overshoot` past the
+    point it places at `fetch_grasp_distance`, for a sensor that never fires.
+
     Never FAILURE, for `FaceBall`'s reason: the grab after it is what finds out
     whether the ball is between the grabbers.
     """
@@ -245,6 +250,11 @@ class CreepToBall(py_trees.behaviour.Behaviour):
         self.max_rate = float(constant(self.blackboard, "fetch_creep_max_rate"))
         self.cap = float(constant(self.blackboard, "fetch_creep_max"))
         self.timeout = float(constant(self.blackboard, "fetch_creep_timeout"))
+        # Where the camera-based backstop stops: past fetch_grasp_distance by
+        # the overshoot, since has_object is what is meant to stop the creep.
+        self.stop_at = self.grasp_distance - float(
+            constant(self.blackboard, "fetch_creep_overshoot")
+        )
         self.threshold = float(constant(self.blackboard, "fetch_detection_threshold"))
         self.width = float(constant(self.blackboard, "fetch_camera_width"))
         self.height = float(constant(self.blackboard, "fetch_camera_height"))
@@ -260,6 +270,7 @@ class CreepToBall(py_trees.behaviour.Behaviour):
         self.odom = OdometryTracker(self.node)
         self.velocity = CreepCommander(self.node)
         self.nav2 = Nav2GoalMonitor(self.node)
+        self.held = BallTracker(self.node)
         self.logger.info(f"{self.name}: Setup complete")
         return True
 
@@ -277,6 +288,11 @@ class CreepToBall(py_trees.behaviour.Behaviour):
     def update(self):
         """Settle the distance, then drive it."""
         now = self._now()
+        if self.held.has_ball:
+            return self._done(
+                f"has_object: the ball is between the grabbers after "
+                f"{self.odom.travelled():.2f} m"
+            )
         if now - self._start > self.timeout:
             return self._done(f"still creeping after {self.timeout:.0f} s, grabbing")
 
@@ -291,10 +307,10 @@ class CreepToBall(py_trees.behaviour.Behaviour):
             if ball is None:
                 return self._done("no position for the ball, grabbing from here")
             distance = distance_xy(self.pose.pose.position, ball)
-            self._goal = creep_distance(distance, self.grasp_distance, self.cap)
+            self._goal = creep_distance(distance, self.stop_at, self.cap)
             self.node.get_logger().info(
-                f"{self.name}: ball {distance:.2f} m away, driving "
-                f"{self._goal:.2f} m to {self.grasp_distance:.2f} m"
+                f"{self.name}: ball {distance:.2f} m away, driving until "
+                f"has_object, at most {self._goal:.2f} m (to {self.stop_at:.2f} m)"
             )
 
         self._remeasure()
@@ -309,7 +325,10 @@ class CreepToBall(py_trees.behaviour.Behaviour):
             remaining, bearing, self.speed, self.gain, self.max_rate
         )
         if linear == 0.0:
-            return self._done("ball within grasping range")
+            return self._done(
+                "drove as far as the camera allows and has_object is still "
+                "false, grabbing anyway"
+            )
         self.velocity.drive(linear, angular)
         self.feedback_message = f"{remaining:.2f} m to go" + (
             "" if bearing is not None else ", ball under the lens"
@@ -340,7 +359,7 @@ class CreepToBall(py_trees.behaviour.Behaviour):
         travelled = self.odom.travelled()
         distance = distance_xy(position, ball)
         goal = travelled + creep_remaining(
-            distance, self.grasp_distance, self.cap, travelled
+            distance, self.stop_at, self.cap, travelled
         )
         if abs(goal - self._goal) > 0.03:
             self.node.get_logger().info(
