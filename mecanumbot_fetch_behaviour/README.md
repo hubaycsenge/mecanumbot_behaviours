@@ -211,8 +211,15 @@ neck's zero is.
   `xy_goal_tolerance` is 0.30 m, so it parks anywhere from about 0.15 to 0.75 m from the
   ball, and a goal nearer than 0.30 m counts as reached before the robot moves at all.
   Before this step existed, the robot centred the ball from 0.7 m and closed the
-  grabbers on air. The distance is fixed once, at the start (ball range minus
-  `fetch_grasp_distance`), and capped at `fetch_creep_max`. That cap matters because
+  grabbers on air. The distance (ball range minus `fetch_grasp_distance`) is re-set
+  from every new sighting while any of the ball is in view, and only the stretch after
+  it has gone under the lens is dead-reckoned, from the last one. A ball cut off by the
+  frame edge is centred from its uncut edge and diameter (`unclipped_box`, here and in
+  `ball_locating`), so the head, `FaceBall` and the ball's map position keep working
+  with the head at its lowest. Until 2026-11-24 the distance was fixed once, from where
+  nav2 parked -- where the ball is smallest and its range worst -- and the robot
+  stopped 0.35 m from a ball every nearer frame had placed correctly. The total is
+  capped at `fetch_creep_max`. That cap matters because
   this is the **one forward drive in the repository that bypasses the costmap**, an
   exception to the "`/cmd_vel` only for in-place turns" rule, kept in this package
   rather than in the movement library for that reason. A tennis ball is below the lidar

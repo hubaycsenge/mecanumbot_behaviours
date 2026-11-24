@@ -37,7 +37,12 @@ from mecanumbot_fetch_behaviour.behaviours.ros_interfaces import (
     GripperCommander,
 )
 from mecanumbot_fetch_behaviour.defaults import constant, register_param_keys
-from mecanumbot_fetch_behaviour.gaze import image_offset, neck_step, turn_rate
+from mecanumbot_fetch_behaviour.gaze import (
+    image_offset,
+    neck_step,
+    turn_rate,
+    unclipped_box,
+)
 
 
 def _camera(blackboard):
@@ -131,7 +136,9 @@ class TrackBallWithHead(py_trees.behaviour.Behaviour):
             return py_trees.common.Status.RUNNING
 
         self._seen_at = now
-        _, elevation = image_offset(box[0], box[1], self.width, self.height, self.hfov)
+        # A ball cut off by the bottom of the frame is lower than its box centre.
+        u, v, _, _ = unclipped_box(box, self.width, self.height)
+        _, elevation = image_offset(u, v, self.width, self.height, self.hfov)
         target = neck_step(
             self._position,
             elevation,
@@ -233,7 +240,8 @@ class FaceBall(py_trees.behaviour.Behaviour):
             return py_trees.common.Status.RUNNING
 
         self._seen_at = now
-        bearing, _ = image_offset(box[0], box[1], self.width, self.height, self.hfov)
+        u, v, _, _ = unclipped_box(box, self.width, self.height)
+        bearing, _ = image_offset(u, v, self.width, self.height, self.hfov)
         rate = turn_rate(bearing, self.gain, self.max_rate, self.min_rate, self.tolerance)
         if rate == 0.0:
             self.velocity.stop()

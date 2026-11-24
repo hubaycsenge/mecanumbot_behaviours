@@ -156,6 +156,59 @@ def creep_distance(ball_distance, grasp_distance, cap):
     return min(max(float(ball_distance) - float(grasp_distance), 0.0), float(cap))
 
 
+def creep_remaining(ball_distance, grasp_distance, cap, travelled):
+    """
+    Return how much further the last move into the grabbers drives [m].
+
+    Re-asked on every frame the ball is seen in, from the live range, because
+    the range read from where nav2 parked is the worst one of the approach: the
+    ball is smallest there. On 2026-11-24 it put the ball 0.63 m away, the
+    creep drove the 0.35 m that implied, and the ball was still 0.35 m from
+    the robot -- every nearer frame had said so, and none was listened to.
+    Never backwards, and never past `cap` in all (`travelled` counts toward it).
+    """
+    ahead = float(ball_distance) - float(grasp_distance)
+    budget = float(cap) - float(travelled)
+    return max(min(ahead, budget), 0.0)
+
+
+def unclipped_box(box, width, height, margin=2.0):
+    """
+    Return `box` with its centre rebuilt where the frame edge has cut it off.
+
+    A ball's box is square; one that touches a frame edge and is shorter across
+    it than along it has lost what is beyond the edge. The other edge and the
+    uncut dimension are still real, so the centre is that edge plus half the
+    diameter. This matters most when the head is at its lowest tilt: every ball
+    close to the grabbers is then cut off by the bottom of the frame, and the
+    centre of what is left sits too high -- so the head thought it had centred
+    a ball that was sinking out of the picture.
+
+    `box` may carry a score after the four numbers; only the four come back.
+    The same function as `ball_locating.unclipped_box` in
+    `mecanumbot_sensorprocess_smart`, which places the ball with it; copied
+    rather than imported so this module stays free of the perception package,
+    and the two must be changed together.
+    """
+    u, v, w, h = (float(x) for x in box[:4])
+    diameter = max(w, h)
+    left, right = u - w / 2.0, u + w / 2.0
+    top, bottom = v - h / 2.0, v + h / 2.0
+    at_left, at_right = left <= margin, right >= float(width) - margin
+    at_top, at_bottom = top <= margin, bottom >= float(height) - margin
+    if h < diameter and at_bottom and not at_top:
+        v = top + diameter / 2.0
+    elif h < diameter and at_top and not at_bottom:
+        v = bottom - diameter / 2.0
+    if w < diameter and at_right and not at_left:
+        u = left + diameter / 2.0
+    elif w < diameter and at_left and not at_right:
+        u = right - diameter / 2.0
+    if (u, v) == (float(box[0]), float(box[1])):
+        return tuple(float(x) for x in box[:4])
+    return (u, v, diameter, diameter)
+
+
 def creep_command(remaining, bearing, speed, gain, max_rate):
     """
     Return `(linear, angular)` for the last move into the grabbers.

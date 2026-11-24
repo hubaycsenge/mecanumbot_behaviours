@@ -13,8 +13,10 @@ import math
 import pytest
 
 from mecanumbot_fetch_behaviour.gaze import (
+    unclipped_box,
     creep_command,
     creep_distance,
+    creep_remaining,
     floor_band,
     image_offset,
     neck_step,
@@ -198,3 +200,32 @@ def test_creep_holds_its_heading_once_the_ball_is_under_the_lens():
 def test_creep_stops_when_the_distance_is_used_up():
     assert creep_command(0.0, 0.2, 0.08, 1.0, 0.3) == (0.0, 0.0)
     assert creep_command(-0.02, None, 0.08, 1.0, 0.3) == (0.0, 0.0)
+
+
+def test_creep_follows_the_nearer_sighting_not_the_first():
+    # 2026-11-24: ranged 0.63 m from the park, 0.39 m after 0.33 m of driving.
+    assert creep_remaining(0.39, 0.22, 0.6, 0.33) == pytest.approx(0.17)
+
+
+def test_creep_cap_counts_what_is_already_driven():
+    assert creep_remaining(2.0, 0.22, 0.6, 0.5) == pytest.approx(0.1)
+    assert creep_remaining(2.0, 0.22, 0.6, 0.7) == 0.0
+
+
+def test_creep_stops_when_a_sighting_says_the_ball_is_already_close():
+    assert creep_remaining(0.20, 0.22, 0.6, 0.1) == 0.0
+
+
+def test_a_ball_cut_off_by_the_bottom_of_the_frame_reads_as_lower():
+    # The box from the robot on 2026-11-24, head at its lowest, with a score.
+    u, v, w, h = unclipped_box((659.0, 584.0, 324.0, 272.0, 0.9), 1280, 720)
+    assert v == pytest.approx(610.0) and (w, h) == (324.0, 324.0)
+    _, raw = image_offset(659.0, 584.0, 1280, 720, math.radians(51.0))
+    _, fixed = image_offset(u, v, 1280, 720, math.radians(51.0))
+    assert fixed < raw < 0.0
+
+
+def test_a_whole_ball_box_is_unchanged_but_for_the_score():
+    assert unclipped_box((640.0, 360.0, 100.0, 96.0, 0.8), 1280, 720) == (
+        640.0, 360.0, 100.0, 96.0,
+    )
