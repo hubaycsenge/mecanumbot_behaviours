@@ -23,7 +23,7 @@ bottom_up_tree_node:
     robot_closeness_threshold:   1.25     # Minimum approach distance; below this the robot risks hitting the subject [m]
     robot_approach_distance:     2.0      # How far the robot advances in one step [m]
     target_reached_threshold:    1.5      # Distance between target and subject that counts as arrived [m]
-    visibility_time_threshold:   2.0      # Age of the last subject fix before it is stale [s]
+    visibility_time_threshold:   1.0      # Age of the last subject fix before it is stale [s]
     Dog_following_max_threshold: 2.0      # Largest distance difference that still counts as following [m]
     Dog_max_wander_allowed:      2        # Wander events tolerated before the subject is considered lost [count]
 
@@ -176,11 +176,13 @@ bottom_up_tree_node:
 
     # Route. [0] is the start position, [-1] is the target.
     Dog_checkpoints:
-      - "{'X':1.35244, 'Y':4.01954, 'Z':0.0}"  # start
-      - "{'X':-3.06462, 'Y':5.40894, 'Z':0.0}"  # waypoint 1
-      - "{'X':-4.28269, 'Y':1.40561, 'Z':0.0}"  # waypoint 2
-      - "{'X':-0.033288, 'Y':-0.398331, 'Z':0.0}"  # waypoint 3
-      - "{'X':0.417255, 'Y':-0.539768, 'Z':0.0}"  # target
+      - "{'X':-0.396177, 'Y':-0.18713, 'Z':0.0}"  # start
+      - "{'X':0.864561, 'Y':0.838558, 'Z':0.0}"  # waypoint 1
+      - "{'X':1.8731, 'Y':0.0271797, 'Z':0.0}"  # waypoint 2
+      - "{'X':3.24278, 'Y':0.144434, 'Z':0.0}"  # waypoint 3
+      - "{'X':2.21355, 'Y':1.62531, 'Z':0.0}"  # waypoint 4
+      - "{'X':0.770114, 'Y':4.89823, 'Z':0.0}"  # waypoint 5
+      - "{'X':-1.07075, 'Y':3.86238, 'Z':0.0}"  # target
 
     LED_start_setting:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
