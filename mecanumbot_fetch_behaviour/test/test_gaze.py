@@ -15,8 +15,6 @@ import pytest
 from mecanumbot_fetch_behaviour.gaze import (
     unclipped_box,
     creep_command,
-    creep_distance,
-    creep_remaining,
     floor_band,
     image_offset,
     neck_step,
@@ -172,19 +170,6 @@ def test_the_turn_is_slow_enough_to_keep_seeing_the_ball():
 # --- the last move into the grabbers ----------------------------------------
 
 
-def test_creep_covers_the_gap_nav2_left():
-    # The case seen on the robot: parked 0.70 m out, grab needs 0.28 m.
-    assert creep_distance(0.70, 0.28, 0.6) == pytest.approx(0.42)
-
-
-def test_creep_never_drives_backwards():
-    assert creep_distance(0.20, 0.28, 0.6) == 0.0
-
-
-def test_creep_is_capped_whatever_the_range_estimate_says():
-    assert creep_distance(3.0, 0.28, 0.6) == 0.6
-
-
 def test_creep_steers_towards_the_ball_and_within_the_limit():
     _, left = creep_command(0.3, math.radians(10.0), 0.08, 1.0, 0.3)
     _, right = creep_command(0.3, math.radians(-10.0), 0.08, 1.0, 0.3)
@@ -200,20 +185,6 @@ def test_creep_holds_its_heading_once_the_ball_is_under_the_lens():
 def test_creep_stops_when_the_distance_is_used_up():
     assert creep_command(0.0, 0.2, 0.08, 1.0, 0.3) == (0.0, 0.0)
     assert creep_command(-0.02, None, 0.08, 1.0, 0.3) == (0.0, 0.0)
-
-
-def test_creep_follows_the_nearer_sighting_not_the_first():
-    # 2026-11-24: ranged 0.63 m from the park, 0.39 m after 0.33 m of driving.
-    assert creep_remaining(0.39, 0.22, 0.6, 0.33) == pytest.approx(0.17)
-
-
-def test_creep_cap_counts_what_is_already_driven():
-    assert creep_remaining(2.0, 0.22, 0.6, 0.5) == pytest.approx(0.1)
-    assert creep_remaining(2.0, 0.22, 0.6, 0.7) == 0.0
-
-
-def test_creep_stops_when_a_sighting_says_the_ball_is_already_close():
-    assert creep_remaining(0.20, 0.22, 0.6, 0.1) == 0.0
 
 
 def test_a_ball_cut_off_by_the_bottom_of_the_frame_reads_as_lower():

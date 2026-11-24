@@ -149,22 +149,15 @@ FETCH_DEFAULTS = {
     "fetch_face_lost": 1.5,
     "fetch_face_timeout": 6.0,
     # The last move into the grabbers: straight ahead on /cmd_vel from where
-    # nav2 parked (it cannot place the robot closer than its 0.30 m goal
-    # tolerance) to `fetch_grasp_distance` from the ball. Speed [m/s], the
-    # steering gain on the ball's image bearing [1/s] and its limit [rad/s],
-    # the most it may drive [m] -- the backstop, since this bypasses the
-    # costmap -- and how long it may take [s].
+    # nav2 parked until /mecanumbot/has_object turns true (the ball is in the
+    # open pincer). Speed [m/s], the steering gain on the ball's image bearing
+    # [1/s] and its limit [rad/s], and the backstop, since this bypasses the
+    # costmap: the most it may drive [m] and how long it may take [s].
     "fetch_creep_speed": 0.08,
     "fetch_creep_gain": 1.0,
     "fetch_creep_max_rate": 0.3,
     "fetch_creep_max": 0.6,
     "fetch_creep_timeout": 12.0,
-    # The creep stops when `/mecanumbot/has_object` says the ball is between
-    # the shafts (the VL53L0X there sees it within 6 cm). The camera's range
-    # is only the backstop: the creep may drive this much past the point it
-    # puts at `fetch_grasp_distance` while it waits for the sensor [m]. Zero
-    # stops at the camera's estimate, as before the sensor was used.
-    "fetch_creep_overshoot": 0.10,
 
     # ===== Approaching and gripping ===========================================
     # Where the approach stops short of the ball [m]. Far enough that the ball

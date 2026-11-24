@@ -28,7 +28,7 @@ ROOT (memory)
         │   │       │   └── DriveAndFace
         │   │       │       ├── ApproachBall      nav2, re-aimed as the estimate refines
         │   │       │       ├── FaceBall          in-place turn until the ball is centred left-to-right
-        │   │       │       └── CreepToBall       slow straight drive on /cmd_vel to fetch_grasp_distance
+        │   │       │       └── CreepToBall       slow straight drive on /cmd_vel until has_object
         │   │       ├── CheckBallReachable        is it on the floor, or on a table?
         │   │       └── GraspBall                 close (head where the tracker left it), read has_object
         │   ├── HandOver
@@ -205,33 +205,34 @@ neck's zero is.
   and the robot would grab at a ball off to one side. `FaceBall` never fails: when the
   ball is out of view for `fetch_face_lost` or the turn times out, the grab goes ahead on
   the approach's heading.
-* **The last stretch** is `CreepToBall`, straight ahead on `/cmd_vel` at `fetch_creep_speed`,
-  steering on the ball's image bearing while it is in view and by odometry
-  (`/mecanumbot/odom`) once it has gone under the lens. nav2 cannot do this part: its
-  `xy_goal_tolerance` is 0.30 m, so it parks anywhere from about 0.15 to 0.75 m from the
-  ball, and a goal nearer than 0.30 m counts as reached before the robot moves at all.
-  Before this step existed, the robot centred the ball from 0.7 m and closed the
-  grabbers on air. The distance (ball range minus `fetch_grasp_distance`) is re-set
-  from every new sighting while any of the ball is in view, and only the stretch after
-  it has gone under the lens is dead-reckoned, from the last one. A ball cut off by the
-  frame edge is centred from its uncut edge and diameter (`unclipped_box`, here and in
-  `ball_locating`), so the head, `FaceBall` and the ball's map position keep working
-  with the head at its lowest. Until 2026-11-24 the distance was fixed once, from where
-  nav2 parked -- where the ball is smallest and its range worst -- and the robot
-  stopped 0.35 m from a ball every nearer frame had placed correctly. The total is
-  capped at `fetch_creep_max`. That cap matters because
-  this is the **one forward drive in the repository that bypasses the costmap**, an
-  exception to the "`/cmd_vel` only for in-place turns" rule, kept in this package
-  rather than in the movement library for that reason. A tennis ball is below the lidar
-  plane, so the costmap could not see it anyway. Like `FaceBall`, it never fails.
-* **Every distance to the ball is measured from TF, not `/amcl_pose`.** The ball is
-  placed with the live `map -> base_link` transform, but AMCL only republishes its pose
-  after 0.25 m or 0.2 rad of motion, so `/amcl_pose` can sit a quarter-metre behind the
-  robot (0.13 m measured on 2026-11-24, standing still). With it, the creep's length
-  was fixed from where the robot *had been*, and the robot ran the ball over or caught
-  it on the grabber tips and flicked it forward. `ApproachBall`, `CreepToBall`,
-  `TrackBallWithHead` and `ShowBallDirection` use `MapPoseTracker` for this reason;
-  the movement library's `RobotPoseTracker` is unchanged for every other tree.
+* **The last stretch** is `CreepToBall`: slowly straight ahead on `/cmd_vel` at
+  `fetch_creep_speed`, steering on the ball's image bearing while any of it is in view
+  and holding the heading once it has gone under the lens, **until
+  `/mecanumbot/has_object` turns true** -- the VL53L0X between the shafts sees the ball,
+  so it is in the open pincer -- and then the grab closes. The camera steers; it does
+  not decide where to stop. nav2 cannot do this part: its `xy_goal_tolerance` is
+  0.30 m, so it parks anywhere from about 0.15 to 0.75 m from the ball.
+  Until 2026-11-24 the creep stopped at a distance worked out from the camera's range
+  (`fetch_grasp_distance`), read from where nav2 parked, where the ball is smallest
+  and its range worst, and against `/amcl_pose`, which lags the robot by up to 0.25 m.
+  It stopped short of the ball or drove over it, and the grab closed on air or knocked
+  the ball away. `fetch_creep_max` and `fetch_creep_timeout` are only the backstop:
+  reaching either without `has_object` stops the robot and the grab goes ahead.
+  That cap matters because this is the **one forward drive in the repository that
+  bypasses the costmap**, an exception to the "`/cmd_vel` only for in-place turns"
+  rule, kept in this package rather than in the movement library for that reason. A
+  tennis ball is below the lidar plane, so the costmap could not see it anyway. Like
+  `FaceBall`, it never fails.
+* **A ball cut off by the frame edge** is centred from its uncut edge and diameter
+  (`unclipped_box`, in `gaze.py` and in `ball_locating`), so the head, `FaceBall`,
+  the creep's steering and the ball's map position keep working with the head at its
+  lowest tilt, where every near ball is cut off by the bottom of the frame.
+* **Distances to the ball are measured from TF, not `/amcl_pose`.** The ball is placed
+  with the live `map -> base_link` transform, but AMCL only republishes its pose after
+  0.25 m or 0.2 rad of motion (0.13 m apart measured on 2026-11-24, standing still).
+  `ApproachBall`, `CreepToBall`, `TrackBallWithHead` and `ShowBallDirection` use
+  `MapPoseTracker` for this reason; the movement library's `RobotPoseTracker` is
+  unchanged for every other tree.
 
 The tracker stops before `CheckBallReachable` and `GraspBall`, because every neck command
 is also a gripper command and the grab owns the grippers. `GraspBall` keeps the head
@@ -332,7 +333,7 @@ describes this robot's body and the people in the room:
 
 | Required key | Why it has no default |
 | --- | --- |
-| `fetch_approach_stop`, `fetch_grasp_distance` | where the robot parks and how close counts as grippable |
+| `fetch_approach_stop`, `fetch_grasp_distance` | where the robot parks; how close hands the approach over to the creep (the creep itself stops on `has_object`) |
 | `fetch_gripper_open_left/right`, `fetch_gripper_closed_left/right` | this robot's grabber positions |
 | `robot_approach_distance`, `robot_closeness_threshold` | how close a robot may drive to a person |
 

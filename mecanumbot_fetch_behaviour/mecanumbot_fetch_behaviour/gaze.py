@@ -145,33 +145,6 @@ def floor_band(camera_height, pitch, vfov, target_height=0.0):
     return near, far
 
 
-def creep_distance(ball_distance, grasp_distance, cap):
-    """
-    Return how far the last move into the grabbers drives [m].
-
-    From where the robot stands to where the ball is `grasp_distance` away,
-    never backwards and never more than `cap` -- which is what keeps a bad
-    range estimate from driving the robot across the room with no costmap.
-    """
-    return min(max(float(ball_distance) - float(grasp_distance), 0.0), float(cap))
-
-
-def creep_remaining(ball_distance, grasp_distance, cap, travelled):
-    """
-    Return how much further the last move into the grabbers drives [m].
-
-    Re-asked on every frame the ball is seen in, from the live range, because
-    the range read from where nav2 parked is the worst one of the approach: the
-    ball is smallest there. On 2026-11-24 it put the ball 0.63 m away, the
-    creep drove the 0.35 m that implied, and the ball was still 0.35 m from
-    the robot -- every nearer frame had said so, and none was listened to.
-    Never backwards, and never past `cap` in all (`travelled` counts toward it).
-    """
-    ahead = float(ball_distance) - float(grasp_distance)
-    budget = float(cap) - float(travelled)
-    return max(min(ahead, budget), 0.0)
-
-
 def unclipped_box(box, width, height, margin=2.0):
     """
     Return `box` with its centre rebuilt where the frame edge has cut it off.
