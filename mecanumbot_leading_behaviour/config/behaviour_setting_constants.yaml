@@ -157,8 +157,13 @@ bottom_up_tree_node:
     # up). The seeking pose does double duty: it reads as the robot seeking
     # contact, and it gives the pose detector whole bodies rather than knees.
     # The gesture sequences below move between these same values.
-    neck_seek_pos: 6.0
-    neck_level_pos: 6.0
+    # Shifted by -0.79 on 2026-11-25: the 2026-10-21 neck recalibration (lens
+    # level at ~505 ticks, not ~584) moved body_gaze_min/max_pos by -0.79 but not
+    # these two, so they had been aiming ~23 deg higher than set since then --
+    # 6.0 looked ~42 deg up, at the ceiling. The values below are the tilts they were
+    # tuned for (+4.5 deg).
+    neck_seek_pos: 5.21   # was 6.0
+    neck_level_pos: 5.21  # was 6.0
     gripper_left_neutral: 6.83
     gripper_right_neutral: 3.36
     # A face at the bottom of the camera frame while searching tilts the head
@@ -193,7 +198,16 @@ bottom_up_tree_node:
     body_gaze_switch_delay: 2.0      # ...and is only followed after being the nearest this long [s]
     body_gaze_candidate_timeout: 0.5 # how old the LiDAR's candidate list may be [s]
     body_gaze_subject_gate: 1.0      # a candidate this near the subject's last place is looked at first [m]
-    body_gaze_subject_memory: 10.0   # how long that place is believed [s]
+    body_gaze_subject_memory: 30.0   # how long that place is believed [s]
+    # 30 s since 2026-11-25 (was 10): a look-back falls due 2 s after the human is
+    # last seen and turns for up to ~16 s, so with 10 s the place they were last
+    # seen was forgotten before the turn reached it; the head then fell back to the
+    # rest pose (stress sessions of 2026-11-25: look-backs 7-22 s after last seen).
+    body_gaze_rest_distance: 2.0  # nothing in view -> frame a standing body this far off [m]
+    # 2026-11-25: replaces neck_seek_pos as the gaze's rest. 2.0 m is
+    # Dog_following_max_threshold, where the human is expected to be; through the
+    # neck model it is n_pos 5.71 (+19 deg), computed, so it follows the next
+    # recalibration.
     # The band of heights each kind of body occupies, from the floor to the
     # top of the head [m]; the head looks at its middle height (the waist of
     # somebody standing). A kind left out keeps the packaged band; `standing`

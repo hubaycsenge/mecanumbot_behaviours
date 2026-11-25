@@ -107,8 +107,13 @@ bottom_up_tree_node:
     show_turn_delay: 2.0
 
     # ----- Accessory poses -----------------------------------------------------
-    neck_seek_pos: 6.5
-    neck_level_pos: 6.5
+    # Shifted by -0.79 on 2026-11-25: the 2026-10-21 neck recalibration (lens
+    # level at ~505 ticks, not ~584) moved body_gaze_min/max_pos by -0.79 but not
+    # these two, so they had been aiming ~23 deg higher than set since then --
+    # 6.5 looked ~42 deg up, at the ceiling. The values below are the tilts they were
+    # tuned for (+19 deg).
+    neck_seek_pos: 5.71   # was 6.5
+    neck_level_pos: 5.71  # was 6.5
     gripper_left_neutral: 6.83
     gripper_right_neutral: 3.36
     # A face at the bottom of the camera frame while searching tilts the head
@@ -131,7 +136,16 @@ bottom_up_tree_node:
     body_gaze_switch_delay: 2.0  # ...and is only followed after being the nearest this long [s]
     body_gaze_candidate_timeout: 0.5  # how old the LiDAR's candidate list may be [s]
     body_gaze_subject_gate: 1.0  # a candidate this near the subject's last place is looked at first [m]
-    body_gaze_subject_memory: 10.0  # how long that place is believed [s]
+    body_gaze_subject_memory: 30.0  # how long that place is believed [s]
+    # 30 s since 2026-11-25 (was 10): a look-back falls due 2 s after the human is
+    # last seen and turns for up to ~16 s, so with 10 s the place they were last
+    # seen was forgotten before the turn reached it; the head then fell back to the
+    # rest pose (stress sessions of 2026-11-25: look-backs 7-22 s after last seen).
+    body_gaze_rest_distance: 2.0  # nothing in view -> frame a standing body this far off [m]
+    # 2026-11-25: replaces neck_seek_pos as the gaze's rest. 2.0 m is
+    # Dog_following_max_threshold, where the human is expected to be; through the
+    # neck model it is n_pos 5.71 (+19 deg) -- the same as the recalibrated
+    # neck_seek_pos above, but computed, so it follows the next recalibration.
     LED_lead_progress_color: 2  # Colour the panels fill with as the drive progresses (green)
     LED_lead_direction: target  # target: flow towards the destination's side when it is off the heading | none: always ahead
     LED_lead_straight_band_deg: 30.0  # Destination within this of the heading counts as ahead [deg]
@@ -188,13 +202,25 @@ bottom_up_tree_node:
     robot_start_yaw_deg: 19.0
 
     # Route. [0] is the start position, [-1] is the target.
+    #
+    # Waypoints 3-5 moved on 2026-11-25. The route loops round the round
+    # obstacle and came back west at waypoint 4 (0.87, 1.64), 0.3 m from the
+    # 0->1 leg, so `route_progress` -- which takes the nearest leg of the whole
+    # route -- could not tell "just past waypoint 1" from "at waypoint 4". In
+    # rosbag2_2026_11_25-09_11_54 that sent the robot back to waypoint 1 after
+    # it had reached it, and later on to waypoint 5, skipping 2-4. The return
+    # leg now runs north of the 0->1 leg, and 4->5 passes west of the green
+    # cage rather than along it: non-adjacent legs are >= 0.9 m apart (was
+    # 0.31 m). Old values: 3 (3.0856, 2.71323), 4 (0.868964, 1.64207),
+    # 5 (1.26218, 3.32685). Check with `ros2 run mecanumbot_leading_behaviour
+    # check_route` on the robot.
     Dog_checkpoints:
       - "{'X':-0.0632267, 'Y':1.05963, 'Z':0.0}"  # start
       - "{'X':1.34232, 'Y':1.4581, 'Z':0.0}"  # waypoint 1
       - "{'X':3.28789, 'Y':0.938137, 'Z':0.0}"  # waypoint 2
-      - "{'X':3.0856, 'Y':2.71323, 'Z':0.0}"  # waypoint 3
-      - "{'X':0.868964, 'Y':1.64207, 'Z':0.0}"  # waypoint 4
-      - "{'X':1.26218, 'Y':3.32685, 'Z':0.0}"  # waypoint 5
+      - "{'X':3.1, 'Y':2.75, 'Z':0.0}"  # waypoint 3
+      - "{'X':0.75, 'Y':2.3, 'Z':0.0}"  # waypoint 4
+      - "{'X':0.9, 'Y':3.55, 'Z':0.0}"  # waypoint 5
       - "{'X':2.46867, 'Y':4.56722, 'Z':0.0}"  # waypoint 6
       - "{'X':1.71807, 'Y':5.74686, 'Z':0.0}"  # waypoint 7
       - "{'X':0.349798, 'Y':4.26784, 'Z':0.0}"  # waypoint 8

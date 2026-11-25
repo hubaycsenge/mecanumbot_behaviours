@@ -552,9 +552,20 @@ class WaitForPerson(py_trees.behaviour.Behaviour):
 
     On success it also records which way along the route the person turned up,
     so a later patrol starts searching in that direction.
+
+    "Visible again" means a detection made since the wait began, or one no
+    older than `visible_age`. Until 2026-11-25 it was any detection younger
+    than `sight_timeout` -- 20 s in the leading files -- so the search that
+    follows a look-back finding nobody could end on its first tick on a
+    detection from before the look-back: 4 of the 12 searches in the stress
+    sessions of 2026-11-25 "found" somebody at once with no track at all. A
+    detection that recent would already have ended the look-back's turn, so
+    this keeps the intended instant success for somebody really in view.
     """
 
     KEYS = DEFAULT_KEYS
+    # Seconds within which a detection counts as somebody in view now.
+    visible_age = 1.0
 
     def __init__(
         self, name="WaitForPerson", sight_timeout=None, keys=None, look_down=True
@@ -593,15 +604,33 @@ class WaitForPerson(py_trees.behaviour.Behaviour):
         self.logger.info(f"{self.name}: Setup complete")
 
     def initialise(self):
+        self._stamp_at_start = self._detection_stamp()
         self.accessories.look(HEAD_SEEK)
         self.node.get_logger().info(f"{self.name}: watching for a person, head lifted")
+
+    def _detection_stamp(self):
+        """Return the stamp of the newest detection, or None if there was none."""
+        seen_at = self.people.last_seen_time
+        return None if seen_at is None else seen_at.nanoseconds
+
+    def _visible_again(self):
+        """Say whether somebody has been seen since the wait began, or is in view now."""
+        if not self.people.has_fresh_detection():
+            return False
+        stamp = self._detection_stamp()
+        if stamp is None:
+            return False
+        if stamp != getattr(self, "_stamp_at_start", None):
+            return True
+        age = self.people.age
+        return age is not None and age <= self.visible_age
 
     def terminate(self, new_status):
         if self.look_down is not None:
             self.look_down.release()
 
     def update(self):
-        if not self.people.has_fresh_detection():
+        if not self._visible_again():
             if self.look_down is not None:
                 self.look_down.update()
             self.feedback_message = "nobody visible yet"

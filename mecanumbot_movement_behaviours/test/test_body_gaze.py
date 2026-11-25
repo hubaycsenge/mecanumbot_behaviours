@@ -393,3 +393,36 @@ class TestConstantsFile:
         assert set(controller.profiles) >= {STANDING, CHAIR, BEAN_BAG}
         for seat in controller.seats:
             assert seat.kind in controller.profiles
+
+
+class TestExpectedBodyAtRest:
+    """With nothing in view, the head frames where a person is expected."""
+
+    def test_the_fixed_pose_is_kept_unless_asked(self):
+        gaze = BodyGazeController()
+        assert gaze.update(0.0, ROBOT, [], [], REST, None) == REST
+        assert "seeking pose" in gaze.reason
+
+    def test_a_standing_body_at_the_rest_distance_is_framed(self):
+        gaze = BodyGazeController(settings=GazeSettings(rest_distance=2.5))
+        pos = gaze.update(0.0, ROBOT, [], [], 6.5, None)
+        assert "expected at 2.5 m" in gaze.reason
+        neck = NeckModel()
+        # a whole standing adult, feet to head, at three metres; the waist at two
+        low, high = neck.visible_band(pos, 3.0)
+        assert low <= 0.3 and high >= 1.75
+        low, high = neck.visible_band(pos, 2.0)
+        assert low <= 0.9 <= high
+
+    def test_it_is_far_below_the_old_seeking_pose(self):
+        # 6.5 tilts ~42 deg up since the 2026-10-21 recalibration
+        gaze = BodyGazeController(settings=GazeSettings(rest_distance=2.5))
+        pos = gaze.update(0.0, ROBOT, [], [], 6.5, None)
+        assert pos < 6.0
+        assert math.degrees(NeckModel().pitch(pos)) < 25.0
+
+    def test_a_target_still_wins_over_the_expectation(self):
+        gaze = BodyGazeController(settings=GazeSettings(rest_distance=2.5))
+        rest = gaze.update(0.0, ROBOT, [], [], 6.5, None)
+        near = gaze.update(1.0, ROBOT, [], [(0.8, 0.0)], 6.5, rest)
+        assert near > rest + 0.5
