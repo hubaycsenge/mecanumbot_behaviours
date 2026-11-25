@@ -155,16 +155,20 @@ bottom_up_tree_node:
     trial_start_min_beams: 3  # neighbouring new returns that make an object
     trial_start_persist_scans: 5  # scans running the object has to be seen in
     trial_start_persist_gate_deg: 10.0  # ...each within this of its last bearing
+    # Where the robot is parked before a trial, in the Etho_test map frame:
+    # the corner between the screen's open end and the window wall, about 0.6
+    # m from both walls, facing into the screen's alcove (the door the subject
+    # comes in by). Read off the 2026-11-24 calibration video
+    # (2Etho_calib_20261124_092018, cams 2 and 5), so good to ~0.2 m and ~20
+    # deg. Documentation only: no behaviour reads these, and the route below
+    # still starts at Dog_checkpoints[0].
+    robot_start_pose: "{'X':0.15, 'Y':-0.12, 'Z':0.0}"
+    robot_start_yaw_deg: 19.0
 
     # Kept as found: this editor does not render these.
     body_gaze_enabled: true
     body_profiles: ['{''body'':''standing'', ''low'':0.0, ''high'':1.75}', '{''body'':''chair'',    ''low'':0.0,
     ''high'':1.30}', '{''body'':''bean_bag'', ''low'':0.0, ''high'':0.75}']
-    # No seats in the Etho_test layout (2026-11-24): the bean bags and the
-    # wheelchair are occupied by objects, so nobody is looked for at sitting
-    # height. The LED_exp room had a bean bag at (-0.80, 2.20) and a chair at
-    # (1.15, 3.35).
-    seats: []
     LED_lead_straight: ['{''fl'':{''mode'':1, ''color'':1},''fr'':{''mode'':2, ''color'':1},''bl'':{''mode'':2,
     ''color'':1},''br'':{''mode'':1, ''color'':1}}']
     LED_lead_left: ['{''fl'':{''mode'':2, ''color'':1},''fr'':{''mode'':2, ''color'':1},''bl'':{''mode'':2,
@@ -177,29 +181,21 @@ bottom_up_tree_node:
     trial_start_head: true
     trial_start_lidar: false
 
-    # Where the robot is parked before a trial, in the Etho_test map frame:
-    # the corner between the screen's open end and the window wall, about
-    # 0.6 m from both walls, facing into the screen's alcove (the door the
-    # subject comes in by). Read off the 2026-11-24 calibration video
-    # (2Etho_calib_20261124_092018, cams 2 and 5), so good to ~0.2 m and
-    # ~20 deg. Documentation only: no behaviour reads these, and the route
-    # below still starts at Dog_checkpoints[0].
-    robot_start_pose: "{'X':0.15, 'Y':-0.12, 'Z':0.0}"
-    robot_start_yaw_deg: 19.0
-
     # Route. [0] is the start position, [-1] is the target.
     Dog_checkpoints:
       - "{'X':-0.0632267, 'Y':1.05963, 'Z':0.0}"  # start
-      - "{'X':1.34232, 'Y':1.4581, 'Z':0.0}"  # waypoint 1
+      - "{'X':0.147146, 'Y':1.02098, 'Z':0.0}"  # waypoint 1
       - "{'X':3.28789, 'Y':0.938137, 'Z':0.0}"  # waypoint 2
-      - "{'X':3.0856, 'Y':2.71323, 'Z':0.0}"  # waypoint 3
-      - "{'X':0.868964, 'Y':1.64207, 'Z':0.0}"  # waypoint 4
-      - "{'X':1.26218, 'Y':3.32685, 'Z':0.0}"  # waypoint 5
+      - "{'X':3.1, 'Y':2.75, 'Z':0.0}"  # waypoint 3
+      - "{'X':0.75, 'Y':2.3, 'Z':0.0}"  # waypoint 4
+      - "{'X':0.9, 'Y':3.55, 'Z':0.0}"  # waypoint 5
       - "{'X':2.46867, 'Y':4.56722, 'Z':0.0}"  # waypoint 6
       - "{'X':1.71807, 'Y':5.74686, 'Z':0.0}"  # waypoint 7
       - "{'X':0.349798, 'Y':4.26784, 'Z':0.0}"  # waypoint 8
       - "{'X':-1.19356, 'Y':3.31065, 'Z':0.0}"  # waypoint 9
       - "{'X':-1.66242, 'Y':3.06028, 'Z':0.0}"  # target
+
+    seats: []
 
     LED_start_setting:
       - "{'fl':{'mode':4, 'color':0},'fr':{'mode':4, 'color':0},'bl':{'mode':4, 'color':0},'br':{'mode':4, 'color':0}}"  # black solid
