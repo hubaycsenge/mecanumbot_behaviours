@@ -247,6 +247,17 @@ class GazeSettings:
     # plant pot -- while the robot walked up to somebody else (2026-10-21).
     subject_gate: float = 1.0
     subject_memory: float = 10.0
+    # With nothing in view, where to expect a body: a standing person this
+    # many metres off, framed through the neck model like any other target,
+    # instead of the constants file's fixed `neck_seek_pos`. 0.0 keeps the
+    # fixed pose. A fixed servo position is only right for the calibration it
+    # was written for: the 2026-10-21 recalibration shifted the gaze's limits
+    # but not the leading files' `neck_seek_pos` 6.5, which since then tilts
+    # the lens ~42 deg up -- the ceiling, past anybody further than ~2.5 m or
+    # behind a panel (stress sessions of 2026-11-25: look-backs at 0.8-1 m and
+    # recovery scans at 3 m found nobody with the head there). An expected
+    # body is recomputed from the calibration, so it moves with it.
+    rest_distance: float = 0.0
 
 
 def tilt_interval(neck, target, frame_margin):
@@ -445,6 +456,22 @@ class BodyGazeController:
         pos = max(self.settings.min_pos, min(self.settings.max_pos, pos))
         return round(pos, 2), targets[0].label, targets[0].distance
 
+    def rest(self, rest_pos):
+        """
+        Return `(neck position, why)` for when nothing is in view.
+
+        The body the robot expects when it knows of none: a standing person at
+        `settings.rest_distance`, or, with that 0, the fixed `rest_pos`.
+        """
+        distance = self.settings.rest_distance
+        if distance <= 0.0:
+            return float(rest_pos), "nothing in view, seeking pose"
+        low, high = self.profiles.get(STANDING, BODY_PROFILES[STANDING])
+        expected = GazeTarget(distance, low, high, "")
+        tilt = choose_tilt(self.neck, [expected], self.settings.frame_margin)
+        pos = max(self.settings.min_pos, min(self.settings.max_pos, self.neck.pos(tilt)))
+        return round(pos, 2), f"nothing in view, a standing body expected at {distance:.1f} m"
+
     def _is_passing_switch(self, now, distance):
         """Say whether a further body has not yet been the nearest for long enough."""
         followed = self._followed_distance
@@ -475,7 +502,7 @@ class BodyGazeController:
             )
             if held:
                 return None
-            wanted, why = float(rest_pos), "nothing in view, seeking pose"
+            wanted, why = self.rest(rest_pos)
             self._followed_distance = None
             self._further_since = None
         else:

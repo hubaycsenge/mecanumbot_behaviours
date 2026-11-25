@@ -176,6 +176,10 @@ MOVEMENT_DEFAULTS = {
     # believed for `body_gaze_subject_memory` seconds.
     "body_gaze_subject_gate": 1.0,
     "body_gaze_subject_memory": 10.0,
+    # With nothing in view, the head frames a standing body this many metres
+    # off (computed through the neck model, so it survives a recalibration);
+    # 0.0 keeps the fixed `neck_seek_pos`.
+    "body_gaze_rest_distance": 0.0,
     # How old the LiDAR's candidate list may be.
     "body_gaze_candidate_timeout": 0.5,
     # The band of heights [m] each kind of body occupies, floor to the top of
@@ -219,6 +223,7 @@ BODY_GAZE_SETTINGS = {
     "switch_delay": "body_gaze_switch_delay",
     "subject_gate": "body_gaze_subject_gate",
     "subject_memory": "body_gaze_subject_memory",
+    "rest_distance": "body_gaze_rest_distance",
 }
 
 
